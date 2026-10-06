@@ -28,9 +28,11 @@ SPEAKERS = ("gm", "player")
 _COMMIT_KEYS = {"note", "facts", "npc", "faction", "promise", "pc", "clock", "time", "clue", "chronicle", "override", "chaos", "end", "learn", "consequence"}
 # What a clock says, for a commit's time in the words the GM would use for it.
 _CLOCK = {"second": 1, "minute": 60, "hour": 3600, "day": 86400}
+# A commit's time written out: "10 minutes", "a stretch", "2 hours and 30 minutes".
+_TIME_WORDS = re.compile(r"\b(?:(\d+(?:\.\d+)?)\s*|(an?|one)\s+)([a-z]+)\b")
 # The commit keys that hold a JSON object, with an example, for the GM that sends a string or a list instead.
 _COMMIT_OBJECTS = {"facts": '{"hall.alarm": true}', "npc": '{"orc_leader": {"attitude": "unfriendly"}}', "faction": '{"orcs": {"standing": "-1"}}', "pc": '{"hp": "-2"}',
-                   "clock": '{"ritual": "+1"}', "time": '{"stretch": 1}'}
+                   "clock": '{"ritual": "+1"}', "time": '{"stretch": 1}, or words like "10 minutes"'}
 # What the GM writes down about someone it made up, so the next session meets the same person.
 # An adventure's own NPCs have these already; what changes about them is a memory.
 PROFILE_FIELDS = ("role", "description", "voice", "wants", "fears")
@@ -2334,6 +2336,21 @@ class Campaign:
             if alias in payload and key not in payload:
                 payload[key] = payload.pop(alias)
                 warnings.append(f"read {alias} as {key}")
+        if isinstance(payload.get("scene"), str) and payload["scene"] in self.adventure["scenes"]:
+            raise SoloError(f"a commit doesn't take the hero anywhere: solo move {payload['scene']}")
+        elif "scene" in payload:
+            # "A fact under the scene", written the way it reads: {"scene": {"facts": {"floor_searched": true}}}.
+            payload["facts"] = {**self._fact_shapes(payload.pop("scene"), under=self.state["scene"]), **self._fact_shapes(payload.get("facts"))}
+            warnings.append(f"read scene as facts under {self.state['scene']}")
+        elif payload.get("facts") is not None:
+            shaped = self._fact_shapes(payload["facts"])
+            if shaped != payload["facts"]:
+                warnings.append(f"read facts as {json.dumps(shaped, ensure_ascii=False)}")
+            payload["facts"] = shaped
+        spent = _time_words(payload["time"]) if isinstance(payload.get("time"), str) else None
+        if spent:
+            warnings.append(f"read time {json.dumps(payload['time'], ensure_ascii=False)} as {json.dumps(spent)}")
+            payload["time"] = spent
         unknown = sorted(set(payload) - _COMMIT_KEYS)
         if unknown:
             money = "; coins and gear are items: {\"pc\": {\"items\": {\"add\": [\"30 silver\"]}}}" if set(unknown) & _MONEY else ""
@@ -2381,6 +2398,40 @@ class Campaign:
                  "consequence": consequences, "time": seconds}
         changes.update({key: value for key, value in parts.items() if value})
         return changes, clock_moves, warnings
+
+    def _fact_shapes(self, value, under=None):
+        """Facts in the other shapes GMs write them, as the {key: value} a commit holds: a list or a line
+        of keys (each one true) or of sentences, sentences listed under a key, and `under` a scene, keys
+        without the scene's id or wrapped in "facts". A sentence with no key of its own is filed under the
+        key it was listed under, else the scene, by its first words, the way a consequence gets its id."""
+        if isinstance(value, dict) and under and value and set(value) <= {"facts", "fact"}:
+            return {k: v for inner in value.values() for k, v in self._fact_shapes(inner, under).items()}
+        elif isinstance(value, dict):
+            found = {}
+            for key, v in value.items():
+                key = key if not under or "." in key else f"{under}.{key}"
+                if isinstance(v, list):
+                    # Sentences listed under a key are filed under it ("scene": the scene the hero is in).
+                    found.update(self._fact_shapes(v, self.state["scene"] if key == "scene" else key))
+                else:
+                    found[key] = v
+            return found
+        found = {}
+        for item in _listed(value) if value is None or isinstance(value, (list, str)) else [value]:
+            if not isinstance(item, str):
+                raise SoloError(f"facts is a JSON object, like {_COMMIT_OBJECTS['facts']}")
+            text = item.strip()
+            if packs.FACT_KEY.match(text):
+                found[text if not under or "." in text else f"{under}.{text}"] = True
+            elif text:
+                base = f"{under or self.state['scene']}.{slug(' '.join(text.split()[:4])) or 'fact'}"
+                key, number = base, 1
+                # A new sentence never overwrites an older fact that began alike; the same sentence is the same fact.
+                while key in found or self.state["facts"].get(key, text) != text:
+                    number += 1
+                    key = f"{base}_{number}"
+                found[key] = text
+        return found
 
     def _facts(self, facts):
         for key, value in facts.items():
@@ -3897,6 +3948,18 @@ def _by_id(items, fields):
 
 def _listed(value):
     return [] if value is None else [value] if isinstance(value, str) else list(value)
+
+
+def _time_words(text):
+    """{"minutes": 10} for "10 minutes", or None for words that say something else ("until dawn")."""
+    text = text.lower()
+    found = _TIME_WORDS.findall(text)
+    if not found or re.sub(r"\band\b|[\s,&+]", "", _TIME_WORDS.sub("", text)):
+        return None
+    spent = {}
+    for number, _, unit in found:
+        spent[unit] = spent.get(unit, 0) + (float(number) if number else 1)
+    return {unit: int(amount) if amount == int(amount) else amount for unit, amount in spent.items()}
 
 
 def _attitude(value):

@@ -81,7 +81,8 @@ class CommitTest(CampaignTest):
 
     def test_a_commit_that_gets_a_shape_wrong_is_told_what_it_holds_and_a_null_says_nothing(self):
         with self.session() as c:
-            for payload, message in (({"time": "1 minute"}, r'time is a JSON object, like \{"stretch": 1\}'), ({"facts": ["hall.alarm"]}, "facts is a JSON object, like"),
+            for payload, message in (({"time": "until dawn"}, r'time is a JSON object, like \{"stretch": 1\}, or words like "10 minutes"'),
+                                     ({"facts": 3}, "facts is a JSON object, like"), ({"facts": [{"hall.alarm": True}]}, "facts is a JSON object, like"),
                                      ({"pc": "hp -2"}, "pc is a JSON object")):
                 with self.subTest(payload=payload), self.assertRaisesRegex(SoloError, message):
                     c.commit(payload)

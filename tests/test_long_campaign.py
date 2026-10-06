@@ -383,10 +383,33 @@ class Shapes(CampaignTest):
             c.commit({"promise": {"npc": "bram", "terms": "pay for the room"}})
             self.assertIn("pay_for_the_room", c.state["promises"])
 
+    def test_facts_under_the_scene_a_list_of_them_and_time_in_words_are_read(self):
+        with self.session() as c:
+            scene = c.state["scene"]
+            event = c.commit({"scene": {"facts": {"floor_searched": True, "hall.alarm": False}}, "time": "10 minutes"})
+            self.assertEqual(event["changes"]["facts"], {f"{scene}.floor_searched": True, "hall.alarm": False})
+            self.assertEqual(event["changes"]["time"], 600)
+            self.assertEqual(event["warnings"], [f"read scene as facts under {scene}", 'read time "10 minutes" as {"minutes": 10}'])
+            # A sentence with no key is filed under the scene by its first words; the same sentence is the same fact.
+            c.commit({"scene": {"fact": "A wounded man lies on the trail"}})
+            event = c.commit({"facts": ["A wounded man lies on the trail", "A wounded man lies dead now", "gate.open"]})
+            self.assertEqual(event["changes"]["facts"], {f"{scene}.a_wounded_man_lies": "A wounded man lies on the trail",
+                                                         f"{scene}.a_wounded_man_lies_2": "A wounded man lies dead now", "gate.open": True})
+            self.assertEqual(c.commit({"facts": "gate.open"})["changes"]["facts"], {"gate.open": True})
+            event = c.commit({"facts": {"hall": ["Osk tells the old tale", "throne"], "hall.alarm": True}})
+            self.assertEqual(event["changes"]["facts"], {"hall.osk_tells_the_old": "Osk tells the old tale", "hall.throne": True, "hall.alarm": True})
+            self.assertIn("read facts as", event["warnings"][0])
+            self.assertNotIn("warnings", c.commit({"facts": {"hall.alarm": False}}))
+            self.assertEqual(c.commit({"facts": {"scene": ["The floor was swept"]}})["changes"]["facts"], {f"{scene}.the_floor_was_swept": "The floor was swept"})
+            for words, seconds in (("a stretch", 900), ("2 hours and 30 minutes", 9000), ("1.5 shifts", 32400)):
+                with self.subTest(words=words):
+                    self.assertEqual(c.commit({"time": words})["changes"]["time"], seconds)
+
     def test_the_rest_is_refused_with_what_to_write(self):
         with self.session() as c:
             for payload, message in [
                 ({"memory": {"orc_leader": "spared"}}, 'a memory belongs to someone: {"npc": {"<id>": {"memory"'),
+                ({"scene": "gate"}, "a commit doesn't take the hero anywhere: solo move gate"),
                 ({"npc": {"orc_leader": {"at": "gate"}}}, "where someone is, is location"),
                 ({"consequence": {"text": "Bram asks", "when": "Ragna finds his daughter"}}, "`when` is a condition the engine can check"),
             ]:
