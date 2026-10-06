@@ -69,7 +69,8 @@ class GmTest(CampaignTest):
         self.assertEqual(result["status"], "done")
         self.assertEqual(self.said(), [("player", "I sneak past the gate."), ("gm", "The guards never look down. What now?")])
         first = self.calls("claude")[0]
-        self.assertEqual(first[-2:], ["--", gm.BOOK_PROMPT])  # no session yet: catch up from the campaign
+        self.assertEqual(first[-2], "--")
+        self.assertTrue(first[-1].startswith(gm.BOOK_PROMPT))  # no session yet: catch up from the campaign
         self.assertIn("Bash(solo check:*)", first)
         self.assertNotIn("--resume", first)
         self.assertEqual(json.loads((self.root / ".solo" / "agent.json").read_text()), {"agent": "claude", "session": "sess-1"})
@@ -123,13 +124,14 @@ class GmTest(CampaignTest):
         calls = self.calls("claude")
         self.assertIn("--resume", calls[0])
         self.assertNotIn("--resume", calls[1])
+        self.assertTrue(calls[1][-1].startswith(gm.BOOK_PROMPT))  # the new session reads the table
 
     def test_codex_turns_resume_by_thread(self):
         self.agent("codex", CODEX_STREAM)
         gm.turn(self.root, None, agent="codex")
         gm.turn(self.root, "I wait.", agent="codex")
         first, second = self.calls("codex")
-        self.assertEqual(first[-1], gm.BOOK_PROMPT)
+        self.assertTrue(first[-1].startswith(gm.BOOK_PROMPT))
         self.assertEqual(second[-4:], ["resume", "thread-9", "--", "I wait."])
         self.assertEqual(self.said()[-1], ("gm", "Mud and drums. What do you do?"))
         self.assertEqual(gm.status(self.root)["doing"], "")
@@ -155,6 +157,10 @@ class GmTest(CampaignTest):
         self.assertEqual(denied, ["WebFetch", "WebSearch", "Edit", "Write", "NotebookEdit"])
         self.assertEqual(first[first.index("--max-turns") + 1], "40")
         self.assertEqual(first[first.index("--max-budget-usd") + 1], "10.00")
+        # None of the player's own MCP servers or browser, and of Claude Code's tools only Bash and Read.
+        self.assertTrue({"--strict-mcp-config", "--no-chrome"} <= set(first))
+        self.assertEqual(first[first.index("--tools") + 1], "Bash,Read")
+        self.assertEqual(first[first.index("--add-dir") + 1], str(cli.REPO / "skills" / "solo-gm"))
         with unittest.mock.patch.dict(os.environ, {"SOLO_GM_MAX_TURNS": "7"}):
             gm.turn(self.root, "Again")
         self.assertEqual(self.calls("claude")[1][self.calls("claude")[1].index("--max-turns") + 1], "7")
@@ -256,6 +262,23 @@ class GmTest(CampaignTest):
         hook = {"hook_event_name": "UserPromptSubmit", "cwd": str(self.root), "prompt": gm.BOOK_PROMPT}
         cli._say_from_hook(json.dumps(hook))
         self.assertEqual(self.said(), [])
+
+    def test_a_new_session_starts_on_the_table_without_reading_it_first(self):
+        # The first prompt holds what `solo resume --book` and `solo scene` say: no model call spent on either.
+        with self.session() as c:
+            opening = gm.book_prompt(c)
+            c.say("The gate is shut. What do you do?")
+            c.say("I knock.", by="player")
+            resumed = gm.book_prompt(c)
+            with unittest.mock.patch.object(gm, "_PROMPT_BYTES", 100):
+                too_long = gm.book_prompt(c)
+        self.assertIn("Open the adventure from the scene below: describe the first scene", opening)
+        self.assertTrue(resumed.startswith(gm.BOOK_PROMPT))
+        self.assertIn("Read the scene below, then:", resumed)
+        self.assertIn("## Player since\nI knock.", resumed)
+        self.assertIn("## Exits", resumed)  # the scene digest
+        self.assertNotIn("solo scene` for yourself", resumed)
+        self.assertEqual(too_long, f"{gm.BOOK_PROMPT} Run `solo resume --book` and do exactly what it says.")
 
     def test_resume_for_the_book_doesnt_repeat_the_last_words(self):
         with self.session() as c:

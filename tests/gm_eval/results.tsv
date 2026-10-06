@@ -1,0 +1,7 @@
+at	scenario	commit	agent	model	effort	seed	run	turns	median_s	commands_per_turn	model_calls_per_turn	refused	cost_usd	rules	adventure	state	secrecy	narration	agency	table	expectations
+2026-10-06T09:32:27	bell-opening	65d2734	claude	default	medium	1	1	7	25.1	5.1	4.3	2	3.31	5	5	5	5	4	5		3/3
+2026-10-06T09:36:01	bell-opening	65d2734	claude	default	medium	1	2	7	28.4	5.9	5.3	6	3.61	5	5	4	4	4	5		3/3
+2026-10-06T09:39:42	bell-opening	65d2734	claude	default	medium	1	3	7	24.8	4.7	4.7	4	3.65	5	5	4	4	3	3		3/3
+2026-10-06T09:44:13	red-tusk-memory	65d2734	claude	default	medium	1	1	9	19.6	3.8	4.2	0	3.27	5	5	5	4	4	5		1/2
+2026-10-06T09:48:05	red-tusk-memory	65d2734	claude	default	medium	1	2	9	18.0	3.9	4.1	3	2.71	5	5	5	4	4	5		1/2
+2026-10-06T09:52:31	red-tusk-memory	65d2734	claude	default	medium	1	3	9	18.7	4.9	5.3	5	3.24	5	5	5	5	5	5		2/2

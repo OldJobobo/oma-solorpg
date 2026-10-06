@@ -79,9 +79,10 @@ A coding agent in a terminal shows its tool calls, permission prompts and JSON b
 +---------------------------+  reads  +-------------------------------+        +------------------------+
 ```
 
-- `solo gm turn [text]`: one exchange. It takes `.solo/turn.lock` (one turn at a time), records the player's words (`said`), runs the agent with the campaign as its working folder, and rewrites `.solo/turn.json` as the agent works: `status` (thinking, writing, done, error, stopped), `text` (the narration so far; text before a tool call is dropped as thinking aloud), `doing` (reading the table, rolling the dice, writing it down), `player`, `error`. The final message is recorded as the GM's `said`. The agent's session id is kept in `.solo/agent.json`; a new or lost session starts from `solo resume --book`, so the campaign stays the memory.
+- `solo gm turn [text]`: one exchange. It takes `.solo/turn.lock` (one turn at a time), records the player's words (`said`), runs the agent with the campaign as its working folder, and rewrites `.solo/turn.json` as the agent works: `status` (thinking, writing, done, error, stopped), `text` (the narration so far; text before a tool call is dropped as thinking aloud), `doing` (reading the table, rolling the dice, writing it down), `player`, `error`. The final message is recorded as the GM's `said`. The agent's session id is kept in `.solo/agent.json`; a new or lost session's first prompt carries what `solo resume --book` and `solo scene` print, so the campaign stays the memory and the GM spends no model call reading it.
 - `solo gm pace [quick|normal|careful]`: the player's, kept in `$XDG_STATE_HOME/solo/gm.json` for every campaign (the default is normal). Each turn passes it to the agent as an effort level: `--effort low|medium|high` for Claude Code, `-c model_reasoning_effort=...` for Codex. Without it, Claude Code would use the effort the player set for coding.
 - Claude Code ignores a project's permissions until its folder is trusted interactively, so the adapter passes the GM's allowlist with `--allowedTools`. Hooks still record the transcript; recording twice is harmless (`say` drops a repeat).
+- The GM starts bare: `--strict-mcp-config` and `--no-chrome` leave out the player's own MCP servers and claude.ai connectors (they took two of the three seconds a turn spent starting, and have no place beside adventure text), and `--tools Bash,Read` keeps two of Claude Code's tools, with the skill's folder readable (`--add-dir`), which cut a turn's input by more than half.
 - Other agents keep the terminal (`solo play --terminal`); the Book shows their story as it is recorded, if they record it (`solo say`).
 - `solo play` opens the Book when the plugin is installed and the agent is supported, and starts the opening turn when nothing has been said yet.
 
@@ -273,7 +274,7 @@ player text
  -> agent narrates from what was committed
 ```
 
-The player acts from the panel too (checks, pushes, rests, oracle). The GM starts every turn with `solo log -n 5` so it narrates what already happened instead of rolling again.
+The player acts from the panel too (checks, pushes, rests, oracle). In the Book, each prompt lists what they did since the GM's last message; in a terminal the GM starts every turn with `solo log -n 5`. Either way it narrates what already happened instead of rolling again.
 
 ### The transcript and resuming
 

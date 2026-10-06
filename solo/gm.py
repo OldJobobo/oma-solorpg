@@ -35,9 +35,10 @@ from .library import REPO, state_home
 PREAMBLE = "You are the game master of the solo campaign in this folder."
 BOOK_PROMPT = (
     f"{PREAMBLE} Follow the solo-gm skill (or read AGENTS.md). The player reads you in the Book, "
-    "a window that already shows everything said so far and every roll as it happens. "
-    "Run `solo resume --book` and do exactly what it says."
+    "a window that already shows everything said so far and every roll as it happens."
 )
+# Linux holds one argument to 128 KiB, and the prompt is one: past this, the GM reads the table with solo.
+_PROMPT_BYTES = 100_000
 # What a Claude Code session may run without asking. The campaign's settings.json says the
 # same, but Claude ignores a project's permissions until its folder has been trusted in an
 # interactive session, so the headless GM carries its own list.
@@ -59,6 +60,11 @@ _BUDGET_TURNS = 200
 # Tools a GM turn is never given, on top of the short list of `solo` commands it is allowed: nothing on the web,
 # and no file written outside solo.
 _DENIED = ("WebFetch", "WebSearch", "Edit", "Write", "NotebookEdit")
+# What a Claude Code GM starts with. No MCP servers and no browser: the player's own connectors (mail and
+# documents among them) took two of the three seconds a turn spent starting, and have no place beside adventure
+# text nobody vetted. Of the built-in tools, Bash for solo and Read for the skill, whose folder is readable:
+# the others' descriptions were more than half of a turn's input.
+_CLAUDE_KIT = ("--strict-mcp-config", "--no-chrome", "--tools", "Bash,Read", "--add-dir", str(REPO / "skills" / "solo-gm"))
 # The GM's pace, which the player picks on the Table, and the effort level it asks of the
 # agent. A quick turn arrives sooner and spends fewer tokens. A careful one thinks longer
 # about the rules.
@@ -173,25 +179,26 @@ def _turn(root, folder, text, agent, live):
         return live.fail("No default agent is set. Choose one with: omarchy default agent <name>")
     elif not supported(agent):
         return live.fail(f"Your default agent ({agent}) can't write in the Book yet. Open the GM in a terminal instead.")
-    table = []
-    if text and text.strip():
-        with campaign.session(root) as c:
-            c.say(text, "player")
-            table = since_gm(c)
     saved = _load(folder / "agent.json")
     session = saved.get("session") if saved.get("agent") == agent else None
+    with campaign.session(root) as c:
+        if text and text.strip():
+            c.say(text, "player")
+        prompt = player_prompt(text, since_gm(c)) if session and text else book_prompt(c)
     adapter = ADAPTERS[agent]
     used = spent(root, session)
     over = overspent(used)
     if over:
         return live.fail(over)
-    result = adapter.run(root, player_prompt(text, table) if session and text else BOOK_PROMPT, session, live, budget_left(used))
+    result = adapter.run(root, prompt, session, live, budget_left(used))
     result["stopped"] = result.get("stopped") or _asked_to_stop(folder, live)
     if result.get("stale") and not result["stopped"]:
         # The agent lost the session (cleared, or another machine): start a fresh one,
         # which catches up from the campaign itself.
         live.reset()
-        result = adapter.run(root, BOOK_PROMPT, None, live, budget_left(spent(root, None)))
+        with campaign.session(root) as c:
+            prompt = book_prompt(c)
+        result = adapter.run(root, prompt, None, live, budget_left(spent(root, None)))
         result["stopped"] = result.get("stopped") or _asked_to_stop(folder, live)
     # What the turn cost: kept with the turn, and added to what the session has spent so far.
     live.update(usage=result.get("usage"))
@@ -237,6 +244,17 @@ def since_gm(c, limit=30):
     hidden = set(c.state["hidden"])
     return [f"#{e['seq']} {campaign.gm_line(e)}" + (" (hidden from the player)" if e["seq"] in hidden else "")
             for e in c.events if e["seq"] > last and e["type"] != "said"][-limit:]
+
+
+def book_prompt(c):
+    """A new agent session's first prompt carries what `solo resume --book` and `solo scene` print, so the GM
+    starts on the table instead of spending a model call to read each (three or four seconds of an opening)."""
+    from .cli import resume_digest, scene_digest
+    digests = f"{resume_digest(c, book=True, scene=True)}\n{scene_digest(c)}\n"
+    if len(digests.encode()) < _PROMPT_BYTES:
+        return f"{BOOK_PROMPT} Below is what `solo resume --book` and `solo scene` say, as the table stands now (no need to run them): do exactly what the first says.\n\n{digests}"
+    else:
+        return f"{BOOK_PROMPT} Run `solo resume --book` and do exactly what it says."
 
 
 def player_prompt(text, table):
@@ -367,7 +385,7 @@ class Claude(Adapter):
 
     def command(self, prompt, session, left=None):
         tools = [f"Bash(solo {name}:*)" for name in campaign_commands()]
-        command = ["claude", "-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages",
+        command = ["claude", "-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages", *_CLAUDE_KIT,
                    "--allowedTools", *tools, "--disallowedTools", *_DENIED, "--max-turns", str(_max_turns())]
         # What the session has left to spend is a ceiling on this turn too.
         if left and left.get("usd"):

@@ -1188,10 +1188,11 @@ def _ago(seconds):
         return f"{minutes // 1440} days"
 
 
-def resume_digest(c, book=False):
+def resume_digest(c, book=False, scene=False):
     """What the GM needs to pick up exactly where the table stopped: its own last words,
     to repeat as they were, and what happened after them. In the Book the player has
-    already read them, so the GM carries on instead of repeating itself."""
+    already read them, so the GM carries on instead of repeating itself. `scene`: the
+    scene digest comes right after this (the Book's first prompt), so it isn't run."""
     state, events = c.state, c.events
     speech = [e for e in events if e["type"] == "said" and e["seq"] not in state["struck"]]  # what the player cut is gone
     last = next((e for e in reversed(speech) if e["by"] == "gm"), None)
@@ -1204,7 +1205,8 @@ def resume_digest(c, book=False):
         return "\n".join(lines + [
             "Nothing has been said at this table yet: this is the opening.",
             "",
-            "Run `solo scene`, then open the adventure: describe the first scene and end with a question to the player.",
+            ("Open the adventure from the scene below" if scene else "Run `solo scene`, then open the adventure")
+            + ": describe the first scene and end with a question to the player.",
             "", *_threads(c),
         ]).rstrip() + "\n"
     hidden = set(state["hidden"])
@@ -1219,7 +1221,7 @@ def resume_digest(c, book=False):
         steps.append("After it, narrate only what is listed under \"Since then\", briefly and without naming hidden things.")
     steps.append("The player already answered (under \"Player since\"): carry on from their words." if answer
                  else "Answer with a short line that hands the scene back to the player." if book else "Wait for the player's answer.")
-    lines += ["Resume exactly where the table stopped. Run `solo scene` for yourself, then:", ""]
+    lines += [f"Resume exactly where the table stopped. {'Read the scene below' if scene else 'Run `solo scene` for yourself'}, then:", ""]
     lines += [f"{number}. {step}" for number, step in enumerate(steps, 1)]
     lines += ["", "## Last said", "", last["text"], ""]
     if since:
