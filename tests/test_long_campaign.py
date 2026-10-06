@@ -3,8 +3,12 @@ record read back from the log (the chronology, recall, history, the resume's lon
 places revisited), the people the GM made up, what word has spread, kinds of foes, where
 the story has put people, and a hero's story carried into the next adventure."""
 
+import contextlib
+import io
 import json
+import marshal
 import random
+import unittest.mock
 
 from helpers import BUNDLED, DRAGONBANE, FIXTURES, CampaignTest, Dice
 from test_cli import CliCase
@@ -415,6 +419,57 @@ class Shapes(CampaignTest):
             ]:
                 with self.subTest(payload=payload), self.assertRaisesRegex(SoloError, message):
                     c.commit(payload)
+
+
+class KeptReplay(CampaignTest):
+    """A long campaign keeps its replay for the next command: the same state and record a replay from
+    the start gives, and never one that the log, the packs or the engine have moved on from."""
+
+    def kept(self):
+        return self.root / ".solo" / "replay.marshal"
+
+    def grow(self):
+        with self.session() as c:
+            say(c, campaign._KEEP_EVERY)
+            go(c, "gate")
+            c.commit({"note": "Ragna cuts a mark into the gate", "time": {"stretch": 1}})
+
+    def test_the_next_command_starts_from_it_and_ends_where_a_replay_from_the_start_would(self):
+        self.grow()
+        self.assertTrue(self.kept().exists())
+        with self.session() as c:
+            self.assertEqual(c.kept, len(c.events))  # nothing left to replay
+            go(c, "hall")
+            say(c, 2)
+            self.assertEqual(c.state, campaign.fold(c.system, c.adventure, c.events))
+            self.assertEqual(c.chronology(), campaign.chronology(c.system, c.adventure, c.events))
+            self.assertIn("Ragna cuts a mark into the gate", cli.resume_digest(c))
+
+    def test_a_log_changed_by_hand_or_another_engine_replays_from_the_start(self):
+        self.grow()
+        log = self.root / "events.jsonl"
+        log.write_text(log.read_text().replace("cuts a mark into", "chalks a mark on"))
+        with self.session() as c:
+            self.assertEqual(c.kept, 0)
+            self.assertIn("Ragna chalks a mark on the gate", [m["text"] for m in campaign.moments(c.chronology())])
+        with unittest.mock.patch.object(campaign, "_replay_key", return_value=["another engine"]):
+            with self.session() as c:
+                self.assertEqual(c.kept, 0)
+        self.kept().write_bytes(b"damaged")
+        with self.session() as c:
+            self.assertEqual(c.kept, 0)
+            self.assertEqual(c.state, campaign.fold(c.system, c.adventure, c.events))
+
+    def test_rebuild_trusts_only_the_log(self):
+        self.grow()
+        kept = marshal.loads(self.kept().read_bytes())
+        kept["state"]["time"] = 999999  # what a stale replay would hold
+        self.kept().write_bytes(marshal.dumps(kept))
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(cli.main(["-C", str(self.root), "rebuild"]), 0)
+        with self.session() as c:
+            self.assertEqual(c.state, campaign.fold(c.system, c.adventure, c.events))
+            self.assertNotEqual(c.state["time"], 999999)
 
 
 class TheHerosStory(CampaignTest):

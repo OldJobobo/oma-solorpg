@@ -198,6 +198,11 @@ Bundled content lives in the repository (the plugin folder). The player's own co
 
 A name resolves in `~/Games/solo` first, then in the repository. A path always works. `campaign.toml` keeps absolute pack paths; if a pack moved (the plugin reinstalled elsewhere), the engine finds it again by folder name in the library.
 
+Every command is a process of its own (the Table runs one per click, the GM one per roll or commit), so nothing it reads may cost much to read again. Two caches keep it at about 55 ms, and both are safe to delete:
+
+- `$XDG_CACHE_HOME/solo/toml-<python>.marshal` (default `~/.cache/solo`): every pack's TOML files as parsed, each kept while its file keeps its size and modification time. A file changed in the last two seconds is parsed afresh, so a second save in the same clock tick is never missed. A Dragonbane campaign reads some four hundred files a command; parsing them was a third of its time.
+- `<campaign>/.solo/replay.marshal`: the state and the chronology after the log's first events, so a long campaign doesn't replay its whole log for every command. It stands while those events are the same bytes (their crc32) and the packs and the engine are the ones it was made from, and it is written again once the log has grown fifty events past it. `solo rebuild` replays from the log alone.
+
 `solo library` prints everything the Home and New adventure screens need: systems (name, family, creation tables, pre-made heroes), adventures (id, title, system, summary), campaigns (path, title, hero, scene, last played, current), and `problems`: packs of the player's own that didn't load, and why (a half-built pack is left out, never the whole library).
 
 ### Character creation

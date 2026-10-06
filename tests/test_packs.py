@@ -1,7 +1,10 @@
 import copy
+import os
 import tempfile
+import time
 import tomllib
 import unittest
+import unittest.mock
 from pathlib import Path
 
 from helpers import DRAGONBANE, RED_TUSK
@@ -53,6 +56,44 @@ class LoadingTest(unittest.TestCase):
             (rules / "services.md").write_text("# Services\nLodging at Inn: 5 silver.")
             self.assertEqual([p["title"] for p in packs.search_rules([rules], "inn")[0]], ["Services"])
             self.assertEqual(packs.search_rules([rules], "condition"), ([{"title": "Pushing", "text": "# Pushing\nReroll for a condition."}], "text"))
+
+
+class ParsedTomlTest(unittest.TestCase):
+    """TOML parsed once and kept for the next command, as long as the file stays as it was."""
+
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.tmp = Path(folder.name)
+        for patch in (unittest.mock.patch.dict(os.environ, {"XDG_CACHE_HOME": str(self.tmp / "cache")}),
+                      unittest.mock.patch.dict(packs._parsed, {"entries": None, "changed": False})):
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def test_a_file_is_parsed_once_until_it_changes_and_a_new_change_is_never_kept(self):
+        path = self.tmp / "omens.toml"
+        path.write_text('name = "Omens"\n')
+        long_ago = time.time() - 60
+        os.utime(path, (long_ago, long_ago))
+        with unittest.mock.patch("tomllib.load", wraps=tomllib.load) as parse:
+            packs.load_data(path)["name"] = "changed by whoever read it"
+            self.assertEqual(packs.load_data(path), {"name": "Omens"})  # kept, and a copy of its own each time
+            self.assertEqual(parse.call_count, 1)
+            path.write_text('name = "Signs"\n')  # just written: a second write this second could keep its size and time
+            self.assertEqual([packs.load_data(path), packs.load_data(path)], [{"name": "Signs"}] * 2)
+            self.assertEqual(parse.call_count, 3)
+            os.utime(path, (long_ago, long_ago + 1))
+            packs.load_data(path)
+            packs._write_parsed()
+            packs._parsed["entries"] = None  # the next command: it reads what this one kept
+            self.assertEqual(packs.load_data(path), {"name": "Signs"})
+            self.assertEqual(parse.call_count, 4)
+
+    def test_a_damaged_cache_is_parsed_afresh(self):
+        cache = packs._parsed_path()
+        cache.parent.mkdir(parents=True)
+        cache.write_bytes(b"not marshal")
+        self.assertEqual(packs.load_data(DRAGONBANE / "system.toml"), tomllib.loads((DRAGONBANE / "system.toml").read_text()))
 
 
 class ValidationTest(unittest.TestCase):

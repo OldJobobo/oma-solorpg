@@ -1,15 +1,19 @@
 """A campaign folder: the event log, the state derived from it, and every action that appends to it.
 
 events.jsonl is the source of truth. state.json is fold(packs, events), rewritten after
-each command for the panel, and safe to delete: `solo rebuild` recreates it.
+each command for the panel, and safe to delete: `solo rebuild` recreates it. So is
+.solo/replay.marshal, where a long campaign keeps its replay for the next command.
 """
 
 import copy
 import fcntl
 import json
+import marshal
 import os
 import re
+import sys
 import unicodedata
+import zlib
 from collections import Counter
 from contextlib import contextmanager
 from datetime import datetime
@@ -59,6 +63,12 @@ _MONEY = {"gear", "silver", "gold", "copper", "money", "coins", "coin", "treasur
 _LOG_SIZE = 40
 # The Book's feed: speech and what the player saw happen, oldest first.
 _STORY_SIZE = 150
+# A long campaign's log replayed from the start for every command took longer than anything else the command
+# did (a tenth of a second at four thousand events, half a second at twenty thousand). So the replay is kept
+# in .solo/replay.marshal: the state and the chronology after the log's first `count` events. It stands while
+# those events are the same bytes (their crc32) and the packs and the engine are the ones it was made from,
+# and it is kept again once the log has grown this many events past it.
+_KEEP_EVERY = 50
 
 
 def find(start=None):
@@ -231,7 +241,8 @@ def character_sheet(data, system):
 @contextmanager
 def session(root):
     """Open a campaign under an exclusive lock, so the agent and the panel never write
-    at the same time. state.json is rewritten on the way out if anything changed."""
+    at the same time. state.json is rewritten on the way out if anything changed, and a
+    command that went through keeps the replay for the next one when it has fallen behind."""
     root = Path(root)
     with open(root / ".lock", "w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
@@ -243,7 +254,7 @@ def session(root):
             # What a failed command wrote before it failed stands (a roll is never taken back),
             # but the state it was changing may be half changed: take it from the log again.
             if len(campaign.events) != count:
-                campaign.state = fold(campaign.system, campaign.adventure, campaign.events)
+                campaign.state, campaign.entries = replay(campaign.system, campaign.adventure, campaign.events)
             raise
         finally:
             if len(campaign.events) != count:
@@ -252,6 +263,7 @@ def session(root):
                 campaign.come_due()
             if len(campaign.events) != count or not (root / "state.json").exists():
                 campaign.save()
+        campaign.keep()
 
 
 class Campaign:
@@ -262,11 +274,18 @@ class Campaign:
         self.adventure = packs.with_system(self.system, packs.load_adventure(_pack(self.root, self.config["adventure"], library.find_adventure), drafts=False))
         if self.adventure.get("weapons"):
             self.system["weapons"] = {**self.system.get("weapons", {}), **self.adventure["weapons"]}
-        self.events = _read_events(self.root / "events.jsonl")
+        self.events, log = _read_events(self.root / "events.jsonl")
         # Where this session's own events begin: what one command did, whatever came first.
         self.opened = len(self.events)
-        self.state = fold(self.system, self.adventure, self.events)
-        self._chronology = None
+        # The state after every event, and the chronology: from the replay kept for a long
+        # campaign while it stands, and the events since, else from the start.
+        kept = _read_kept(self, log) if len(self.events) >= _KEEP_EVERY else None
+        if kept:
+            self.kept = kept["count"]
+            self.state, self.entries = replay(self.system, self.adventure, self.events[self.kept:], kept["state"], kept["entries"])
+        else:
+            self.kept = 0
+            self.state, self.entries = replay(self.system, self.adventure, self.events)
 
     @property
     def problems(self):
@@ -289,18 +308,30 @@ class Campaign:
             event["seed"] = seed
         # Applied before it is written: an event the state can't take is refused, never left
         # in the log for every later replay to trip over.
-        apply(self.state, event, self.adventure)
+        _advance(self.state, self.entries, event, self.adventure, strict=True)
         with open(self.root / "events.jsonl", "a", encoding="utf-8") as log:
             log.write(json.dumps(event, ensure_ascii=False) + "\n")
         self.events.append(event)
         return event
 
     def chronology(self):
-        """The campaign replayed as moments with where and when (see `chronology`), kept
-        until the log grows."""
-        if self._chronology is None or self._chronology[0] != len(self.events):
-            self._chronology = (len(self.events), chronology(self.system, self.adventure, self.events))
-        return self._chronology[1]
+        """The campaign replayed as moments with where and when (see `chronology`)."""
+        return self.entries
+
+    def keep(self):
+        """Keep the replay for the next command, once the log has grown _KEEP_EVERY events past the one kept."""
+        if len(self.events) - self.kept >= _KEEP_EVERY:
+            log = (self.root / "events.jsonl").read_bytes()
+            kept = {"key": _replay_key(self), "count": len(self.events), "size": len(log), "crc": zlib.crc32(log), "state": self.state,
+                    "entries": [{k: v for k, v in entry.items() if k != "event"} for entry in self.entries]}
+            path = self.root / ".solo" / "replay.marshal"
+            try:
+                path.parent.mkdir(exist_ok=True)
+                path.with_name("replay.marshal.tmp").write_bytes(marshal.dumps(kept))
+                os.replace(path.with_name("replay.marshal.tmp"), path)
+            except (OSError, ValueError):  # it only saves time: the command stands without it
+                return
+            self.kept = len(self.events)
 
     def come_due(self):
         """Consequences whose moment has just come (the hero walked back into the smithy, two
@@ -2730,6 +2761,29 @@ def fold(system, adventure, events):
     return state
 
 
+def replay(system, adventure, events, state=None, entries=None):
+    """The state after the events, and the chronology (see `chronology`), in one pass: from the
+    start, or from a state and a chronology already replayed up to the first of them."""
+    if state is None:
+        state, entries = initial_state(system, adventure), []
+    for event in events:
+        _advance(state, entries, event, adventure)
+    return state, entries
+
+
+def _advance(state, entries, event, adventure, strict=False):
+    """One event on the state, and its entry in the chronology. A new event the state can't take
+    is refused (`strict`); one already in the log is passed over and said so (`_replay`)."""
+    seen = set(state["visited"])
+    was_dead = bool(state["pc"] and state["pc"]["dead"])
+    if strict:
+        apply(state, event, adventure)
+    else:
+        _replay(state, event, adventure)
+    entries.append({"seq": event["seq"], "event": event, "time": state["time"], "scene": state["scene"],
+                    "title": state["scene_title"], "moments": _moments(event, state, adventure, seen, was_dead)})
+
+
 def _replay(state, event, adventure):
     """`apply` for an event already in the log. The packs are read afresh each time, and one
     edited since (a clock renamed, an NPC taken out) may no longer hold what an old event
@@ -2808,15 +2862,7 @@ def chronology(system, adventure, events):
     (arrivals, people met and what they now think, fates, promises, consequences, gear won and
     lost, fights, deaths, the chronicle). The GM's long memory is read from this, so it holds
     for campaigns begun before it existed, and needs no one to have written anything down."""
-    state = initial_state(system, adventure)
-    entries = []
-    for event in events:
-        seen = set(state["visited"])
-        was_dead = bool(state["pc"] and state["pc"]["dead"])
-        _replay(state, event, adventure)
-        entries.append({"seq": event["seq"], "event": event, "time": state["time"], "scene": state["scene"],
-                        "title": state["scene_title"], "moments": _moments(event, state, adventure, seen, was_dead)})
-    return entries
+    return replay(system, adventure, events)[1]
 
 
 def moments(entries, after=0, kinds=None):
@@ -3888,16 +3934,49 @@ def _pack(root, recorded, find):
 
 
 def _read_events(path):
-    events = []
-    if path.exists():
-        _mend_tail(path)
-        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+    """The log's events, and its bytes (what a kept replay is checked against). Events are split at
+    newlines only: a message may hold a line separator (U+2028) that str.splitlines would cut at."""
+    if not path.exists():
+        return [], b""
+    _mend_tail(path)
+    data = path.read_bytes()
+    lines = data.decode("utf-8").split("\n")
+    filled = [line for line in lines if line.strip()]
+    try:
+        events = json.loads(f"[{','.join(filled)}]")  # the log in one parse, a third faster than a line at a time
+    except json.JSONDecodeError:
+        events = None
+    if events is None or len(events) != len(filled):
+        # Which line is damaged: read them one at a time.
+        events = []
+        for number, line in enumerate(lines, 1):
             if line.strip():
                 try:
                     events.append(json.loads(line))
                 except json.JSONDecodeError as error:
                     raise SoloError(f"{path} line {number} is damaged: {error}") from None
-    return events
+    return events, data
+
+
+def _read_kept(c, log):
+    """The replay kept for the next command, if it stands: the log's first `size` bytes are the
+    ones it was made from, and so are the packs and the engine."""
+    try:
+        kept = marshal.loads((c.root / ".solo" / "replay.marshal").read_bytes())
+    except (OSError, EOFError, ValueError, TypeError):
+        return None
+    if not (isinstance(kept, dict) and kept.get("count", len(c.events) + 1) <= len(c.events) and kept.get("size", len(log) + 1) <= len(log)
+            and zlib.crc32(memoryview(log)[:kept["size"]]) == kept.get("crc") and kept.get("key") == _replay_key(c)):
+        return None
+    for entry, event in zip(kept["entries"], c.events):
+        entry["event"] = event
+    return kept
+
+
+def _replay_key(c):
+    """What a kept replay was made from: this Python, the engine's code, and the packs as read."""
+    engine = [(path.name, stat.st_mtime_ns, stat.st_size) for path in sorted(Path(__file__).parent.glob("*.py")) for stat in [path.stat()]]
+    return [list(sys.version_info[:3]), engine, zlib.crc32(json.dumps([c.system, c.adventure], default=str).encode())]
 
 
 def _mend_tail(path):

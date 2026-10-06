@@ -270,6 +270,14 @@ class TornLogTest(CampaignTest):
         with self.assertRaisesRegex(SoloError, "line 1 is damaged"):
             self.session().__enter__()
 
+    def test_a_line_separator_in_a_message_stays_inside_its_event(self):
+        # JSON keeps U+2028 and U+0085 as they are, and str.splitlines cuts at both: a pasted line read the whole log as damaged.
+        text = "The bell tolls.\u2028Silence.\x85 What do you do?"
+        with self.session() as c:
+            c.say(text, "player")
+        with self.session() as c:
+            self.assertEqual(c.events[-1]["text"], text)
+
 
 class ReplayTest(CampaignTest):
     """The log stays readable: an event the state can't take never reaches it, and packs

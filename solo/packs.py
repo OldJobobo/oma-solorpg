@@ -6,8 +6,13 @@ keys win, so re-running an import never clobbers authored content.
 """
 
 import ast
+import atexit
 import json
+import marshal
+import os
 import re
+import sys
+import time
 import tomllib
 import unicodedata
 from pathlib import Path
@@ -48,14 +53,67 @@ def load_data(path):
     path = Path(path)
     try:
         if path.suffix == ".toml":
-            with open(path, "rb") as f:
-                return tomllib.load(f)
+            return _toml(path)
         else:
             return json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         raise SoloError(f"missing file: {path}") from None
     except (tomllib.TOMLDecodeError, json.JSONDecodeError, UnicodeDecodeError) as error:
         raise SoloError(f"can't parse {path}: {error}") from None
+
+
+# TOML files as parsed before, kept from one command to the next: a Dragonbane campaign reads some four
+# hundred of them for every command, and parsing them was a third of its time. An entry stands while its
+# file keeps its size and modification time. A file changed in the last two seconds is read afresh, since
+# a second change within the same clock tick would leave both the same (git's "racy" files).
+_RACY_NS = 2_000_000_000
+_parsed = {"entries": None, "changed": False}
+
+
+def _toml(path):
+    stat = path.stat()
+    stamp, key = (stat.st_mtime_ns, stat.st_size), str(path.absolute())
+    if _parsed["entries"] is None:
+        _parsed["entries"] = _read_parsed()
+    cached = _parsed["entries"].get(key)
+    if cached and cached[0] == stamp:
+        return marshal.loads(cached[1])  # a copy of its own: a caller may change what it gets
+    with open(path, "rb") as f:
+        data = tomllib.load(f)
+    if time.time_ns() - stat.st_mtime_ns > _RACY_NS:
+        try:
+            _parsed["entries"][key] = (stamp, marshal.dumps(data))
+        except ValueError:  # a TOML date marshal can't hold: that file is parsed every time
+            return data
+        if not _parsed["changed"]:
+            _parsed["changed"] = True
+            atexit.register(_write_parsed)
+    return data
+
+
+def _parsed_path():
+    base = os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache"
+    return Path(base) / "solo" / f"toml-{sys.version_info[0]}.{sys.version_info[1]}.marshal"
+
+
+def _read_parsed():
+    try:
+        entries = marshal.loads(_parsed_path().read_bytes())
+    except (OSError, EOFError, ValueError, TypeError):
+        return {}
+    return entries if isinstance(entries, dict) else {}
+
+
+def _write_parsed():
+    """On the way out, when something was parsed: the entries whose files are still there."""
+    path = _parsed_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_name(f"{path.name}.{os.getpid()}")
+        temporary.write_bytes(marshal.dumps({key: entry for key, entry in _parsed["entries"].items() if os.path.exists(key)}))
+        os.replace(temporary, path)
+    except OSError:  # a cache: a command never fails over it
+        pass
 
 
 def load_system(path):

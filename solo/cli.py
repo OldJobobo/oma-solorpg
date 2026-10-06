@@ -7,13 +7,14 @@ import os
 import random
 import re
 import shutil
-import subprocess
 import sys
 import time
 from datetime import datetime
 from pathlib import Path
 
-from . import SoloError, audit, booktables, books, campaign, combat, compare, creation, datasworn, desk, dice, extract, foundry, generate, gm, library, mechanics, oracle, packs, report, review
+# The commands that author packs, run the GM or drive the desktop import those modules where they run: a play
+# command, which the Table and the GM wait on, loads none of them.
+from . import SoloError, campaign, combat, creation, dice, library, mechanics, oracle, packs
 from .library import REPO
 from .packs import ATTITUDES
 
@@ -40,7 +41,7 @@ HOOK_EVENTS = ("UserPromptSubmit", "Stop")
 
 
 def main(argv=None):
-    args = _parser().parse_args(argv)
+    args = _parser(_command(sys.argv[1:] if argv is None else argv)).parse_args(argv)
     try:
         args.run(args)
     except SoloError as error:
@@ -69,6 +70,16 @@ class _Parser(argparse.ArgumentParser):
 
     def error(self, message):
         self.exit(2, f"solo: {message} (see {self.prog} --help)\n")
+
+    def _get_validation_formatter(self):
+        # Python 3.14 checks each argument with a formatter that first sets up help's colours, and importing
+        # them took ten milliseconds of every command. The check reads no colours; --help still has them.
+        return _Uncoloured(prog=self.prog)
+
+
+class _Uncoloured(argparse.HelpFormatter):
+    def _set_color(self, color):
+        pass
 
 
 def _trace(argv, error):
@@ -175,6 +186,7 @@ def cmd_use(args):
 def cmd_delete(args):
     """Delete a campaign folder for good: the story, the hero, the log. The panel asks
     first and passes --yes; at a terminal it asks here. Never from inside a GM turn."""
+    from . import gm
     root = Path(args.dir).expanduser().resolve()
     if os.environ.get("SOLO_BOOK"):
         raise SoloError("the GM can't delete campaigns")
@@ -206,6 +218,8 @@ def _play(root, terminal=False):
     terminal instead, or focus it when it is already open. The GM needs `solo` on PATH and
     the skills, so their links are made here too (a plugin installed with `omarchy plugin
     add` never ran `solo setup`)."""
+    import subprocess
+    from . import gm
     campaign.set_current(root)
     for line in _links():
         if not line.startswith("ok"):
@@ -244,6 +258,7 @@ def _play(root, terminal=False):
 def _gm_window(root):
     """The Hyprland window of a GM that `solo play` started for this campaign: the first
     ancestor of a process carrying SOLO_GM=<root> that Hyprland lists as a window."""
+    import subprocess
     hyprctl = shutil.which("hyprctl")
     listed = subprocess.run([hyprctl, "clients", "-j"], capture_output=True, text=True) if hyprctl else None
     try:
@@ -271,6 +286,7 @@ def _parent(pid):
 
 
 def cmd_setup(args):
+    import subprocess
     for line in _links(plugin=args.plugin):
         print(line)
     if str(Path.home() / ".local/bin") not in os.environ.get("PATH", "").split(":"):
@@ -400,12 +416,14 @@ def cmd_strike(args):
 
 def cmd_review(args):
     """A campaign played for real, checked the way a play test is: what to write the next scenario about."""
+    from . import review
     with _open(args) as c:
         print(review.render(review.review(c, args.trace), c.state["title"]))
 
 
 def cmd_report(args):
     """A report for a bug: what happened by ids, numbers and dice, with the books' words left out."""
+    from . import report
     with _open(args) as c:
         text = report.report(c, events=args.n, messages=0 if args.no_messages else args.messages)
     if args.out:
@@ -431,6 +449,8 @@ def cmd_history(args):
 
 
 def cmd_rebuild(args):
+    # From the log alone: the replay a long campaign keeps goes, and is kept again from this one.
+    (campaign.find(args.campaign) / ".solo" / "replay.marshal").unlink(missing_ok=True)
     with _open(args) as c:
         c.save()
         print(f"state.json rebuilt from {len(c.events)} events")
@@ -460,6 +480,7 @@ def cmd_validate(args):
 def cmd_campaign(args):
     """Campaigns generated from a premise: roll one, roll its next mission, roll for its
     author, and check what stands between it and play."""
+    from . import generate
     if args.action == "new":
         if not args.target:
             raise SoloError('which adventure? solo campaign new <id> --premise "..."')
@@ -501,6 +522,7 @@ def cmd_campaign(args):
 
 def cmd_inventory(args):
     """Start a book's inventory from its extract: a file per chapter, an item per section and table."""
+    from . import audit
     written = audit.scaffold(Path(args.pack).expanduser(), args.extract, source=args.source)
     print(f"wrote {len(written)} files in {Path(args.pack).expanduser()}: " + ", ".join(written))
     print("Every page with text is cited by a todo item. Refine each chapter file, map every item, "
@@ -509,6 +531,7 @@ def cmd_inventory(args):
 
 def cmd_audit(args):
     """The pack against its inventory.toml and the book's pages."""
+    from . import audit
     if args.adventure:
         path, kind = library.find_adventure(args.adventure), "adventure"
     else:
@@ -521,6 +544,7 @@ def cmd_audit(args):
 
 def cmd_compare(args):
     """Two system packs side by side."""
+    from . import compare
     first, second = (library.find_system(name) if not Path(name).expanduser().is_dir() else Path(name).expanduser() for name in (args.first, args.second))
     print(compare.render(compare.compare(first, second), (first.name, second.name), 0 if args.all else 8), end="")
 
@@ -828,6 +852,7 @@ def _say_from_hook(raw):
         # A Book turn records both sides itself, the GM's words after dropping its notes;
         # the hook's raw copy would differ from that and show twice.
         return
+    from . import gm
     try:
         data = json.loads(raw)
         cwd = Path(data.get("cwd") or Path.cwd())
@@ -867,6 +892,7 @@ def _last_reply(transcript):
 
 def cmd_gm(args):
     """The Book's side of the GM: run a turn, stop it, report on it, or set its pace (JSON)."""
+    from . import gm
     if args.action == "pace":
         # The player's, for every campaign: it needs none.
         _json({"pace": gm.set_pace(" ".join(args.text)) if args.text else gm.pace()})
@@ -894,6 +920,7 @@ def cmd_gm(args):
 def _budget(args):
     """What a GM session may spend, the player's to see and raise (never the GM's: solo gm isn't a GM command).
     The limits are for every campaign; the count is the campaign's, and --reset starts it again."""
+    from . import gm
     if args.text and not args.text[0].replace(".", "", 1).isdigit():
         raise SoloError(f"a budget is dollars, a number: solo gm budget 20 (or --turns 400), not {args.text[0]!r}")
     limit = gm.set_budget(usd=float(args.text[0]) if args.text else None, turns=args.turns) if args.text or args.turns else gm.budget()
@@ -910,6 +937,7 @@ def _budget(args):
 def cmd_desk(args):
     """Desktop effects for the plugin: flash, dying, death, candle, omen, screensaver,
     sound, restore, settings."""
+    from . import desk
     words = args.words
     if args.after:
         time.sleep(min(max(0.0, args.after), 10.0))
@@ -951,6 +979,7 @@ def _on(words):
 
 
 def cmd_extract(args):
+    from . import extract
     out, manifest = extract.extract(args.pdf, args.out, tables=not args.no_tables)
     print(f"wrote {out}")
     print(f"{manifest['pages']} pages, {manifest['chars']:,} characters (about {manifest['chars'] // 4:,} tokens), "
@@ -967,6 +996,7 @@ def cmd_extract(args):
 
 
 def cmd_import(args):
+    from . import booktables, datasworn, foundry
     if args.source == "datasworn":
         report = datasworn.build(packs.load_data(Path(args.json).expanduser()), Path(args.out).expanduser())
         print(f"wrote {report['moves']} moves, {report['tables']} tables and {report['assets']} assets into {args.out}")
@@ -994,6 +1024,7 @@ def cmd_import(args):
 def _import_book(args):
     """The packs of the books some importer knows, built and audited against the books' own pages: one book, or every PDF in a folder (in the order the packs go on
     one another)."""
+    from . import audit, books, extract
     path = Path(args.path).expanduser()
     many = path.is_dir() and not (path / "manifest.json").exists()
     if many and args.out:
@@ -1696,14 +1727,41 @@ def command_names():
     return sorted(_parser()._subparsers._group_actions[0].choices)
 
 
-def _parser():
+class _Unbuilt:
+    """Another command's parser, while one command runs: whatever is added to it goes nowhere."""
+
+    def __getattr__(self, name):
+        return lambda *args, **kwargs: self
+
+
+def _command(argv):
+    """The command in `solo -C <folder> scene ...`, read before parsing, or None (none given, or help asked first)."""
+    words = iter(argv)
+    for word in words:
+        if word in ("-h", "--help"):
+            return None
+        elif word in ("-C", "--campaign"):
+            next(words, None)
+        elif not word.startswith("-"):
+            return word
+    return None
+
+
+def _parser(only=None):
+    """Every command's parser, or with `only` that command's alone, so a click on the Table or a command
+    the GM runs doesn't build the sixty others first."""
     parser = _Parser(prog="solo", description="Local engine for solo tabletop play.")
     parser.add_argument("-C", "--campaign", help="campaign folder (default: found from the working directory, then the current one)")
-    commands = parser.add_subparsers(required=True, metavar="command")
+    # `prog` given, argparse doesn't make a formatter (and its colours) to work out "solo" for the commands' usage.
+    commands = parser.add_subparsers(required=True, metavar="command", prog="solo")
+    built = []
 
     def command(name, run, text):
+        if only and name != only:
+            return _Unbuilt()
         sub = commands.add_parser(name, help=text, description=text)
         sub.set_defaults(run=run)
+        built.append(name)
         return sub
 
     sub = command("new", cmd_new, "start a campaign: solo new red-tusk")
@@ -1971,4 +2029,5 @@ def _parser():
     sub.add_argument("pack", help="the pack folder the inventory is for (created if missing)")
     sub.add_argument("--extract", required=True, help="solo extract's folder for the book")
     sub.add_argument("--source", help="the book's name (default: from the PDF's file name)")
-    return parser
+    # A command that isn't one gets every parser, so argparse lists the commands there are.
+    return parser if built or not only else _parser()
