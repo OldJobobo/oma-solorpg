@@ -114,5 +114,35 @@ class BookOfMagicTest(unittest.TestCase):
         self.assertEqual(report["problems"], [])
 
 
+class LeftOutTest(unittest.TestCase):
+    """What the importer can't read of a school it leaves out, and its notes say what and where."""
+
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        flow = Flow(FakeBook(Path(folder.name) / "extract"))
+        flow.section(1, "2. Animism", "The school of the wild.")
+        flow.section(2, "Preamble", "How animists live.")
+        flow.section(3, "Sidebar: Starting Skills", "Animists learn by doing, and pick their skills as they go.")
+        flow.section(3, "Magic Tricks", "Hum: You hum a tune.", "", "The chart of the school's spells is on the next page.")
+        flow.section(1, "11. Alchemy", "Brews.")
+        flow.section(2, "Preamble", "Alchemists.")
+        flow.made.save()
+        self.book = Book(Path(folder.name) / "extract")
+        self.pack = Pack(self.book, Path(folder.name) / "out", dragonbane_magic.NAME)
+
+    def test_tricks_read_up_to_a_paragraph_that_isnt_one_say_where_they_stop(self):
+        self.assertEqual(dragonbane_magic.spells._tricks(self.pack, self.book.find("2. Animism")), [("Hum", 1)])
+        self.assertEqual(self.pack.notes, ["Animism, magic tricks (p. 1): read up to a paragraph that isn't a trick's \"Name: what it does\" "
+                                           "(The chart of the school's spells ...); the rest of the section isn't read as tricks"])
+
+    def test_a_starting_sidebar_it_cant_read_and_ingredients_it_cant_find_are_said(self):
+        self.assertIsNone(dragonbane_magic.system._start(self.pack, self.book.find("2. Animism"), "animism"))
+        self.assertIsNone(dragonbane_magic.system._ingredients(self.pack, self.book.find("11. Alchemy")))
+        self.assertEqual(self.pack.notes, [
+            "Animism, 'Sidebar: Starting Skills' (p. 1): can't read which skills a new mage of the school starts with, so a hero can't start in it",
+            "Alchemy: no table of ingredients where the importer looks for it (a sidebar on magic tricks), so they aren't gear"])
+
+
 if __name__ == "__main__":
     unittest.main()

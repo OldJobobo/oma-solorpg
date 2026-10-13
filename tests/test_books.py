@@ -236,6 +236,26 @@ class TablesRecipeTest(unittest.TestCase):
         self.assertEqual(report["problems"], [])
 
 
+class SentenceColumnsTest(unittest.TestCase):
+    def test_a_table_of_dice_with_fewer_columns_than_the_importer_names_says_so(self):
+        with tempfile.TemporaryDirectory() as folder:
+            made = FakeBook(Path(folder) / "extract")
+            made.line(1, 80, "THE JOURNEY", x=250, style=BANNER)
+            made.mark(1, "Table: The Journey")
+            for mark, x in zip(["D4", "D4"], [104, 184]):
+                made.line(1, 100, mark, x, HEADER)
+            for row, cells in enumerate([["long", "at a ford"], ["short", "at a bridge"], ["wet", "at a gate"], ["dry", "at a cave"]]):
+                made.line(1, 120 + 17 * row, str(row + 1), 70, CELL)
+                for cell, x in zip(cells, [100, 180]):
+                    made.line(1, 120 + 17 * row, cell, x, CELL)
+            made.save()
+            book = Book(Path(folder) / "extract")
+            pack = Pack(book, Path(folder) / "out", dragonbane_core.NAME)
+            tables._sentence(pack, book.find("Table: The Journey"), "The Journey")
+            self.assertEqual(sorted(path for path in pack.files), ["tables/journey_end.toml", "tables/journey_kind.toml"])
+            self.assertEqual(pack.notes, ["The Journey (p. 1): the book's table has 2 columns of dice and the importer names 6: no table is written for the last 4"])
+
+
 class GearRecipeTest(unittest.TestCase):
     """Chapter 6 of a made-up book: the bookmarks and columns of the real one, invented things."""
 

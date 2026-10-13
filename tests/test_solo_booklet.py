@@ -172,5 +172,19 @@ class BookletTest(unittest.TestCase):
         self.assertEqual(report["problems"], [])
 
 
+class NoTemplatesTest(unittest.TestCase):
+    def test_a_sidebar_of_npc_templates_it_cant_read_is_said(self):
+        with tempfile.TemporaryDirectory() as folder:
+            made = FakeBook(Path(folder) / "extract")
+            made.section(1, 80, 1, "Managing NPCs and Monsters", "Roll for NPCs.")
+            made.section(1, 160, 2, "Sidebar: Simple NPC Templates", "Make the NPC up as you go.")
+            made.save()
+            book = Book(Path(folder) / "extract")
+            pack = Pack(book, Path(folder) / "out", dragonbane_solo.NAME)
+            pack.facts["attackers"] = ["melee"]
+            self.assertEqual(dragonbane_solo.system._npcs(pack, book.find("Managing NPCs and Monsters"))["templates"], {})
+            self.assertEqual(pack.notes, ["'Sidebar: Simple NPC Templates' (p. 1): no template the importer can read, so the pack has no simple NPCs"])
+
+
 if __name__ == "__main__":
     unittest.main()
