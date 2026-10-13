@@ -14,7 +14,7 @@ from helpers import HRAFNA, IRONSWORN, OATH, CampaignTest
 from solo import SoloError, campaign, cli
 
 # The keys a commit holds, read from _normalize down to _pc_changes, and the keys each holds in turn.
-# "npc" and "faction" hold records by id; "ids" are filled in from the campaign being played.
+# "clock", "npc" and "faction" hold records by id: the campaign's own, and one it has never heard of.
 SCHEMA = {
     "note": None, "chronicle": None, "end": None, "override": None, "chaos": None, "clue": None, "learn": None,
     "time": ["round", "stretch", "shifts", "minutes", "hour", "days"],
@@ -29,11 +29,11 @@ WORDS = ["", "two", "+1", "-1", "friendly", "dead", "open", "kept", "2 shifts", 
 
 
 class CommitFuzzTest(CampaignTest):
-    cases = 100  # in each campaign below: about two seconds in all
+    cases = 100  # in each of the four campaigns below: about two seconds in all
 
     def setUp(self):
         super().setUp()
-        signal.signal(signal.SIGALRM, self.too_long)
+        self.addCleanup(signal.signal, signal.SIGALRM, signal.signal(signal.SIGALRM, self.too_long))
 
     def too_long(self, *_):
         raise AssertionError("the commit took more than two seconds")
