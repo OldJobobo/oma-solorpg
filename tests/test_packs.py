@@ -255,3 +255,15 @@ class LinksOutTest(unittest.TestCase):
         links = sorted(p.split(": ")[1].split(" is a link")[0] for p in problems if "outside the pack" in p)
         self.assertEqual(links, ["chapters/more.toml", "npcs", "rules/house.md", "tables/loot.toml"])
         self.assertIn("pack: rules/house.md is a link to ../../outside/secret, outside the pack, so the engine leaves it out", "\n".join(problems))
+
+    def test_an_adventure_toml_that_leaves_the_pack_is_named(self):
+        # Left out, it made the pack "have no scenes", and validate never got to say why.
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        outside, pack = Path(folder.name) / "outside", Path(folder.name) / "pack"
+        shutil.copytree(RED_TUSK, pack)
+        outside.mkdir()
+        (pack / "adventure.toml").rename(outside / "adventure.toml")
+        (pack / "adventure.toml").symlink_to("../outside/adventure.toml")
+        with self.assertRaisesRegex(SoloError, "adventure.toml is a link to somewhere outside the pack: put the file itself in the pack"):
+            packs.load_adventure(pack)

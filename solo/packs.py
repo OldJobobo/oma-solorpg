@@ -283,6 +283,9 @@ def load_adventure(path, drafts=True):
     A chapter marked `draft = true` is still being written: its author sees it (the default),
     a campaign plays on without it (drafts=False) until the mark comes off."""
     root = Path(path)
+    # Left out like any file that leaves the pack, it would only be "no scenes": validate never gets to say why.
+    if (root / "adventure.toml").is_symlink() and not _inside(root, root / "adventure.toml"):
+        raise SoloError(f"{root / 'adventure.toml'} is a link to somewhere outside the pack: put the file itself in the pack")
     spec = _optional(root / "adventure.toml")
     scenes = {sid: dict(scene) for sid, scene in _optional(root / "scenes.json").items()}
     sections = {key: dict(spec.get(key, {})) for key in CHAPTER_KEYS if key != "scenes"}
