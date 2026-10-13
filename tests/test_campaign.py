@@ -136,6 +136,30 @@ class CommitTest(CampaignTest):
             c.commit({"time": {"day": 365}}, rng=Dice(*[1] * 6))  # a year in rounds is counted, not listed
             self.assertTrue(c.state["clocks"]["dark_ritual"]["full"])
 
+    def test_a_commit_in_a_shape_the_engine_cant_take_is_told_what_the_key_holds(self):
+        # Each of these ended in "something went wrong" instead of a sentence.
+        with self.session() as c:
+            count = len(c.events)
+            for payload, message in (
+                ({"pc": {"conditions": ["dazed"]}}, r'pc conditions is what to add and what to remove, like \{"conditions": \{"add": \["'),
+                ({"pc": {"items": ["rope"]}}, r'pc items is what to add and what to remove, like \{"items": \{"add": \["rope"\]'),
+                ({"pc": {"items": {"add": [3]}}}, "pc items add is a name or a list of names"),
+                ({"pc": {"hp": float("nan")}}, "can't use nan"), ({"pc": {"hp": float("-inf")}}, "can't use -inf"),
+                ({"chaos": float("inf")}, "can't use inf"), ({"clock": {"dark_ritual": json.loads("1e400")}}, "can't use inf"),
+                ({"consequence": {"text": "the guard remembers", "npc": ["orc_leader"]}}, "npc is the id of the one it waits for"),
+                ({"consequence": {"text": "the guard remembers", "at": True}}, "at is a name or a list of names"),
+                ({"promise": {"npc": "orc_leader", "terms": ["help"]}}, "terms are what was promised, both as text"),
+                ({"npc": {"orc_leader": {"faction": ["orcs"]}}}, "npc orc_leader: faction is a word or an id, as text"),
+                ({"npc": {"tam": {"name": ["Tam"]}}}, "npc tam: name is a word or an id, as text"),
+                ({"clue": 3}, "clue is a name or a list of names"), ({"learn": 2.5}, "learn is what the player found out"),
+            ):
+                with self.subTest(payload=payload), self.assertRaisesRegex(SoloError, message):
+                    c.commit(payload)
+            self.assertEqual(len(c.events), count)
+            before = c.state["time"]
+            c.commit({"consequence": {"text": "the guard remembers", "after": "2 shifts"}})  # time in words, as a commit's own reads
+            self.assertEqual(c.state["consequences"]["the_guard_remembers"]["due_at"], before + 2 * 21600)
+
     def test_a_list_memory_is_refused_and_an_old_one_still_reads(self):
         with self.session() as c:
             count = len(c.events)

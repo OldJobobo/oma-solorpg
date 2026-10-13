@@ -2445,8 +2445,7 @@ class Campaign:
         promises = self._promise_changes(payload.get("promise", []), npcs)
         pc, pc_warnings = self._pc_changes(payload.get("pc", {}), override)
         warnings += pc_warnings
-        clues = payload.get("clue", [])
-        clues = [slug(c) for c in ([clues] if isinstance(clues, str) else clues)]
+        clues = [slug(c) for c in _names(payload.get("clue"), "clue")]
         learn = self._learn(payload.get("learn", []), npcs)
         consequences = self._consequence_changes(payload.get("consequence", []), npcs)
         seconds = self._seconds(payload.get("time", {}))
@@ -2514,7 +2513,9 @@ class Campaign:
         result = []
         if isinstance(items, dict):
             # {"gudrun": "wants"} or {"gudrun": ["wants", "fears"]}: the same as "gudrun.wants".
-            items = [f"{npc_id}.{what}" for npc_id, whats in items.items() for what in _listed(whats)]
+            items = [f"{npc_id}.{what}" for npc_id, whats in items.items() for what in _names(whats, f"learn {npc_id}")]
+        elif not isinstance(items, (str, list)):
+            raise SoloError(f'learn is what the player found out, like ["orc_leader.wants"]; not {items!r}')
         for item in [items] if isinstance(items, str) else items:
             npc_id, _, what = str(item).partition(".")
             profile = None
@@ -2543,6 +2544,10 @@ class Campaign:
                 raise SoloError(f"npc {npc_id}: unknown fields {', '.join(unknown)} (allowed: {', '.join(sorted(_NPC_FIELDS))}){place}")
             elif current is None and not fields.get("name"):
                 raise SoloError(f"npc {npc_id!r} isn't in the adventure; give it a name to add it")
+            strange = next((k for k in ("name", "fate", "location", "faction", "template", "attacker", "monster")
+                            if fields.get(k) is not None and not isinstance(fields[k], str)), None)
+            if strange:
+                raise SoloError(f"npc {npc_id}: {strange} is a word or an id, as text; not {fields[strange]!r}")
             is_new = current is None
             change = {"name": fields["name"], "new": True} if is_new else {}
             named = str(fields.get("name") or "").strip()
@@ -2610,6 +2615,8 @@ class Campaign:
                 raise SoloError(f'faction {faction_id!r} isn\'t in the adventure; add it with {{"name": ..., "standing": 0}}')
             elif spec.get("memory") is not None and not isinstance(spec["memory"], str):
                 raise SoloError(f'faction {faction_id}: what they heard is one line of text, like {{"memory": "the hero spared the guard"}}')
+            elif spec.get("name") is not None and not isinstance(spec["name"], str):
+                raise SoloError(f"faction {faction_id}: a name is text; not {spec['name']!r}")
             old = current["standing"] if current else 0
             standing = _clamp(_shift(spec.get("standing", old), old, ATTITUDES), -2, 2)
             if current is not None and abs(standing - old) > 1 and not override:
@@ -2658,12 +2665,14 @@ class Campaign:
             if text:
                 change["text"] = text
             if item.get("npc") is not None:
-                if item["npc"] not in self.state["npcs"] and item["npc"] not in new_npcs:
+                if not isinstance(item["npc"], str):
+                    raise SoloError(f"consequence {consequence_id}: npc is the id of the one it waits for, as text; not {item['npc']!r}")
+                elif item["npc"] not in self.state["npcs"] and item["npc"] not in new_npcs:
                     raise SoloError(f"consequence {consequence_id}: unknown npc {item['npc']}; someone new goes in the same commit's "
                                     f'npc with a name: {{"npc": {{"{item["npc"]}": {{"name": "..."}}}}}}')
                 change["npc"] = item["npc"]
             if item.get("at") is not None:
-                places = [slug(p) for p in _listed(item["at"])]
+                places = [slug(p) for p in _names(item["at"], f"consequence {consequence_id}: at")]
                 strange = [p for p in places if p not in self.adventure["scenes"]]
                 if strange:
                     raise SoloError(f"consequence {consequence_id}: unknown scene {strange[0]}; at names scene ids, like {self.state['scene']}")
@@ -2714,6 +2723,8 @@ class Campaign:
                 raise SoloError(f"promise {promise_id}: status must be one of {', '.join(PROMISE_STATUSES)}")
             elif not (npc and terms):
                 raise SoloError(f"promise {promise_id}: a new promise needs npc and terms")
+            elif not (isinstance(npc, str) and isinstance(terms, str)):
+                raise SoloError(f'promise {promise_id}: npc is an id and terms are what was promised, both as text, like {{"npc": "orc_leader", "terms": "..."}}')
             elif npc not in self.state["npcs"] and npc not in new_npcs:
                 raise SoloError(f"promise {promise_id}: unknown npc {npc}")
             else:
@@ -2733,12 +2744,12 @@ class Campaign:
             # {"pc": {"tracks": {"hp": 3}}} can only mean the tracks themselves.
             updates = {**{k: v for k, v in updates.items() if k != "tracks"}, **updates["tracks"]}
         # An impact cleared in this same commit no longer holds its track down.
-        cleared = [slug(c) for c in _listed(updates["conditions"].get("remove"))] if isinstance(updates.get("conditions"), dict) else []
+        cleared = [slug(c) for c in _names(updates["conditions"].get("remove"), "pc conditions remove")] if isinstance(updates.get("conditions"), dict) else []
         for key, value in updates.items():
             if key in pc["tracks"]:
                 track = pc["tracks"][key]
                 low = track.get("min", 0)
-                if isinstance(value, (int, float)) and not isinstance(value, bool) and value < 0:
+                if (isinstance(value, int) and not isinstance(value, bool) or isinstance(value, float) and math.isfinite(value)) and value < 0:
                     # A track is never set below zero, so -3 can only mean "lose 3". Setting HP to 0
                     # instead would leave the hero dying over a scratch (a GM wrote exactly this).
                     warnings.append(f"read {key} {value} as a loss of {-int(value)}; write \"{int(value)}\" as text to move a value")
@@ -2756,28 +2767,32 @@ class Campaign:
                     result["death_failures"] = 1
                 elif result["tracks"][key] != wanted:
                     warnings.append(f"{key} stops at {result['tracks'][key]} (range {low}-{track['max']})")
+            elif key in ("conditions", "items", "spells", "prepared", "abilities") and not isinstance(value, dict):
+                # A list could mean the ones to add or all the hero has now: which, the GM says.
+                example = next(iter(self.system["conditions"]), "...") if key == "conditions" else "rope" if key == "items" else "..."
+                raise SoloError(f'pc {key} is what to add and what to remove, like {{"{key}": {{"add": ["{example}"], "remove": []}}}}; not {value!r}')
             elif key == "conditions":
                 # One name is a list of one: {"add": "dazed"} is dazed, not d, a, z, e, d.
-                add = [slug(c) for c in _listed(value.get("add"))]
-                remove = [slug(c) for c in _listed(value.get("remove"))]
+                add = [slug(c) for c in _names(value.get("add"), "pc conditions add")]
+                remove = [slug(c) for c in _names(value.get("remove"), "pc conditions remove")]
                 unknown = [c for c in add + remove if c not in self.system["conditions"]]
                 if unknown:
                     raise SoloError(f"unknown conditions {', '.join(unknown)}; the system has {', '.join(self.system['conditions'])}")
                 result["conditions_add"] = [c for c in add if c not in pc["conditions"]]
                 result["conditions_remove"] = [c for c in remove if c in pc["conditions"]]
             elif key == "items":
-                result["items_add"] = _listed(value.get("add"))
-                result["items_remove"] = [i for i in _listed(value.get("remove")) if i in pc["items"]]
+                result["items_add"] = _names(value.get("add"), "pc items add")
+                result["items_remove"] = [i for i in _names(value.get("remove"), "pc items remove") if i in pc["items"]]
             elif key in ("spells", "prepared"):
                 have = pc.get(key, [])
-                result[f"{key}_add"] = [a for a in _listed(value.get("add")) if a not in have]
-                result[f"{key}_remove"] = [a for a in _listed(value.get("remove")) if a in have]
+                result[f"{key}_add"] = [a for a in _names(value.get("add"), f"pc {key} add") if a not in have]
+                result[f"{key}_remove"] = [a for a in _names(value.get("remove"), f"pc {key} remove") if a in have]
             elif key == "abilities":
                 # What the hero has learned or lost: a heroic ability, an asset, or its upgrade ("Slayer, second ability").
                 # One that can be taken again and again (Robust) can be added again.
                 stacks = {slug(spec.get("name", aid)) for aid, spec in self.system.get("abilities", {}).items() if spec.get("stack")}
-                result["abilities_add"] = [a for a in _listed(value.get("add")) if a not in pc["abilities"] or slug(a) in stacks]
-                result["abilities_remove"] = [a for a in _listed(value.get("remove")) if a in pc["abilities"]]
+                result["abilities_add"] = [a for a in _names(value.get("add"), "pc abilities add") if a not in pc["abilities"] or slug(a) in stacks]
+                result["abilities_remove"] = [a for a in _names(value.get("remove"), "pc abilities remove") if a in pc["abilities"]]
                 warnings += [f"{a} {why}" for a in result["abilities_add"] for why in [self._unmet(a)] if why]
                 raised = Counter()
                 for a in result["abilities_add"]:
@@ -2785,7 +2800,7 @@ class Campaign:
                     raised.update({track: int(n) for track, n in (spec.get("max") or {}).items()})
                 if raised:
                     result["max_up"] = dict(raised)
-                warnings += [f"{i} isn't carried" for i in _listed(value.get("remove")) if i not in pc["items"]]
+                warnings += [f"{i} isn't carried" for i in _names(value.get("remove"), "pc abilities remove") if i not in pc["items"]]
             else:
                 money = " (coins and gear are items: {\"pc\": {\"items\": {\"add\": [\"30 silver\"]}}})" if key in _MONEY else ""
                 raise SoloError(f"pc has no {key!r}; use a track ({', '.join(pc['tracks'])}), conditions, items or abilities{money}")
@@ -4049,7 +4064,7 @@ def _shift(value, old, names=None):
     text = value.strip() if isinstance(value, str) else None
     if isinstance(value, bool) or value is None:
         raise SoloError(f"can't use {value!r} as an amount")
-    elif isinstance(value, (int, float)):
+    elif isinstance(value, int) or (isinstance(value, float) and math.isfinite(value)):
         return int(value)
     elif text and re.fullmatch(r"[+-]\d+", text):
         return old + int(text)
@@ -4071,6 +4086,17 @@ def _by_id(items, fields):
 
 def _listed(value):
     return [] if value is None else [value] if isinstance(value, str) else list(value)
+
+
+def _names(value, what):
+    """A name or a list of names from a commit, as a list. Anything else is refused, saying what the key holds."""
+    if value is None:
+        return []
+    elif isinstance(value, str):
+        return [value]
+    elif isinstance(value, list) and all(isinstance(name, str) for name in value):
+        return list(value)
+    raise SoloError(f"{what} is a name or a list of names; not {value!r}")
 
 
 def _amount(value):
