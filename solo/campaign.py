@@ -2542,6 +2542,9 @@ class Campaign:
                 raise SoloError(f"fact {key!r}: use lowercase words joined by dots, like hall.alarm")
             elif value is not None and not isinstance(value, (bool, int, float, str)):
                 raise SoloError(f"fact {key!r}: a value must be true/false, a number or text")
+            elif isinstance(value, float) and not math.isfinite(value):
+                # state.json would hold NaN or Infinity, which the panel's JSON.parse can't read.
+                raise SoloError(f"fact {key!r}: a number must be finite, like 2; not {value!r}")
         return dict(facts)
 
     def _learn(self, items, new_npcs=None):

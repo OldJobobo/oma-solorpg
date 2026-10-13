@@ -162,6 +162,18 @@ class CommitTest(CampaignTest):
             c.commit({"consequence": {"text": "the guard remembers", "after": "2 shifts"}})  # time in words, as a commit's own reads
             self.assertEqual(c.state["consequences"]["the_guard_remembers"]["due_at"], before + 2 * 21600)
 
+    def test_a_fact_that_is_no_finite_number_is_refused_so_the_panel_can_read_state_json(self):
+        # NaN and Infinity went into state.json as they were, and the panel's JSON.parse reads neither: it stopped following the game.
+        with self.session() as c:
+            count = len(c.events)
+            for payload in ({"facts": {"gate.guards": float("nan")}}, {"facts": {"gate.guards": json.loads("1e400")}},
+                            {"facts": {"gate.guards": float("-inf")}}, {"scene": {"floor_searched": float("nan")}}):
+                with self.subTest(payload=payload), self.assertRaisesRegex(SoloError, "a number must be finite, like 2; not"):
+                    c.commit(payload)
+            self.assertEqual(len(c.events), count)
+            c.commit({"facts": {"gate.guards": 2.5}})
+        json.loads((self.root / "state.json").read_text(), parse_constant=self.fail)
+
     def test_removing_what_the_hero_lacks_warns_about_the_right_list(self):
         with self.session() as c:
             event = c.commit({"pc": {"abilities": {"remove": ["Veteran", "Berserker"]}, "items": {"remove": ["rope", "lantern"]}}})

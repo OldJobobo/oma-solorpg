@@ -106,6 +106,8 @@ class CommitFuzzTest(CampaignTest):
                         c.commit(payload, rng=random.Random(number))
                 except SoloError:
                     pass
+                # As the panel reads it: JSON.parse takes no NaN or Infinity.
+                json.loads((root / "state.json").read_text(), parse_constant=self.fail)
         with campaign.session(root) as c:
             cli.resume_digest(c)
             cli.resume_digest(c, book=True)
