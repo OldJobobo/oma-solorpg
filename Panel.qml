@@ -50,6 +50,8 @@ Item {
   // read. A read that fails never covers what a command said, nor the other way round.
   property var error: ({ text: "", place: "" })
   property var queryError: ({ text: "", place: "" })
+  // What a command said it did, for the few whose words are for the player (opening the GM).
+  property var notice: ({ text: "", place: "" })
   // Commands that change something, waiting for the one running to end. While any runs or
   // waits the Table is busy, and its buttons that run one wait too.
   property var queue: []
@@ -321,6 +323,7 @@ Item {
     root.deleting = ""
     root.error = { text: "", place: "" }
     root.queryError = { text: "", place: "" }
+    root.notice = { text: "", place: "" }
     if (view !== "table") {
       root.ask("library", ["library"])
     }
@@ -328,9 +331,10 @@ Item {
 
   // Commands that change something, one at a time and in the order asked for: one asked for
   // while another runs (from the Book, or Enter in a field) waits its turn, never lost.
-  // `done` runs after a success, `failed` after anything else.
+  // `done` runs after a success, with what the command printed; `failed` after anything else.
   function run(args, place, done, failed) {
     root.error = { text: "", place: "" }
+    root.notice = { text: "", place: "" }
     root.queue = root.queue.concat([{ args: [root.solo].concat(args), place: place, done: done || null, failed: failed || null }])
     root.next()
   }
@@ -340,6 +344,7 @@ Item {
       action.job = root.queue[0]
       root.queue = root.queue.slice(1)
       action.said = ""
+      action.out = ""
       action.command = action.job.args
       action.running = true
     }
@@ -351,9 +356,14 @@ Item {
     action.job = null
     currentFile.reload()
     if (said !== "") root.error = { text: said, place: job.place }
-    if (ok && job.done) job.done()
+    if (ok && job.done) job.done(action.out)
     else if (!ok && job.failed) job.failed()
     root.next()
+  }
+
+  // The GM in a terminal of its own (or its window brought forward): what solo did about it is said where it was asked.
+  function openTerminal(place) {
+    root.run(["play", root.campaign, "--terminal"], place, said => root.notice = { text: said.trim(), place: place })
   }
 
   function act(args, place, done, failed) {
@@ -974,6 +984,7 @@ Item {
       agent: root.agentInfo
       campaign: root.campaign
       actionError: root.errorsAt("book")
+      actionNote: root.notice.place === "book" ? root.notice.text : ""
       active: bookWindow.visible
       onSend: text => root.speak(text)
       onStop: Quickshell.execDetached([root.solo, "-C", root.campaign, "gm", "stop"])
@@ -988,7 +999,7 @@ Item {
         root.opened = true
         root.show("table")
       }
-      onOpenTerminal: root.run(["play", root.campaign, "--terminal"], "book")
+      onOpenTerminal: root.openTerminal("book")
     }
   }
 
@@ -996,12 +1007,17 @@ Item {
     id: speaker
   }
 
-  // The command running now ({place, done}) and what it says on stderr. The streams end
-  // before the exit does, so the exit has all of it.
+  // The command running now ({place, done}) and what it says on stdout and stderr. The
+  // streams end before the exit does, so the exit has all of it.
   Process {
     id: action
     property var job: null
+    property string out: ""
     property string said: ""
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: action.out = text
+    }
     stderr: StdioCollector {
       waitForEnd: true
       onStreamFinished: action.said = text
@@ -1786,11 +1802,18 @@ Item {
               Act {
                 text: "Terminal"
                 tooltipText: "Open the GM in a terminal instead, or bring its window forward"
-                onClicked: root.run(["play", root.campaign, "--terminal"], "gm")
+                onClicked: root.openTerminal("gm")
               }
             }
 
             ErrorLine { place: "gm" }
+
+            Line {
+              visible: root.notice.place === "gm" && root.notice.text !== ""
+              size: Commons.Style.font.bodySmall
+              color: root.dim
+              text: root.notice.place === "gm" ? root.notice.text : ""
+            }
 
             Card {
               visible: root.game !== null && !!root.game.ended

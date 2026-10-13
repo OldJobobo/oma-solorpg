@@ -17,6 +17,7 @@ Item {
   property var agent: ({ agent: "", book: true })
   property string campaign: ""     // the campaign's folder: another one starts the Book over
   property string actionError: ""  // why the last thing clicked here (light a torch) was refused
+  property string actionNote: ""   // what the last thing clicked here said it did (open the GM)
   property bool active: true       // the window is showing
   property bool codexOpen: false
   property bool epitaphDismissed: false
@@ -289,6 +290,17 @@ Item {
             font.pixelSize: book.theme.small
             color: book.theme.urgent
             text: book.actionError
+          }
+
+          Text {
+            visible: book.actionNote !== "" && book.agent.book !== false
+            width: side.width
+            wrapMode: Text.Wrap
+            textFormat: Text.PlainText
+            font.family: book.theme.mono
+            font.pixelSize: book.theme.small
+            color: book.theme.dim
+            text: book.actionNote
           }
 
           Item { width: 1; height: book.theme.body * 0.4 }
@@ -623,17 +635,41 @@ Item {
           }
         }
 
-        Row {
+        // No GM that writes here: one in a window of its own, or none set up yet (the engine
+        // says why, when it can).
+        ColumnLayout {
+          Layout.fillWidth: true
           visible: book.agent.book === false
-          spacing: book.theme.body
+          spacing: book.theme.body * 0.4
+
+          RowLayout {
+            Layout.fillWidth: true
+            spacing: book.theme.body
+            Text {
+              objectName: "gmHint"
+              Layout.fillWidth: true
+              wrapMode: Text.Wrap
+              textFormat: Text.PlainText
+              font.family: book.theme.mono
+              font.pixelSize: book.theme.small
+              color: book.theme.dim
+              text: !book.agent.agent
+                ? book.agent.why || "No default agent is set, so no GM can write here. Choose one with: omarchy default agent <name> (claude or codex), then open the Book again."
+                : "Your GM (" + book.agent.agent + ") writes in its own window; the story shows here as it is recorded."
+            }
+            Link { Layout.alignment: Qt.AlignTop; text: "open the GM"; onClicked: book.openTerminal() }
+          }
+
           Text {
+            Layout.fillWidth: true
+            visible: book.actionNote !== ""
+            wrapMode: Text.Wrap
             textFormat: Text.PlainText
             font.family: book.theme.mono
             font.pixelSize: book.theme.small
-            color: book.theme.dim
-            text: (book.agent.agent ? "Your GM (" + book.agent.agent + ")" : "Your GM") + " writes in its own window; the story shows here as it is recorded."
+            color: book.theme.text
+            text: book.actionNote
           }
-          Link { text: "open the GM"; onClicked: book.openTerminal() }
         }
       }
     }

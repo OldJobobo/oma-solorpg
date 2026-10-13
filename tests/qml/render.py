@@ -131,6 +131,14 @@ def main(out):
     shot("refused", 700)
     book.setProperty("actionError", "")
 
+    # No default agent: the Book says how to set one up, and what "open the GM" did.
+    book.setProperty("agent", {"agent": "", "book": False})
+    book.setProperty("actionNote", "omarchy-agent isn't available. Open your coding agent in ~/Games/solo/campaigns/red-tusk "
+                                   "and ask it to follow the solo-gm skill.")
+    shot("no-agent", 500)
+    book.setProperty("actionNote", "")
+    book.setProperty("agent", {"agent": "", "book": True})
+
     # A dice pool (Year Zero): every die that scores is lit, a d10 shows its two digits.
     pool = {"kind": "roll", "label": "Heavy Machinery", "outcome": {
         "groups": [{"name": "base", "sides": 6, "rolls": [6, 3, 1, 5]}, {"name": "stress", "sides": 6, "rolls": [1, 6]},

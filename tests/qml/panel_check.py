@@ -297,6 +297,7 @@ def main(out):
     errors += begin_and_ask(item, panel, out, work, wait)
     errors += an_x_card(item, panel, out, work, wait)
     errors += a_turn_that_never_starts(item, panel, out, work, wait)
+    errors += no_agent_yet(item, work, wait)
     errors += desk_moments(item, panel, out, work, wait)
     errors += deleted_while_dying(item, bar, work, wait)
     errors += a_game_of_moves(item, panel, out, work, wait)
@@ -432,6 +433,28 @@ def a_turn_that_never_starts(item, panel, out, work, wait):
         problems.append(f"a turn that started was taken for one that didn't: {turn}")
     (game / ".solo" / "turn.json").write_text('{"status": "idle"}')
     wait(500)
+    return problems
+
+
+def no_agent_yet(item, work, wait):
+    """With no default agent set (`solo gm agent` names none) the Book says how to set one up, in the engine's words
+    when it gives a reason, and "open the GM" says what it did instead of nothing."""
+    problems = []
+    book = item.findChild(QObject, "book")
+    hint = book.findChild(QObject, "gmHint")
+    item.setProperty("agentInfo", {"agent": "", "book": False})
+    wait(100)
+    if "omarchy default agent" not in hint.property("text"):
+        problems.append(f"with no agent the Book doesn't say how to set one up: {hint.property('text')!r}")
+    item.setProperty("agentInfo", {"agent": "", "book": False, "why": "Omarchy has no default agent yet."})
+    wait(100)
+    if hint.property("text") != "Omarchy has no default agent yet.":
+        problems.append(f"the Book doesn't give the engine's reason for having no GM: {hint.property('text')!r}")
+    QMetaObject.invokeMethod(book, "openTerminal")
+    wait(2500)
+    if not book.property("actionNote") or book.property("actionError"):
+        problems.append(f"open the GM said nothing of what it did: {book.property('actionNote')!r} {book.property('actionError')!r}")
+    item.setProperty("agentInfo", {"agent": "claude", "book": True})
     return problems
 
 
