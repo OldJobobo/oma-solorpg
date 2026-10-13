@@ -1856,7 +1856,7 @@ def _parser(only=None):
     sub = command("track", cmd_track, "progress tracks (Ironsworn): add <name> --kind vow --rank dangerous, mark <id> [--times 2], set <id> [--ticks 8] [--rank epic], end <id> --how fulfilled, list")
     sub.add_argument("action", choices=["add", "mark", "set", "end", "list"])
     sub.add_argument("words", nargs="*", help="add: the track's name; mark, set, end: its id")
-    sub.add_argument("--kind", help="add: vow, journey or fight")
+    sub.add_argument("--kind", help="add: vow, journey or combat (a fight)")
     sub.add_argument("--rank", help="add, set: troublesome, dangerous, formidable, extreme or epic")
     sub.add_argument("--times", type=int, default=1, help="mark: how many marks (a foe's harm: one each)")
     sub.add_argument("--ticks", help="set: the ticks (a number sets them; +4 or -4 moves them)")

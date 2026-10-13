@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import stat
 import subprocess
 import textwrap
@@ -743,6 +744,35 @@ class DefaultAgent(CliCase):
         shown = json.loads(self.solo("-C", self.game, "gm", "agent")[1])
         self.assertEqual((shown["agent"], shown["book"]), ("pi", False))
         self.assertIn("can't write in the Book yet", shown["why"])
+
+
+class SkillFacts(CliCase):
+    """What the GM's skill and solo's help say a command does, it does."""
+
+    def test_the_oracle_and_its_tables_are_where_the_skill_says(self):
+        skill = (cli.REPO / "skills" / "solo-gm" / "SKILL.md").read_text(encoding="utf-8")
+        oracle = next(line for line in skill.splitlines() if line.startswith("**The oracle.**"))
+        named = re.findall(r"`(?:solo table )?([a-z]+_[a-z_]+)`", oracle)
+        self.assertIn("character_role", named)
+        ironsworn = str(self.tmp / "ironsworn")
+        self.assertEqual(self.solo("new", str(cli.REPO / "examples" / "bell-under-the-hill"), "--dir", ironsworn, "--character", str(HRAFNA))[0], 0)
+        for table in named:
+            self.assertEqual(self.solo("-C", ironsworn, "table", table)[0], 0, table)
+        self.assertIn("(solo table place_region)", self.solo("-C", ironsworn, "rule", "region")[1])
+        # `solo rule oracle` gives the oracle a game has; `solo rule fortune` gave Ironsworn's Fortune Hunter asset.
+        self.assertIn("`solo rule oracle` gives yours", skill)
+        self.assertTrue(self.solo("-C", ironsworn, "rule", "oracle")[1].startswith("# Asking the oracle"))
+        self.new_game()
+        self.assertTrue(self.solo("-C", self.game, "rule", "oracle")[1].startswith("# Fortune chart"))
+
+    def test_the_track_kinds_the_help_names_are_the_ones_the_engine_takes(self):
+        kinds = next(a.help for a in cli._parser("track")._subparsers._group_actions[0].choices["track"]._actions if "--kind" in a.option_strings)
+        named = re.findall(r"\b(vow|journey|combat|fight)\b", kinds.split("(")[0])
+        self.assertEqual(named, ["vow", "journey", "combat"])
+        ironsworn = str(self.tmp / "ironsworn")
+        self.solo("new", str(cli.REPO / "examples" / "bell-under-the-hill"), "--dir", ironsworn, "--character", str(HRAFNA))
+        for kind in named:
+            self.assertEqual(self.solo("-C", ironsworn, "track", "add", f"A {kind}", "--kind", kind, "--rank", "dangerous")[0], 0, kind)
 
 
 class PlayersOwn(CliCase):
