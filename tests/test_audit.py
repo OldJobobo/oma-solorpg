@@ -384,6 +384,11 @@ class BookCheckTest(unittest.TestCase):
         write(self.book / "picture" / "0003.txt", self.PAGES[3])
         self.assertRegex(self.change("bestiary/ghoul.toml", "hp = 40", "hp = 40"), r"ghoul: bestiary/ghoul gives (stats\.)?hp 40")
 
+    def test_a_page_of_a_few_words_is_read_and_not_taken_for_a_scan(self):
+        write(self.book / "pages" / "0002.txt", "FIREBOLT\nRank 1. 2D6.\n")
+        report = audit.audit(self.pack, "system")
+        self.assertFalse(audit.failed(report), audit.render(report))
+
     def test_a_spell_no_item_claims_is_unclaimed(self):
         write(self.pack / "spells" / "doom.toml", 'name = "Doom"\nschool = "elementalism"\nrank = 2\n')
         report = audit.audit(self.pack, "system")

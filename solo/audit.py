@@ -311,8 +311,8 @@ def _checked(item, loaded, book):
         return []
     text = " ".join(book.get(page, "") for page in item["pages"])
     where = f"p. {spans(item['pages'])}"
-    if len(text.strip()) < SCANNED_BELOW:
-        # A scanned page has no text, and nothing the pack says can be read back against it.
+    if not re.search(r"[a-z]", text):
+        # A scanned page has no words, and nothing the pack says can be read back against it.
         return [f"{item['id']}: {where} has no text to read the pack against (a scanned page has none): run ocrmypdf on the PDF and "
                 f"extract it again, or write what the page's picture says in picture/{item['pages'][0]:04d}.txt in the extract"]
     words = set(re.findall(r"[a-z0-9]+", text))
