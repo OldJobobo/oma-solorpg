@@ -79,6 +79,23 @@ class ReadmeTest(unittest.TestCase):
             self.assertIn(f"\n{section}\n", text)
 
 
+class RoadmapTest(unittest.TestCase):
+    def test_the_roadmap_is_the_plan_ahead_and_the_logs_are_in_history(self):
+        roadmap = (ROOT / "ROADMAP.md").read_text(encoding="utf-8")
+        items = re.split(r"\n## \d\. ", roadmap)[1:]
+        self.assertEqual(len(items), 6)
+        for item in items:
+            for part in ("Goal:", "Status:", "Done when:"):
+                self.assertIn(f"\n{part} ", item, item.split("\n", 1)[0])
+        self.assertLessEqual(max(len(line) for line in roadmap.splitlines()), 600)
+        self.assertNotRegex(roadmap, r"(First|Second|Third|Fourth|Fifth) (import|pass), run")
+        self.assertIn("(docs/HISTORY.md)", roadmap)
+        self.assertIn("Fifth pass, run (2026-10-01)", (ROOT / "docs" / "HISTORY.md").read_text(encoding="utf-8"))
+        # results.tsv is in the repository; the roadmap says what its runs are worth.
+        self.assertTrue((ROOT / "tests" / "gm_eval" / "results.tsv").exists())
+        self.assertNotIn("results.tsv` isn't in the repository", roadmap)
+
+
 class PyMuPDFTest(unittest.TestCase):
     # Arch marks its system Python as externally managed, so uv and pip refuse to install into it;
     # on Omarchy the package comes from pacman, and the README says what to do elsewhere.
