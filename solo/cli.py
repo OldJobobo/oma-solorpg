@@ -287,20 +287,76 @@ def _parent(pid):
 
 def cmd_setup(args):
     import subprocess
-    for line in _links(plugin=args.plugin):
+    skill_dirs = _installed_skill_dirs()
+    for line in _links(plugin=args.plugin, skill_dirs=skill_dirs):
         print(line)
-    if str(Path.home() / ".local/bin") not in os.environ.get("PATH", "").split(":"):
-        print("note: ~/.local/bin isn't on PATH, so call solo by its full path or add it to PATH")
+    for line in _preflight(skill_dirs):
+        print(line)
     if args.plugin and shutil.which("omarchy-shell"):
         subprocess.run(["omarchy-shell", "shell", "rescanPlugins"], capture_output=True)
+    if args.plugin and not shutil.which("omarchy"):
+        # With omarchy here, make install enables the plugin itself right after this.
         print(f"Plugin linked. Enable it with: omarchy plugin enable {PLUGIN_ID}")
 
 
-def _links(plugin=False):
+# Who reads each skills folder, and how setup tells they are installed: their command on PATH, or the
+# folder they keep in your home. Codex reads ~/.agents/skills as well as its own.
+SKILL_READERS = {".claude/skills": ("claude", ".claude"), ".agents/skills": ("codex", ".agents"),
+                 ".codex/skills": ("codex", ".codex"), ".pi/agent/skills": ("pi", ".pi")}
+
+
+def _installed_skill_dirs():
+    """The skills folders of the agents on this machine, so setup doesn't make folders for agents nobody uses."""
+    home = Path.home()
+    return [folder for folder in AGENT_SKILL_DIRS
+            if shutil.which(SKILL_READERS[folder][0]) or (home / SKILL_READERS[folder][1]).is_dir()]
+
+
+def _preflight(skill_dirs):
+    """What playing needs, a line each: ok, or what to do about it."""
+    import importlib.util
+    from . import gm
+    version = ".".join(str(n) for n in sys.version_info[:3])
+    lines = [("ok", f"Python {version}")]
+    if str(Path.home() / ".local/bin") in os.environ.get("PATH", "").split(":"):
+        lines.append(("ok", "~/.local/bin is on PATH, so solo runs by name"))
+    else:
+        lines.append(("todo", "~/.local/bin isn't on PATH, so call solo by its full path or add it to PATH"))
+    missing = [name for name in ("omarchy", "omarchy-shell") if not shutil.which(name)]
+    if missing:
+        lines.append(("todo", f"{' and '.join(missing)} not found: the d20, the Table and the Book are a plugin for Omarchy's shell. "
+                              "Without them, play in your agent from a terminal (solo new, then solo play --terminal)"))
+    else:
+        lines.append(("ok", "omarchy and omarchy-shell, for the plugin"))
+    if shutil.which("hyprctl"):
+        lines.append(("ok", "hyprctl, for the desktop effects"))
+    else:
+        lines.append(("optional", "hyprctl not found, so no desktop effects: they need Hyprland, and the game plays without them"))
+    agent = gm.default_agent()
+    if not agent:
+        lines.append(("todo", "no default agent: choose Claude Code or Codex with omarchy default agent, or set SOLO_AGENT=claude"))
+    elif not shutil.which(agent):
+        lines.append(("todo", f"the default agent is {agent}, and {agent} isn't on PATH: install it, or choose another with omarchy default agent"))
+    elif gm.supported(agent):
+        lines.append(("ok", f"the GM is {agent}, which the Book runs"))
+    else:
+        lines.append(("todo", f"the default agent is {agent}, which the Book can't run: it opens in a terminal instead (solo play --terminal), "
+                              "or choose Claude Code or Codex with omarchy default agent"))
+    if not skill_dirs:
+        lines.append(("todo", "no agent found (claude, codex or pi), so no skills were linked: install one and run make install again"))
+    if importlib.util.find_spec("pymupdf"):
+        lines.append(("ok", "PyMuPDF, for importing your books"))
+    else:
+        lines.append(("optional", "PyMuPDF not found: only make dragonbane and the other imports need it. "
+                                  "On Omarchy: sudo pacman -S python-pymupdf (the README's Troubleshooting has the rest)"))
+    return [f"{word:8} {text}" for word, text in lines]
+
+
+def _links(plugin=False, skill_dirs=AGENT_SKILL_DIRS):
     """Symlinks only, so running it again is harmless. Real files are never replaced."""
     home = Path.home()
     links = [(home / ".local/bin/solo", REPO / "bin" / "solo")]
-    links += [(home / folder / skill, REPO / "skills" / skill) for folder in AGENT_SKILL_DIRS for skill in SKILLS]
+    links += [(home / folder / skill, REPO / "skills" / skill) for folder in skill_dirs for skill in SKILLS]
     if plugin:
         links.append((home / ".config/omarchy/plugins" / PLUGIN_ID, REPO))
     return [_link(link, target) for link, target in links]

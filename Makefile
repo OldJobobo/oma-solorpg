@@ -44,10 +44,10 @@ help:
 	@echo "  AGENT=claude|codex picks the agent that does the reading (default: Omarchy's default agent)."
 	@echo "  SOLO_HOME=$(SOLO_HOME)"
 
+# solo setup says what is missing, and how to enable the plugin when omarchy isn't here to do it.
 install:
 	$(SOLO_BIN) setup --plugin
-	@if command -v omarchy >/dev/null 2>&1; then omarchy plugin enable $(PLUGIN); \
-	else echo "Enable the plugin with: omarchy plugin enable $(PLUGIN)"; fi
+	@if command -v omarchy >/dev/null 2>&1; then omarchy plugin enable $(PLUGIN); fi
 
 # Removes only the symlinks that point into this folder; ~/Games/solo (campaigns, packs) is left alone.
 uninstall:
