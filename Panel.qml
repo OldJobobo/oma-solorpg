@@ -194,6 +194,19 @@ Item {
     speaker.command = ["sh", "-c", 'printf %s "$SOLO_SAY" | exec "$@"', "speak", root.solo, "-C", root.campaign, "gm", "turn", "--", "-"]
     speaker.environment = { SOLO_SAY: text }
     speaker.startDetached()
+    watchdog.said = text
+    watchdog.restart()
+  }
+
+  // A turn writes turn.json as soon as it starts, and the Book waits on it. One that never
+  // got that far (another turn holds the lock, words too long for the environment, a
+  // campaign folder gone) is sent with nobody to hear: if turn.json hasn't changed a few
+  // seconds after a send, `solo gm status` says what is going on, and the Book stops waiting.
+  Timer {
+    id: watchdog
+    property string said: ""
+    interval: 5000
+    onTriggered: root.ask("watchdog", ["-C", root.campaign, "gm", "status"], "watchdog")
   }
 
   // New beats in the story set off the desktop. The dice rattle and land with the Book's
@@ -280,6 +293,7 @@ Item {
     root.fxSeen = -1
     root.fxSaid = -1
     root.turn = { status: "idle" }
+    watchdog.stop()
   }
   onBookOpenChanged: {
     if (root.bookOpen) {
@@ -420,6 +434,22 @@ Item {
       root.sounds = data
     } else if (kind === "pace" && data) {
       root.pace = data.pace
+    } else if (kind === "watchdog") {
+      root.unheard(data)
+    }
+  }
+
+  // What `solo gm status` said when a turn didn't start. One running after all (another
+  // turn, say) is the Book's to show; otherwise the words were never heard, and "try again"
+  // sends them again.
+  function unheard(status) {
+    var why = root.queryError.place === "watchdog" ? root.queryError.text : ""
+    if (why !== "") root.queryError = { text: "", place: "" }
+    if (status && (status.status === "thinking" || status.status === "writing")) {
+      root.turn = status
+    } else if (root.turn.status === "thinking") {
+      root.turn = { status: "error", unsent: watchdog.said,
+                    error: (why !== "" ? why.replace(/\.$/, "") + ". " : "") + "The GM didn't start, and your words weren't recorded: try again to send them." }
     }
   }
 
@@ -891,6 +921,7 @@ Item {
     printErrors: false
     onFileChanged: reload()
     onLoaded: {
+      watchdog.stop()  // the turn has started
       try {
         root.turn = JSON.parse(text())
       } catch (e) {
@@ -946,7 +977,7 @@ Item {
       active: bookWindow.visible
       onSend: text => root.speak(text)
       onStop: Quickshell.execDetached([root.solo, "-C", root.campaign, "gm", "stop"])
-      onRetry: root.speak("")
+      onRetry: root.speak(root.turn.unsent || "")
       // The X-card: cut the GM's last message (a line or a veil too, if the player made it one), then the GM carries on without it.
       // What the player typed goes as --flag=value, so words that start with a dash stay words.
       onCut: (note, line, veil) => root.act(["strike"].concat(note !== "" ? ["--note=" + note] : []).concat(line !== "" ? ["--line=" + line] : [])
