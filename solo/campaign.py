@@ -104,7 +104,8 @@ def create(root, system_path, adventure_path, character, title=None, prefs=None)
     system = packs.load_system(system_path)
     adventure = packs.load_adventure(adventure_path, drafts=False)
     problems = packs.validate(system, adventure)
-    if (root / "campaign.toml").exists():
+    # campaign.toml is written before the first event: one without events is a start that stopped half way, begun again here.
+    if (root / "campaign.toml").exists() and _read_events(root / "events.jsonl")[0]:
         raise SoloError(f"{root} already holds a campaign")
     elif packs.missing(system):
         raise SoloError(packs.missing_text(system, packs.missing(system)))
@@ -123,7 +124,7 @@ def create(root, system_path, adventure_path, character, title=None, prefs=None)
             "adventure": str(Path(adventure_path).resolve()),
         }
         (root / "campaign.toml").write_text("".join(f"{k} = {packs.toml_string(v)}\n" for k, v in config.items()), encoding="utf-8")
-        with session(root) as campaign:
+        with session(root, new=True) as campaign:
             event = campaign.append("created", format=FORMAT, title=config["title"], pc=pc, scene=adventure["start"],
                                     past=past or None, facts=carried or None, kept=kept or None)
             campaign._follow([f"scene:{adventure['start']}"], cause=event["seq"])
@@ -243,35 +244,45 @@ def character_sheet(data, system):
 
 
 @contextmanager
-def session(root):
+def session(root, new=False):
     """Open a campaign under an exclusive lock, so the agent and the panel never write
-    at the same time. state.json is rewritten on the way out if anything changed, and a
-    command that went through keeps the replay for the next one when it has fallen behind."""
+    at the same time. state.json is rewritten on the way out if anything changed, or if it
+    was behind the log, and a command that went through keeps the replay for the next one
+    when it has fallen behind. `new`: the campaign being created, whose log is still empty."""
     root = Path(root)
     with open(root / ".lock", "w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        campaign = Campaign(root)
+        campaign = Campaign(root, new=new)
         count = len(campaign.events)
+        # A crash between an event's write and state.json's leaves state.json behind the log:
+        # any command brings it up to date, one that only reads too.
+        behind = _saved_seq(root / "state.json") != campaign.state["seq"]
         try:
             yield campaign
         except BaseException:
             # What a failed command wrote before it failed stands (a roll is never taken back),
             # but the state it was changing may be half changed: take it from the log again.
-            if len(campaign.events) != count:
+            if len(campaign.events) != count or campaign.unwritten:
                 campaign.state, campaign.entries = replay(campaign.system, campaign.adventure, campaign.events)
             raise
         finally:
-            if len(campaign.events) != count:
+            if len(campaign.events) != count and not campaign.unwritten:
                 # Whatever changed (a move, time passing, a click on the panel) may be the
-                # moment a consequence was waiting for.
+                # moment a consequence was waiting for. Not after a write that failed: the
+                # log ends where the command stopped.
                 campaign.come_due()
-            if len(campaign.events) != count or not (root / "state.json").exists():
-                campaign.save()
+            if len(campaign.events) != count or behind:
+                try:
+                    campaign.save()
+                except OSError:
+                    if not campaign.unwritten:
+                        raise
+                    # The disk that refused the log refuses state.json too: the next command rebuilds it.
         campaign.keep()
 
 
 class Campaign:
-    def __init__(self, root):
+    def __init__(self, root, new=False):
         self.root = Path(root)
         self.config = packs.load_data(self.root / "campaign.toml")
         self.system = packs.load_system(_pack(self.root, self.config["system"], library.find_system))
@@ -279,8 +290,13 @@ class Campaign:
         if self.adventure.get("weapons"):
             self.system["weapons"] = {**self.system.get("weapons", {}), **self.adventure["weapons"]}
         self.events, log = _read_events(self.root / "events.jsonl")
+        if not self.events and not new:
+            raise SoloError(f"{self.root} has a campaign.toml and no events: it stopped while it was being created. "
+                            f"Start it again: solo new <adventure> --dir {self.root}")
         # Where this session's own events begin: what one command did, whatever came first.
         self.opened = len(self.events)
+        # The error of a write to the log that failed: the command stops there, and nothing more is written.
+        self.unwritten = None
         # The state after every event, and the chronology: from the replay kept for a long
         # campaign while it stands, and the events since, else from the start.
         kept = _read_kept(self, log) if len(self.events) >= _KEEP_EVERY else None
@@ -310,11 +326,16 @@ class Campaign:
         seed = dice.fixed_seed()
         if seed is not None:
             event["seed"] = seed
+        line = (json.dumps(event, ensure_ascii=False) + "\n").encode("utf-8")
         # Applied before it is written: an event the state can't take is refused, never left
         # in the log for every later replay to trip over.
         _advance(self.state, self.entries, event, self.adventure, strict=True)
-        with open(self.root / "events.jsonl", "a", encoding="utf-8") as log:
-            log.write(json.dumps(event, ensure_ascii=False) + "\n")
+        try:
+            _write_line(self.root / "events.jsonl", line)
+        except OSError as error:
+            self.unwritten = error
+            raise SoloError(f"couldn't write to {self.root / 'events.jsonl'} ({error.strerror or error}), so the command stopped there "
+                            "(solo log shows what it recorded): free some disk space, or fix what stops the write, and go on") from None
         self.events.append(event)
         return event
 
@@ -4000,22 +4021,58 @@ def _read_events(path):
         return [], b""
     _mend_tail(path)
     data = path.read_bytes()
-    lines = data.decode("utf-8").split("\n")
-    filled = [line for line in lines if line.strip()]
     try:
+        filled = [line for line in data.decode("utf-8").split("\n") if line.strip()]
         events = json.loads(f"[{','.join(filled)}]")  # the log in one parse, a third faster than a line at a time
-    except json.JSONDecodeError:
+    except (UnicodeDecodeError, json.JSONDecodeError):
         events = None
-    if events is None or len(events) != len(filled):
+    if events is None or len(events) != len(filled) or not all(isinstance(event, dict) for event in events):
         # Which line is damaged: read them one at a time.
         events = []
-        for number, line in enumerate(lines, 1):
+        for number, line in enumerate(data.split(b"\n"), 1):
             if line.strip():
                 try:
-                    events.append(json.loads(line))
-                except json.JSONDecodeError as error:
-                    raise SoloError(f"{path} line {number} is damaged: {error}") from None
+                    event = json.loads(line.decode("utf-8"))
+                except (UnicodeDecodeError, json.JSONDecodeError) as error:
+                    raise SoloError(_damaged(path, number, error)) from None
+                if not isinstance(event, dict):
+                    raise SoloError(_damaged(path, number, "it isn't an event"))
+                events.append(event)
     return events, data
+
+
+def _damaged(path, number, error):
+    """What to do about a line of the log that can't be read. (A last line cut off mid-write never gets here: _mend_tail sets it aside.)"""
+    return (f"{path} line {number} is damaged ({error}), and the campaign is read from its log: mend that line by hand, "
+            "or put back a copy of the file from before it broke (state.json is made from the log, so it is no help)")
+
+
+def _write_line(path, line):
+    """Add a line to the end of the log and onto the disk before the command goes on: the log is the
+    campaign. A write that fails takes back what it wrote, so the log never ends in half an event."""
+    fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o666)
+    try:
+        size = os.fstat(fd).st_size
+        try:
+            written = 0
+            while written < len(line):
+                written += os.write(fd, line[written:])
+            os.fsync(fd)
+        except BaseException:
+            os.ftruncate(fd, size)
+            raise
+    finally:
+        os.close(fd)
+
+
+def _saved_seq(path):
+    """The seq state.json was written at (the first thing in it), or None when there is none to read."""
+    try:
+        with open(path, "rb") as saved:
+            found = re.match(rb'\{\s*"seq":\s*(\d+)', saved.read(64))
+    except OSError:
+        return None
+    return int(found.group(1)) if found else None
 
 
 def _read_kept(c, log):

@@ -1,5 +1,7 @@
+import errno
 import io
 import json
+import os
 import shutil
 import unittest
 import unittest.mock
@@ -370,6 +372,64 @@ class TornLogTest(CampaignTest):
         self.log().write_text("\n".join([lines[0][:20], *lines[1:]]) + "\n")
         with self.assertRaisesRegex(SoloError, "line 1 is damaged"):
             self.session().__enter__()
+
+    def test_damage_in_the_middle_of_the_log_says_which_line_and_what_to_do(self):
+        with self.session() as c:
+            c.say("The road is long.")
+            c.say("I walk on.", "player")
+        lines = self.log().read_bytes().split(b"\n")
+        number = len(lines) - 2  # the GM's line, with the player's after it
+        for damage, why in ((lines[number - 1].replace(b"road", b"r\xffad"), "invalid start byte"), (b"5", "it isn't an event")):
+            with self.subTest(why=why):
+                self.log().write_bytes(b"\n".join([*lines[:number - 1], damage, *lines[number:]]))
+                with self.assertRaisesRegex(SoloError, f"line {number} is damaged \\(.*{why}.*\\).*mend that line by hand, or put back a copy"):
+                    self.session().__enter__()
+
+    def test_each_event_is_on_the_disk_before_the_command_goes_on(self):
+        with self.session() as c, unittest.mock.patch("solo.campaign.os.fsync", wraps=os.fsync) as fsync:
+            c.say("The road is long.")
+            c.say("I walk on.", "player")
+        self.assertEqual(fsync.call_count, 2)
+
+    def test_a_write_that_fails_takes_back_what_it_wrote_and_the_command_stops_there(self):
+        write = os.write
+
+        def half(fd, data):  # a disk that fills up half way through the line
+            write(fd, data[:len(data) // 2])
+            raise OSError(errno.ENOSPC, "No space left on device")
+        with unittest.mock.patch.object(campaign.Campaign, "come_due") as come_due:
+            with self.assertRaisesRegex(SoloError, "couldn't write to .*events.jsonl \\(No space left on device\\), so the command stopped there"):
+                with self.session() as c:
+                    c.say("The road is long.")
+                    with unittest.mock.patch("solo.campaign.os.write", half):
+                        c.say("I walk on.", "player")
+        come_due.assert_not_called()  # nothing more is written after the write that failed
+        self.assertTrue(self.log().read_bytes().endswith(b'"text": "The road is long.", "scene": "road"}\n'))
+        with self.session() as c:
+            self.assertEqual((c.events[-1]["text"], c.state["last_said"]["text"]), ("The road is long.", "The road is long."))
+            self.assertEqual(json.loads((self.root / "state.json").read_text())["seq"], c.events[-1]["seq"])
+
+    def test_a_state_json_behind_the_log_is_brought_up_to_date_by_any_command(self):
+        saved = (self.root / "state.json").read_text()
+        with self.session() as c:
+            c.say("The road is long.")
+            seq = c.state["seq"]
+        (self.root / "state.json").write_text(saved)  # a crash after the event was written, before state.json was
+        with self.session():
+            pass  # a command that only reads
+        self.assertEqual(json.loads((self.root / "state.json").read_text())["seq"], seq)
+
+    def test_a_campaign_whose_start_stopped_before_its_first_event_says_so_and_begins_again(self):
+        root = self.tmp / "stopped"
+        root.mkdir()
+        (root / "campaign.toml").write_text((self.root / "campaign.toml").read_text())
+        with self.assertRaisesRegex(SoloError, "has a campaign.toml and no events: it stopped while it was being created. Start it again: solo new"):
+            campaign.session(root).__enter__()
+        campaign.create(root, self.system, self.adventure, self.character)
+        with campaign.session(root) as c:
+            self.assertEqual(c.events[0]["type"], "created")
+        with self.assertRaisesRegex(SoloError, "already holds a campaign"):
+            campaign.create(root, self.system, self.adventure, self.character)
 
     def test_a_line_separator_in_a_message_stays_inside_its_event(self):
         # JSON keeps U+2028 and U+0085 as they are, and str.splitlines cuts at both: a pasted line read the whole log as damaged.
