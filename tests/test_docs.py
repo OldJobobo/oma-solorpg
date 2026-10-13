@@ -53,6 +53,20 @@ class MakefileTest(unittest.TestCase):
         self.assertEqual(targets - phony, set())
 
 
+class ReadmeTest(unittest.TestCase):
+    def readme(self):
+        return (ROOT / "README.md").read_text(encoding="utf-8")
+
+    def test_the_quick_start_is_the_three_commands_and_the_first_adventure(self):
+        text = self.readme()
+        quick = text[text.index("## Quick start"):text.index("\n## ", text.index("## Quick start") + 1)]
+        self.assertEqual(re.findall(r"^(git clone|git checkout|make install)", quick, re.M), ["git clone", "git checkout", "make install"])
+        self.assertIn("The Bell Under the Hill", quick)
+        self.assertLess(len(quick.split()), 200)
+        for section in ("## Install", "## Update", "## Uninstall", "## Troubleshooting", "## Dragonbane"):
+            self.assertIn(f"\n{section}\n", text)
+
+
 class RepositoryTest(unittest.TestCase):
     def test_ci_installs_what_the_skipping_tests_need_and_loads_the_qml(self):
         workflow = (ROOT / ".github" / "workflows" / "test.yml").read_text(encoding="utf-8")
