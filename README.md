@@ -26,7 +26,7 @@ You need Omarchy, `make`, Python 3.11+ and your agent (`claude` or `codex`).
 
 ```bash
 git clone https://github.com/cabral/oma-solorpg ~/Code/oma-solorpg && cd ~/Code/oma-solorpg
-git checkout --detach bd2f5057e03e66332a89d7d24653baffbda3d6e6   # a fixed commit, so what you read is what you run
+git checkout --detach 26048dee18cc6d139fb4281b17f16b4a01faf805   # a fixed commit, so what you read is what you run
 make install                                              # links solo, the GM skills and the plugin, and enables it
 ```
 
