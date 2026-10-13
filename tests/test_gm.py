@@ -42,7 +42,7 @@ class Agents(CampaignTest):
         super().setUp()
         self.bin = self.tmp / "bin"
         self.bin.mkdir()
-        patch = unittest.mock.patch.dict(os.environ, {"PATH": f"{self.bin}:{os.environ['PATH']}", "SOLO_AGENT": "claude",
+        patch = unittest.mock.patch.dict(os.environ, {"PATH": f"{self.bin}:{os.environ['PATH']}", "AGENT": "claude",
                                                       "XDG_CACHE_HOME": str(self.tmp / "cache")})
         patch.start()
         self.addCleanup(patch.stop)
@@ -692,6 +692,52 @@ class Notes(unittest.TestCase):
                 "solo wound librarian 2d6.\n:::\n\nWhat do you do?")
         self.assertEqual(drop_notes(text), "He comes for you.\n\nWhat do you do?")
         self.assertEqual(drop_notes("It moves.\n\n::: gm\nunclosed secret"), "It moves.")
+
+
+class DefaultAgent(CliCase):
+    """`solo gm` and bin/ask-agent pick the player's agent by one rule: $AGENT, else Omarchy's default, else claude
+    if it is on PATH, else codex if it is, else none."""
+
+    def setUp(self):
+        super().setUp()
+        self.bin = self.tmp / "bin"
+        self.bin.mkdir()
+        os.environ.pop("AGENT", None)
+        patch = unittest.mock.patch.dict(os.environ, {"PATH": f"{self.bin}:/usr/bin:/bin"})
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def install(self, name):
+        script = self.bin / name
+        script.write_text(f"#!/bin/sh\necho {name} \"$@\"\n")
+        script.chmod(script.stat().st_mode | stat.S_IEXEC)
+
+    def ask(self):
+        done = subprocess.run([str(cli.REPO / "bin" / "ask-agent"), str(self.tmp), "Build the pack."], capture_output=True, text=True,
+                              env={**os.environ, "HOME": str(self.tmp / "home")})
+        return done.stdout.strip()
+
+    def test_both_pick_the_same_agent(self):
+        self.new_game()
+        shown = json.loads(self.solo("-C", self.game, "gm", "agent")[1])
+        self.assertEqual((shown["agent"], shown["book"]), ("", False))
+        self.assertIn("install Claude Code or Codex", shown["why"])  # for the Book to show
+        self.assertIn("No coding agent was found", self.ask())
+        self.install("codex")
+        self.assertEqual((gm.default_agent(), self.ask()), ("codex", "codex Build the pack."))
+        self.install("claude")
+        self.assertEqual((gm.default_agent(), self.ask()), ("claude", "claude Build the pack."))
+        self.assertNotIn("why", json.loads(self.solo("-C", self.game, "gm", "agent")[1]))
+        omarchy = self.tmp / "home" / ".config" / "omarchy" / "defaults" / "agent"
+        omarchy.parent.mkdir(parents=True)
+        omarchy.write_text("codex\n")
+        self.assertEqual((gm.default_agent(), self.ask()), ("codex", "codex Build the pack."))
+        with unittest.mock.patch.dict(os.environ, {"AGENT": "claude"}):
+            self.assertEqual((gm.default_agent(), self.ask()), ("claude", "claude Build the pack."))
+        omarchy.write_text("pi\n")
+        shown = json.loads(self.solo("-C", self.game, "gm", "agent")[1])
+        self.assertEqual((shown["agent"], shown["book"]), ("pi", False))
+        self.assertIn("can't write in the Book yet", shown["why"])
 
 
 class PlayersOwn(CliCase):

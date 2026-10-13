@@ -919,7 +919,8 @@ def cmd_gm(args):
             print("stopped")
         elif args.action == "agent":
             agent = gm.default_agent()
-            _json({"agent": agent, "book": gm.supported(agent)})
+            why = gm.why_not(agent)
+            _json({"agent": agent, "book": gm.supported(agent), **({"why": why} if why else {})})
         else:
             _json(gm.status(root))
 

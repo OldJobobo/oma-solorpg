@@ -101,14 +101,26 @@ _DOING = {
 
 
 def default_agent():
-    """The agent Omarchy launches (`omarchy default agent`); SOLO_AGENT overrides it."""
-    chosen = os.environ.get("SOLO_AGENT")
+    """The player's coding agent, by the rule bin/ask-agent follows too: $AGENT, else the one Omarchy
+    launches (`omarchy default agent`), else claude if it is on PATH, else codex if it is, else none ("")."""
+    chosen = os.environ.get("AGENT", "").strip()
     if chosen:
-        return chosen.strip()
+        return chosen
     try:
         return (Path.home() / ".config/omarchy/defaults/agent").read_text(encoding="utf-8").split()[0]
     except (OSError, IndexError):
-        return ""
+        return next((name for name in ("claude", "codex") if shutil.which(name)), "")
+
+
+def why_not(agent):
+    """Why the Book can't run `agent` as its GM, in a sentence for the player, or None when it can."""
+    if not agent:
+        return "No coding agent was found: install Claude Code or Codex, or choose one with: omarchy default agent <name>"
+    elif not supported(agent):
+        return f"Your default agent ({agent}) can't write in the Book yet. Open the GM in a terminal instead."
+    elif not shutil.which(agent):
+        return f"Your default agent ({agent}) isn't on PATH: install it, or choose another with: omarchy default agent <name>"
+    return None
 
 
 def supported(agent):
@@ -194,10 +206,8 @@ def turn(root, text=None, agent=None):
 
 
 def _turn(root, folder, text, agent, live):
-    if not agent:
-        return live.fail("No default agent is set. Choose one with: omarchy default agent <name>")
-    elif not supported(agent):
-        return live.fail(f"Your default agent ({agent}) can't write in the Book yet. Open the GM in a terminal instead.")
+    if not agent or not supported(agent):
+        return live.fail(why_not(agent))
     saved = _load(folder / "agent.json")
     session = saved.get("session") if saved.get("agent") == agent else None
     # Where the events of this session's turns whose replies the player never saw are in the log.
