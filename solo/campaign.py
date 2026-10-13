@@ -2565,6 +2565,9 @@ class Campaign:
                 raise SoloError(f"npc {npc_id}: template must be one of {', '.join(npcs.get('templates', {})) or 'none'}")
             if "attacker" in fields and fields["attacker"] not in npcs.get("attackers", []):
                 raise SoloError(f"npc {npc_id}: attacker must be one of {', '.join(npcs.get('attackers', [])) or 'none'}")
+            if fields.get("memory") is not None and not isinstance(fields["memory"], str):
+                raise SoloError(f'npc {npc_id}: a memory is one line of text, like {{"memory": "saw the hero spare the guard"}}; '
+                                "two things remembered are two commits")
             if "monster" in fields and fields["monster"] not in self.system.get("bestiary", {}):
                 known = ", ".join(self.system.get("bestiary", {})) or "none: the system pack has no bestiary"
                 raise SoloError(f"npc {npc_id}: monster must be one of the bestiary's ({known})")
@@ -2589,6 +2592,8 @@ class Campaign:
                 raise SoloError(f"faction {faction_id}: unknown fields {', '.join(unknown)} (allowed: memory, name, standing)")
             elif current is None and not spec.get("name"):
                 raise SoloError(f'faction {faction_id!r} isn\'t in the adventure; add it with {{"name": ..., "standing": 0}}')
+            elif spec.get("memory") is not None and not isinstance(spec["memory"], str):
+                raise SoloError(f'faction {faction_id}: what they heard is one line of text, like {{"memory": "the hero spared the guard"}}')
             old = current["standing"] if current else 0
             standing = _clamp(_shift(spec.get("standing", old), old, ATTITUDES), -2, 2)
             if current is not None and abs(standing - old) > 1 and not override:
@@ -2942,7 +2947,7 @@ def _moments(event, state, adventure, seen, was_dead):
             if change.get("location"):
                 bits.append(f"now at {adventure['scenes'].get(change['location'], {}).get('title', change['location'])}")
             if change.get("memory"):
-                bits.append(f"remembers: {change['memory']}")
+                bits.append(f"remembers: {_memory(change['memory'])}")
             if change.get("new"):
                 role = (change.get("profile") or {}).get("role")
                 say("npc", "; ".join([f"met {name(npc_id)}" + (f", {role}" if role else ""), *bits]), [npc_id])
@@ -2950,7 +2955,7 @@ def _moments(event, state, adventure, seen, was_dead):
                 say("npc", f"{name(npc_id)}: {'; '.join(bits)}", [npc_id])
         for faction_id, change in changes.get("faction", {}).items():
             bits = [f"now {_attitude_word(change['standing'])}"] if change["standing"] != change["standing_was"] else []
-            bits += [f"heard: {change['memory']}"] if change.get("memory") else []
+            bits += [f"heard: {_memory(change['memory'])}"] if change.get("memory") else []
             if bits:
                 say("faction", f"{state['factions'].get(faction_id, {}).get('name', faction_id)}: {'; '.join(bits)}")
         for promise in changes.get("promise", {}).values():
@@ -3029,11 +3034,11 @@ def _recallable(event, state):
         items += [(key, changes[key]) for key in ("note", "chronicle", "end") if changes.get(key)]
         items += [("fact", f"{k}: {v}") for k, v in changes.get("facts", {}).items()]
         for npc_id, change in changes.get("npc", {}).items():
-            items += [(f"{npc_name(npc_id)} remembers", change["memory"])] if change.get("memory") else []
+            items += [(f"{npc_name(npc_id)} remembers", _memory(change["memory"]))] if change.get("memory") else []
             items += [(f"{npc_name(npc_id)}, {field}", text) for field, text in (change.get("profile") or {}).items()]
             items += [("met", f"{npc_name(npc_id)} ({npc_id})")] if change.get("new") else []
         for faction_id, change in changes.get("faction", {}).items():
-            items += [(f"{state['factions'].get(faction_id, {}).get('name', faction_id)} heard", change["memory"])] if change.get("memory") else []
+            items += [(f"{state['factions'].get(faction_id, {}).get('name', faction_id)} heard", _memory(change["memory"]))] if change.get("memory") else []
         for promise_id, promise in changes.get("promise", {}).items():
             items += [(f"promise {promise_id} ({promise['status']})", f"{npc_name(promise['npc'])}: {promise['terms']}")]
         for consequence_id, change in changes.get("consequence", {}).items():
@@ -3462,14 +3467,14 @@ def _apply_changes(state, changes, event):
         npc.update({k: change[k] for k in ("name", "faction", "fate", "attitude", "location", "template", "attacker", "monster") if k in change})
         npc["met"] = True
         if change.get("memory"):
-            npc["memories"].append(change["memory"])
+            npc["memories"].append(_memory(change["memory"]))
         if change.get("profile"):
             npc["profile"] = {**npc.get("profile", {}), **change["profile"]}
     for faction_id, change in changes.get("faction", {}).items():
         faction = state["factions"].setdefault(faction_id, {"name": change.get("name", faction_id), "standing": 0, "memories": []})
         faction["standing"] = change["standing"]
         if change.get("memory"):
-            faction.setdefault("memories", []).append(change["memory"])
+            faction.setdefault("memories", []).append(_memory(change["memory"]))
     for promise_id, promise in changes.get("promise", {}).items():
         state["promises"][promise_id] = {k: promise[k] for k in ("npc", "terms", "status")}
     for consequence_id, change in changes.get("consequence", {}).items():
@@ -3828,7 +3833,7 @@ def gm_line(event):
         notes.append("facts " + ", ".join(f"{k} = {json.dumps(v, ensure_ascii=False)}" for k, v in changes["facts"].items()))
     for faction_id, change in changes.get("faction", {}).items():
         if change.get("memory"):
-            notes.append(f"{faction_id} heard: {change['memory']}")
+            notes.append(f"{faction_id} heard: {_memory(change['memory'])}")
     for consequence_id, change in changes.get("consequence", {}).items():
         notes.append(f"consequence {consequence_id} {change['status']}" + (f": {change['text']}" if change.get("text") else ""))
     return describe(event) + "".join(f" [for the GM: {note}]" for note in notes)
@@ -4070,6 +4075,11 @@ def _time_words(text):
     for number, _, unit in found:
         spent[unit] = spent.get(unit, 0) + (float(number) if number else 1)
     return {unit: int(amount) if amount == int(amount) else amount for unit, amount in spent.items()}
+
+
+def _memory(value):
+    """A memory as the line of text it is. A log written before memories were checked may hold a list: its lines, joined."""
+    return "; ".join(str(line) for line in value) if isinstance(value, list) else str(value)
 
 
 def _attitude(value):

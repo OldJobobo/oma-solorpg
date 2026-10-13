@@ -117,6 +117,23 @@ class CommitTest(CampaignTest):
             c.commit({"time": {"day": 365}}, rng=Dice(*[1] * 6))  # a year in rounds is counted, not listed
             self.assertTrue(c.state["clocks"]["dark_ritual"]["full"])
 
+    def test_a_list_memory_is_refused_and_an_old_one_still_reads(self):
+        with self.session() as c:
+            count = len(c.events)
+            with self.assertRaisesRegex(SoloError, "npc orc_leader: a memory is one line of text"):
+                c.commit({"npc": {"orc_leader": {"memory": ["the gate", "the horn"]}}})
+            with self.assertRaisesRegex(SoloError, "faction orcs: what they heard is one line of text"):
+                c.commit({"faction": {"orcs": {"memory": ["the gate"]}}})
+            self.assertEqual(len(c.events), count)
+            # A log written before the check: its lists read as lines.
+            c.append("commit", changes={"npc": {"orc_leader": {"memory": ["the gate", "the horn"]}},
+                                        "faction": {"orcs": {"standing": -1, "standing_was": -1, "memory": ["the gate"]}}})
+        with self.session() as c:
+            self.assertEqual(c.state["npcs"]["orc_leader"]["memories"], ["the gate; the horn"])
+            self.assertIn("the gate; the horn", cli.resume_digest(c))
+            self.assertIn("the gate", cli.resume_digest(c, book=True))
+            self.assertIn("the horn", cli.recall_text(c, "horn"))
+
     def test_rejected_commits_write_nothing(self):
         with self.session() as c:
             for payload, message in (
