@@ -656,6 +656,19 @@ class Notes(unittest.TestCase):
         story = "The door opens.\n\nBeyond it, the player of the harp stops. What do you do?"
         self.assertEqual(drop_notes(story), story)  # a note only ever leads
 
+    def test_notes_are_told_by_what_only_notes_hold_never_by_a_word_a_story_uses(self):
+        from solo.gm import drop_notes
+        for note in ("Committed the gate fact with `solo commit`.", "Ran solo move gate; the scene text says the yard is empty.",
+                     "Done with the bookkeeping. Narrating the climb now.", "The engine says the clock ticked."):
+            with self.subTest(note):
+                self.assertEqual(drop_notes(f"{note}\n\nYou reach the ledge. What now?"), "You reach the ledge. What now?")
+        for story in ("You commit to the climb, fingers numb on the wet stone.\n\nThe ledge holds. What now?",
+                      "The player of the harp looks up as you come in.\n\nShe smiles. What do you say?",
+                      "Your solo journey ends at the gate, where the warden waits.\n\nWhat do you do?",
+                      "The commits of old kings are carved here.\n\nWhat do you read first?"):
+            with self.subTest(story):
+                self.assertEqual(drop_notes(story), story)
+
     def test_a_gm_block_copied_into_the_reply_never_reaches_the_book(self):
         from solo.gm import drop_notes
         text = ("He comes for you.\n\n::: gm (for you only, not the player)\nWeapons pass through him: "

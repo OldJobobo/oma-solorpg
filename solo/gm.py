@@ -258,8 +258,11 @@ def _not_shown(root, folder, agent, session, unseen, began):
     (folder / "agent.json").write_text(json.dumps({"agent": agent, "session": session, "unseen": turns}) + "\n", encoding="utf-8")
 
 
-# Words a GM's notes to itself use and its narration never does.
-_NOTES = re.compile(r"\b(narrate|narration|the player|commit(ted|s)?|the engine|solo [a-z-]+|scene text|GM text)\b", re.I)
+# What only a GM's notes to itself hold: backticks, its own work named (narrate, the engine, scene text, GM
+# text), or a solo command (but "your solo journey" is a story's). Never words a story uses too: "You commit
+# to the climb" and "the player of the harp" are narration.
+_NOTES = (r"`|\b(narrat(e|es|ed|ing|ion)|the engine|scene text|GM text)\b"
+          r"|(?<!\ba )(?<!\bthe )(?<!\byour )(?<!\bmy )(?<!\bhis )(?<!\bher )(?<!\btheir )\bsolo ({commands})(?![\w-])")
 
 
 _FENCE = re.compile(r"^:::[ \t]*gm\b.*?(^:::[ \t]*$|\Z)", re.S | re.M | re.I)
@@ -270,9 +273,11 @@ def drop_notes(text):
     note to itself ("Library exit is now open. Time to narrate the payoff."), or copies a
     `::: gm` block into it as if the Book would hide it. Both are dropped: the fenced
     blocks wherever they are, the leading notes as long as narration follows them."""
+    from .cli import command_names
+    notes = re.compile(_NOTES.format(commands="|".join(map(re.escape, command_names()))), re.I)
     text = _FENCE.sub("", text)
     paragraphs = [p for p in re.split(r"\n\s*\n", text) if p.strip()]
-    while len(paragraphs) > 1 and _NOTES.search(paragraphs[0]):
+    while len(paragraphs) > 1 and notes.search(paragraphs[0]):
         paragraphs.pop(0)
     return "\n\n".join(p.strip() for p in paragraphs)
 
