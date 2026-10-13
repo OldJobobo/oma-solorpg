@@ -3,6 +3,7 @@
 import json
 import os
 import re
+import shutil
 import stat
 import subprocess
 import textwrap
@@ -732,7 +733,12 @@ class DefaultAgent(CliCase):
         self.bin = self.tmp / "bin"
         self.bin.mkdir()
         os.environ.pop("AGENT", None)
-        patch = unittest.mock.patch.dict(os.environ, {"PATH": f"{self.bin}:/usr/bin:/bin"})
+        # The stand-ins and awk (bin/ask-agent reads Omarchy's default with it), and nothing else: a claude or codex
+        # installed in /usr/bin would be found.
+        tools = self.tmp / "tools"
+        tools.mkdir()
+        (tools / "awk").symlink_to(shutil.which("awk"))
+        patch = unittest.mock.patch.dict(os.environ, {"PATH": f"{self.bin}:{tools}"})
         patch.start()
         self.addCleanup(patch.stop)
 
