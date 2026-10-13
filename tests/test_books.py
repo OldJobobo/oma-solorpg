@@ -263,7 +263,7 @@ class GearRecipeTest(unittest.TestCase):
         made.line(3, 400, "SERVICES", x=250, style=BANNER)
         made.mark(2, "Table: Services")
         made.table(3, 420, ["SERVICE", "COST", "SUPPLY", "EFFECT"], [["Guide", "3 gold/day", "Common", "Leads the way."], ["Curse", "2 gold × potency", "Rare", "See the chapter."]], [68, 150, 250, 300])
-        made.save()
+        made.save(pages=True)
         self.book = Book(self.tmp / "extract")
         self.pack = Pack(self.book, self.tmp / "out", dragonbane_core.NAME, dragonbane_core.extends(None))
         dragonbane_core.gear.build(self.pack)
@@ -304,6 +304,8 @@ class GearRecipeTest(unittest.TestCase):
         report = audit.audit(self.tmp / "out", "system")
         self.assertEqual(report["unclaimed"], [])
         self.assertEqual(report["problems"], [])
+        # Every weapon's numbers are on its table's page: a grip of 2 is the page's "2H".
+        self.assertEqual(report["unverified"], [])
 
 
 if __name__ == "__main__":

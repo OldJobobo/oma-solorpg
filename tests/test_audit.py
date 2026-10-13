@@ -414,6 +414,37 @@ class BookCheckTest(unittest.TestCase):
         self.assertFalse(audit.failed(report), audit.render(report))
         self.assertIn("is row 2", self.change("tables/fear.toml", '"Shakes and drops what they hold."', '"Runs away screaming into the night."'))
 
+    def test_a_weapons_numbers_are_each_on_its_page(self):
+        self.assertIn("rules: system.toml:weapons gives long_sword.durability 4, and p. 1 never says it",
+                      self.change("system.toml", "durability = 12", "durability = 4"))
+        self.assertIn("rules: system.toml:weapons gives long_sword.str 18, and p. 1 never says it", self.change("system.toml", "str = 10", "str = 18"))
+
+    def test_a_number_the_book_writes_in_words_or_with_its_unit_is_on_the_page(self):
+        write(self.book / "pages" / "0001.txt", self.PAGES[1].replace("durability 12", "durability twelve").replace("range 2,", "range 2m,"))
+        report = audit.audit(self.pack, "system")
+        self.assertFalse(audit.failed(report), audit.render(report))
+
+    def test_the_dice_a_rest_recovers_are_the_ones_the_page_gives_hit_points(self):
+        # D4 is on the page too, for a dagger: what matters is the die the page puts before HP.
+        self.assertIn("rules: system.toml:rest gives stretch.recover.hp d4, and p. 1 says d6 hp",
+                      self.change("system.toml", 'recover = { hp = "1d6" }', 'recover = { hp = "1d4" }'))
+
+    def test_a_spells_dice_and_rank_are_on_its_page(self):
+        self.assertIn("spells: spells/firebolt has 4d10, and p. 2 never says it", self.change("spells/firebolt.toml", 'damage = "2d6"', 'damage = "4d10"'))
+        self.assertIn("spells: spells/firebolt gives rank 5, and p. 2 never says it", self.change("spells/firebolt.toml", "rank = 1", "rank = 5"))
+
+    def test_a_monsters_stats_are_the_ones_their_labels_carry(self):
+        # 12 and 2 are both on the page, but not as the ghoul's HP and armor.
+        self.assertIn("ghoul: bestiary/ghoul gives stats.hp 12, and p. 3 says hp: 18", self.change("bestiary/ghoul.toml", "hp = 18", "hp = 12"))
+        self.assertIn("ghoul: bestiary/ghoul gives stats.armor 2, and p. 3 says armor: 4", self.change("bestiary/ghoul.toml", "armor = 4", "armor = 2"))
+
+    def test_a_monsters_movement_and_attack_skill_are_on_its_page(self):
+        self.assertIn("ghoul: bestiary/ghoul gives stats.movement 99, and p. 3 never says it", self.change("bestiary/ghoul.toml", "movement = 10", "movement = 99"))
+
+    def test_a_number_the_page_has_only_as_another_stat_is_not_the_entrys(self):
+        # The page's only 18 is the ghoul's HP, so it is no proof of an attack at skill 18.
+        self.assertIn("ghoul: bestiary/ghoul gives attack.value 18, and p. 3 has 18 only as hp: 18", self.change("bestiary/ghoul.toml", "value = 12", "value = 18"))
+
     def test_pages_with_no_text_are_no_pass(self):
         for number in self.PAGES:
             write(self.book / "pages" / f"{number:04d}.txt", "\n")  # a scanned book: pictures, no text
@@ -422,7 +453,7 @@ class BookCheckTest(unittest.TestCase):
         self.assertIn("picture/0003.txt", found)
         # What an agent read off the page's picture is text the audit reads.
         write(self.book / "picture" / "0003.txt", self.PAGES[3])
-        self.assertRegex(self.change("bestiary/ghoul.toml", "hp = 40", "hp = 40"), r"ghoul: bestiary/ghoul gives (stats\.)?hp 40")
+        self.assertIn("ghoul: bestiary/ghoul gives stats.hp 40, and p. 3 never says it", self.change("bestiary/ghoul.toml", "hp = 40", "hp = 40"))
 
     def test_a_page_of_a_few_words_is_read_and_not_taken_for_a_scan(self):
         write(self.book / "pages" / "0002.txt", "FIREBOLT\nRank 1. 2D6.\n")

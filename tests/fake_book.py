@@ -73,15 +73,19 @@ class FakeBook:
             for cell, x in zip(cells, xs):
                 self.line(page, y + 17 + 17 * number, cell, x, CELL)
 
-    def save(self, extras=None):
+    def save(self, extras=None, pages=False):
         """Write the book. A page 0 of body text comes first, before any bookmark, so that the body
-        typeface is the one most of the book is set in, as it is in a real one."""
+        typeface is the one most of the book is set in, as it is in a real one. With `pages`, each
+        page's text too (pages/0003.txt, a line to each line), which is what the audit reads."""
         (self.folder / "layout").mkdir(parents=True, exist_ok=True)
         if 0 not in self.pages:
             self.line(0, 80, "The front matter of a made-up book, which says nothing and goes on at length so the body type wins. " * 4)
         for number, lines in self.pages.items():
             page = {"page": number, "width": 612.0, "height": 792.0, "lines": lines}
             (self.folder / "layout" / f"{number:04d}.json").write_text(json.dumps(page), encoding="utf-8")
+            if pages:
+                (self.folder / "pages").mkdir(exist_ok=True)
+                (self.folder / "pages" / f"{number:04d}.txt").write_text("".join(f"{line['text']}\n" for line in lines), encoding="utf-8")
         (self.folder / "outline.json").write_text(json.dumps(self.outline), encoding="utf-8")
         manifest = {"source": self.source, "pages": max(self.pages, default=0), "layout": True, **(extras or {})}
         (self.folder / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")

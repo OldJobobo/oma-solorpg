@@ -37,8 +37,9 @@ def build(pack):
     pack.item("creation_numbers", "Attributes, ratings and skill levels", "mechanic",
               [page for title in ("Attributes", "Derived Ratings", "Skills") for page in chapter.find(title).pages],
               [f"creation.toml:{key}" for key in ("attributes", "attribute_range", "key_swap", "trained_multiplier", "tracks", *(f"ratings.{name}" for name in ratings))])
-    pack.item("creation_kin", "Kin", "mechanic", chapter.find("Kin").pages, ["creation.toml:choose.kin"])
-    pack.item("creation_professions", "Professions", "mechanic", chapter.find("Profession").pages,
+    # A kin's movement is read from the movement table, and how many trained skills a profession gives from the skills' section: the items cite those pages too.
+    pack.item("creation_kin", "Kin", "mechanic", [*chapter.find("Kin").pages, *chapter.find("Derived Ratings", "Movement").pages], ["creation.toml:choose.kin"])
+    pack.item("creation_professions", "Professions", "mechanic", [*chapter.find("Profession").pages, *chapter.find("Skills", "Starting Skill Levels").pages],
               ["creation.toml:choose.profession", "creation.toml:choose.craft", "creation.toml:choose.school"])
     pack.item("creation_age", "Age", "mechanic", chapter.find("Age").pages, ["creation.toml:choose.age"])
 

@@ -132,7 +132,7 @@ def audit(pack, kind, extract=None):
     report["pages"] = _page_coverage(folder, items) if folder else None
     book = _book_pages(folder) if folder else {}
     lines = _book_lines(folder) if book else {}
-    report["unverified"] = [line for item in items.values() for line in _checked(item, loaded, book, lines)] if book else []
+    report["unverified"] = [line for item in items.values() for line in _checked(item, pack, loaded, book, lines)] if book else []
     report["files"] = _progress(items)
     return report
 
@@ -314,7 +314,7 @@ def _norm(text):
     return " ".join(re.sub(r"[\u2010-\u2015\u2212]", "-", text).replace("\u00d7", "x").split())
 
 
-def _checked(item, loaded, book, lines):
+def _checked(item, pack, loaded, book, lines):
     if item["status"] != "mapped" or not item["pages"]:
         return []
     text = " ".join(book.get(page, "") for page in item["pages"])
@@ -357,9 +357,13 @@ def _checked(item, loaded, book, lines):
             for dice in sorted(set(_dice_in(part))):
                 if not _dice_on(dice, part_text):
                     found.append(f"{item['id']}: {ref} has {dice}, and {part_where} never says it")
-        for label, number in _numbers_in(ref, data):
-            if str(number) not in words:
-                found.append(f"{item['id']}: {ref} gives {label} {number}, and {where} never says it")
+        own = _own(ref, pack)
+        if own is None:
+            # The pack maps what only a pack under it holds: the book's pages show whether that one had its numbers right.
+            found += [f"{item['id']}: {ref} gives {label} {number}, and {where} never says it"
+                      for label, number in _numbers_in(ref, data) if not _says_number(number, text, words)]
+        else:
+            found += [f"{item['id']}: {ref} {line}" for line in _entry_problems(ref, own, text, words, where, loaded.get("tracks") or {})]
 
     money = loaded.get("money") or {}
     entries = [(ref, _data_for(ref, loaded)) for ref in item["to"] if ref.startswith("gear.toml:gear.")]
@@ -420,6 +424,137 @@ def _numbers_in(ref, data):
     if isinstance(data, dict) and "price" in data:
         numbers += [("price", int(n)) for n in re.findall(r"\d+", str(data["price"]))]
     return numbers
+
+
+# The numbers of an entry ------------------------------------------------------------------
+#
+# Every number of an entry the book gives (a weapon, a rest, a piece of gear, a monster, a spell,
+# a creation choice, a hero) is on the pages its item cites. Where a page labels a value ("HP: 18",
+# "Rank: 2", "D6 HP"), the value has to be one the label carries: a monster's HP of 12 doesn't
+# pass because its page has a 12 somewhere else. And a number the page has only as another
+# label's value (the 18 of "HP: 18", for the skill of the monster's attack) isn't the entry's.
+# What a recipe or an agent works out rather than copies is not read: 0 and 1 (a book says
+# "none", "a", "once"), time (counted in seconds, or in rests), a list (a table the recipe may have
+# completed: a row between two the book prints, a top for "17+"), and what each coin is worth.
+
+_UNREAD = ("time",)
+_NUMBER_WORDS = {2: ("two", "twice", "double", "half"), 3: ("three", "thrice", "third"), 4: ("four", "quarter"), 5: ("five",), 6: ("six",),
+                 7: ("seven",), 8: ("eight",), 9: ("nine",), 10: ("ten",), 11: ("eleven",), 12: ("twelve",), 20: ("twenty",)}
+# The labels a book sets before a stat's value ("HP: 18"), by the key a pack holds the stat under.
+_STAT_LABELS = {"hp": ("hp",), "wp": ("wp",), "armor": ("armor",), "ferocity": ("ferocity",), "movement": ("movement", "mov."), "rank": ("rank",)}
+
+
+def _own(ref, pack):
+    """What a reference points at in the pack's own files, without the packs it is laid over: None
+    when only those hold it."""
+    path, _, key = ref.partition(":")
+    folder = path.partition("/")[0]
+    if "/" in path and folder in (*_FOLDERS, "npcs"):
+        found = {}
+        for suffix in (".json", ".toml"):
+            file = Path(pack) / folder / f"{Path(path).stem}{suffix}"
+            found.update(packs.load_data(file) if file.exists() else {})
+        return found or None
+    if path not in ("system.toml", "creation.toml", "gear.toml") or not key or not (Path(pack) / path).exists():
+        return None
+    node = packs.load_data(Path(pack) / path)
+    for part in key.split("."):
+        node = node.get(part) if isinstance(node, dict) else None
+    return node
+
+
+def _entries(ref, data):
+    """[(name, entry)] whose numbers are read back, of what a reference points at: a file of its own
+    (a monster, an NPC, a spell, a hero), a key of system.toml, creation.toml or gear.toml that names
+    one entry, or each entry of a section that is a table of them (system.toml:weapons: each weapon;
+    system.toml:armor: each armor's rating). Not a section of other things (combat, magic)."""
+    path, _, key = ref.partition(":")
+    if "/" in path:
+        return [("", data)] if path.partition("/")[0] in ("bestiary", "npcs", "spells", "characters") and isinstance(data, dict) else []
+    if path not in ("system.toml", "creation.toml", "gear.toml") or not key or not isinstance(data, dict) or key.split(".")[0] in ("money", *_UNREAD):
+        return []
+    if "." in key:
+        return [("", data)]
+    if data and all(isinstance(value, dict) for value in data.values()):
+        return [(f"{name}.", value) for name, value in data.items()]
+    if data and all(_whole(value) for value in data.values()):
+        return [("", data)]
+    return []
+
+
+def _whole(value):
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _numbers(entry, prefix=""):
+    """[(path, key, number)]: an entry's numbers that are read back (see above), and its prices'."""
+    found = []
+    for key, value in entry.items():
+        if key in _UNREAD:
+            continue
+        elif isinstance(value, dict):
+            found += _numbers(value, f"{prefix}{key}.")
+        elif _whole(value) and abs(value) > 1:
+            found.append((f"{prefix}{key}", key, abs(value)))
+        elif key == "price":
+            found += [(f"{prefix}{key}", key, int(n)) for n in re.findall(r"\d+", str(value))]
+    return found
+
+
+def _track_dice(entry, tracks, prefix=""):
+    """[(path, track, dice)]: the dice an entry gives a track ("1d6" HP a rest recovers)."""
+    found = []
+    for key, value in entry.items():
+        if isinstance(value, dict):
+            found += _track_dice(value, tracks, f"{prefix}{key}.")
+        elif key in tracks and isinstance(value, str):
+            found += [(f"{prefix}{key}", key, dice) for dice in _dice_in(value)]
+    return found
+
+
+def _says_number(number, text, words):
+    """Whether the pages have a number: as digits, with a unit set close after it ("2H"), in words
+    ("two", "twice"), or (meters) in kilometers."""
+    return (str(number) in words or any(re.fullmatch(rf"{number}[a-z]+", word) for word in words)
+            or any(word in words for word in _NUMBER_WORDS.get(number, ()))
+            or (number % 1000 == 0 and re.search(rf"\b{number // 1000}\s*kilomet", text) is not None))
+
+
+def _labelled(text, labels):
+    """[(value, start, end)] of each number the pages set after one of these labels and a colon ("hp: 18")."""
+    found = []
+    for label in labels:
+        for at in re.finditer(rf"(?<![a-z]){re.escape(label)}\s*:\s*(\d+)(\s*kilomet)?", text):
+            found.append((int(at.group(1)) * (1000 if at.group(2) else 1), at.start(1), at.end(1)))
+    return found
+
+
+def _entry_problems(ref, data, text, words, where, tracks):
+    """What an entry's numbers say that its pages don't (see above)."""
+    problems = []
+    for name, entry in _entries(ref, data):
+        numbers = _numbers(entry)
+        labels = {key: (*_STAT_LABELS.get(key, ()), *((key, tracks[key].lower()) if key in tracks else ())) for _, key, _ in numbers}
+        labels = {key: names for key, names in labels.items() if names}
+        claims = {key: _labelled(text, names) for key, names in labels.items()}
+        for path, key, number in numbers:
+            said = f"gives {name}{path} {number}, and {where}"
+            printed = {value for value, _, _ in claims.get(key, [])}
+            if not _says_number(number, text, words):
+                problems.append(f"{said} never says it")
+            elif printed and number not in printed:
+                problems.append(f"{said} says {labels[key][0]}: {', '.join(map(str, sorted(printed)))}")
+            elif str(number) in words and not printed:
+                spots = [(at.start(), at.end()) for at in re.finditer(rf"(?<![\w]){number}(?![\w])", text)]
+                theirs = {(start, end): other for other, found in claims.items() if other != key for _, start, end in found}
+                if spots and all(spot in theirs for spot in spots) and not any(word in words for word in _NUMBER_WORDS.get(number, ())):
+                    problems.append(f"{said} has {number} only as {labels[theirs[spots[0]]][0]}: {number}")
+        for path, track, rolled in _track_dice(entry, tracks):
+            names = "|".join(re.escape(label) for label in (track, tracks[track].lower()))
+            printed = {f"{count if count not in ('', '1') else ''}d{sides}" for count, sides in re.findall(rf"\b(\d*)d(\d+)\s+(?:{names})\b", text)}
+            if printed and rolled not in printed:
+                problems.append(f"gives {name}{path} {rolled}, and {where} says {', '.join(sorted(printed))} {track}")
+    return problems
 
 
 # A price is read back beside its item's name: the plausible price of the wrong row passes a
