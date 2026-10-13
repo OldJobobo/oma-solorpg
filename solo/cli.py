@@ -342,7 +342,7 @@ def _preflight(skill_dirs):
         lines.append(("optional", "hyprctl not found, so no desktop effects: they need Hyprland, and the game plays without them"))
     agent = gm.default_agent()
     if not agent:
-        lines.append(("todo", "no default agent: choose Claude Code or Codex with omarchy default agent, or set SOLO_AGENT=claude"))
+        lines.append(("todo", "no default agent: choose Claude Code or Codex with omarchy default agent, or set AGENT=claude"))
     elif not shutil.which(agent):
         lines.append(("todo", f"the default agent is {agent}, and {agent} isn't on PATH: install it, or choose another with omarchy default agent"))
     elif gm.supported(agent):
@@ -880,7 +880,7 @@ def cmd_commit(args):
     text = sys.stdin.read() if args.json == "-" else args.json
     try:
         payload = json.loads(text)
-    except json.JSONDecodeError as error:
+    except ValueError as error:  # a JSONDecodeError, or a number too long to read (over 4300 digits)
         raise SoloError(f"the commit isn't valid JSON: {error}") from None
     with _open(args) as c:
         event = c.commit(payload, rng=_rng())

@@ -242,6 +242,10 @@ class CliTest(CliCase):
         self.assertIn("unknown commit keys", err)
         code, _, err = self.solo("-C", self.game, "commit", "{not json")
         self.assertIn("isn't valid JSON", err)
+        # A number too long for Python to read is a ValueError, not a JSONDecodeError.
+        code, _, err = self.solo("-C", self.game, "commit", '{"chaos": ' + "1" * 5000 + "}")
+        self.assertEqual(code, 1)
+        self.assertIn("isn't valid JSON", err)
 
     def test_a_folder_named_with_c_never_falls_back_to_the_current_game(self):
         self.new_game()
@@ -350,7 +354,7 @@ class CliTest(CliCase):
         self.assertFalse((home / ".pi").exists())
 
     def test_setup_says_what_is_missing_and_what_to_do(self):
-        os.environ["SOLO_AGENT"] = "claude"
+        os.environ["AGENT"] = "claude"
         out = self.setup_on(plugin=True)
         self.assertIn("ok       Python 3.", out)
         self.assertIn("todo     omarchy and omarchy-shell not found", out)
@@ -371,7 +375,7 @@ class CliTest(CliCase):
         self.assertNotIn("Enable it with", out)
 
     def test_setup_tells_an_agent_the_book_cant_run_from_one_it_can(self):
-        os.environ["SOLO_AGENT"] = "opencode"
+        os.environ["AGENT"] = "opencode"
         self.assertIn("the default agent is opencode, which the Book can't run", self.setup_on("opencode"))
 
     def test_solo_on_a_python_older_than_3_11_says_so_in_a_sentence(self):
