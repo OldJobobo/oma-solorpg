@@ -2065,10 +2065,12 @@ class Campaign:
         changes, clock_moves, warnings = self._normalize(payload)
         before = self.state["time"]
         event = self.append(kind, changes=changes, warnings=warnings or None, **extra)
+        filled = Counter()
         for clock_id, delta in clock_moves:
             for _ in range(abs(delta)):
-                self._tick(clock_id, 1 if delta > 0 else -1, event["seq"], rng)
-        self._follow(self._commit_triggers(changes, before), event["seq"], rng)
+                # A clock the commit fills fires clock:<id>:full like one filled by its triggers.
+                filled.update(self._tick(clock_id, 1 if delta > 0 else -1, event["seq"], rng))
+        self._follow(self._commit_triggers(changes, before) + filled, event["seq"], rng)
         if changes.get("time"):
             self._burn(event["seq"])
         self._settle()

@@ -152,6 +152,23 @@ class CommitTest(CampaignTest):
 
 
 class ClockTest(CampaignTest):
+    def test_a_clock_a_commit_or_a_stage_fills_sets_off_the_clocks_that_listen(self):
+        adventure = self.tmp / "alarms"
+        shutil.copytree(self.adventure, adventure)
+        spec = adventure / "adventure.toml"
+        spec.write_text(spec.read_text() + (
+            '\n[clocks.alarm_a]\nlabel = "The first alarm"\nsegments = 2\n'
+            '\n[clocks.alarm_c]\nlabel = "The third alarm"\nsegments = 2\n'
+            '\n[clocks.alarm_b]\nlabel = "The second alarm"\nsegments = 3\nadvance = ["clock:alarm_a:full", "clock:alarm_c:full"]\n'
+            '\n[clocks.fuse]\nlabel = "The fuse"\nsegments = 2\n\n[[clocks.fuse.stages]]\nat = 1\nclock = { alarm_c = "+2" }\n'))
+        root = campaign.create(self.tmp / "alarms-game", self.system, adventure, self.character)
+        with campaign.session(root) as c:
+            c.commit({"clock": {"alarm_a": "+2"}})
+            self.assertEqual(c.state["clocks"]["alarm_b"]["value"], 1)
+            c.commit({"clock": {"fuse": "+1"}})
+            self.assertTrue(c.state["clocks"]["alarm_c"]["full"])
+            self.assertEqual(c.state["clocks"]["alarm_b"]["value"], 2)
+
     def test_time_and_facts_advance_clocks_and_roll_their_table(self):
         with self.session() as c:
             c.commit({"time": {"shift": 2}}, rng=Dice(3, 6))
