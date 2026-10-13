@@ -374,6 +374,16 @@ class BookCheckTest(unittest.TestCase):
         report = audit.audit(self.pack, "system")
         self.assertFalse(audit.failed(report), audit.render(report))
 
+    def test_pages_with_no_text_are_no_pass(self):
+        for number in self.PAGES:
+            write(self.book / "pages" / f"{number:04d}.txt", "\n")  # a scanned book: pictures, no text
+        found = self.change("bestiary/ghoul.toml", "hp = 18", "hp = 40")
+        self.assertIn("ghoul: p. 3 has no text to read the pack against", found)
+        self.assertIn("picture/0003.txt", found)
+        # What an agent read off the page's picture is text the audit reads.
+        write(self.book / "picture" / "0003.txt", self.PAGES[3])
+        self.assertRegex(self.change("bestiary/ghoul.toml", "hp = 40", "hp = 40"), r"ghoul: bestiary/ghoul gives (stats\.)?hp 40")
+
     def test_a_spell_no_item_claims_is_unclaimed(self):
         write(self.pack / "spells" / "doom.toml", 'name = "Doom"\nschool = "elementalism"\nrank = 2\n')
         report = audit.audit(self.pack, "system")
