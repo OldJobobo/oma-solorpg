@@ -53,6 +53,15 @@ class MakefileTest(unittest.TestCase):
         self.assertEqual(targets - phony, set())
 
 
+class RepositoryTest(unittest.TestCase):
+    def test_ci_installs_what_the_skipping_tests_need_and_loads_the_qml(self):
+        workflow = (ROOT / ".github" / "workflows" / "test.yml").read_text(encoding="utf-8")
+        self.assertIn("pip install pymupdf", workflow)
+        self.assertIn("glslang-tools", workflow)
+        self.assertIn("make qml-check", workflow)
+        self.assertIn("package-ecosystem: github-actions", (ROOT / ".github" / "dependabot.yml").read_text(encoding="utf-8"))
+
+
 class LicenseTest(unittest.TestCase):
     def test_license_is_the_mit_text_alone_so_github_can_tell_which_it_is(self):
         text = (ROOT / "LICENSE").read_text(encoding="utf-8")

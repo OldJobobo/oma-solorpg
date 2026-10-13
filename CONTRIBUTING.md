@@ -24,7 +24,7 @@ make qml-check    # Panel.qml and BarWidget.qml, loaded offscreen with stand-ins
 
 The engine and its tests are standard library only, on Python 3.11 or newer. Run one file with `python3 -m unittest discover -s tests -p "test_packs.py"`. Two kinds of test skip themselves when their tool is missing: the ones that read PDFs need PyMuPDF (`uv pip install --system pymupdf`), and the shader compile check needs `glslangValidator`. `make qml-check` needs PySide6 (`pip install PySide6-Essentials`) and writes screenshots to a temporary folder.
 
-Every pull request runs `make test` on Python 3.11 and on the newest release ([.github/workflows/test.yml](.github/workflows/test.yml)), so the result shows on the pull request without anyone running it. It can't run the QML check, so run that yourself when you touch a `.qml` file.
+Every pull request runs `make test` on Python 3.11 and on the newest release, with PyMuPDF and `glslangValidator` installed so the tests that need them run, and `make qml-check` with PySide6 ([.github/workflows/test.yml](.github/workflows/test.yml)). The result shows on the pull request without anyone running it.
 
 ## Changing the engine
 
