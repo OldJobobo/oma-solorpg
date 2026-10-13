@@ -450,6 +450,79 @@ class GmTest(Agents):
         worker.join(10)
         self.assertEqual((done["status"], done["error"]), ("stopped", ""))
 
+    def test_a_stop_before_the_agent_starts_keeps_it_from_running(self):
+        # With no agent pid yet, a stop could only leave its file, and the agent then ran the whole turn.
+        self.agent("claude", CLAUDE_STREAM)
+        (self.root / ".solo" / "agent.json").write_text(json.dumps({"agent": "claude", "session": "sess-1"}))
+
+        def stopped_first():
+            gm.stop(self.root)
+            return ["--restricted"]
+
+        with unittest.mock.patch.object(gm, "_settings_flags", side_effect=stopped_first):
+            result = gm.turn(self.root, "Hi")
+        self.assertEqual(result["status"], "stopped")
+        self.assertFalse((self.tmp / "claude.calls").exists())  # it never ran
+        self.assertEqual(gm.spent(self.root, "sess-1")["turns"], 0)
+
+    def test_a_stop_while_the_agent_starts_ends_it(self):
+        script = self.bin / "claude"
+        script.write_text(textwrap.dedent(f"""\
+            #!/usr/bin/env python3
+            import time
+            time.sleep(2)
+            open({str(self.tmp / 'finished')!r}, "w").write("the whole turn")
+            """))
+        script.chmod(script.stat().st_mode | stat.S_IEXEC)
+
+        def stopped_meanwhile():
+            gm.stop(self.root)  # after the first look for a stop, before the agent's pid is written
+            return cli.GM_COMMANDS
+
+        began = time.monotonic()
+        with unittest.mock.patch.object(gm, "campaign_commands", side_effect=stopped_meanwhile):
+            result = gm.turn(self.root, "Hi")
+        self.assertEqual(result["status"], "stopped")
+        self.assertLess(time.monotonic() - began, 1.5)
+        time.sleep(1)
+        self.assertFalse((self.tmp / "finished").exists())
+
+    def test_after_a_stopped_turn_the_gm_hears_its_reply_went_unseen_and_whose_rolls_were_whose(self):
+        script = self.bin / "claude"
+        script.write_text(textwrap.dedent(f"""\
+            #!/usr/bin/env python3
+            import json, subprocess, sys, time
+            print(json.dumps({{"type": "system", "subtype": "init", "session_id": "sess-1"}}), flush=True)
+            subprocess.run(["solo", "check", "awareness"], capture_output=True)  # the GM rolls, then is stopped
+            open({str(self.tmp / 'rolled')!r}, "w").write("yes")
+            time.sleep(30)
+            """))
+        script.chmod(script.stat().st_mode | stat.S_IEXEC)
+        import threading
+        done = {}
+        worker = threading.Thread(target=lambda: done.update(gm.turn(self.root, "I look around.")))
+        worker.start()
+        for _ in range(200):
+            if (self.tmp / "rolled").exists():
+                break
+            time.sleep(0.05)
+        gm.stop(self.root)
+        worker.join(10)
+        self.assertEqual(done["status"], "stopped")
+        with self.session() as c:
+            c.check("sneaking", rng=Dice(3))  # the player, on the Table, after the stop
+        self.agent("claude", CLAUDE_STREAM)
+        gm.turn(self.root, "What happened?")
+        prompt = self.calls("claude")[0][-1]
+        self.assertTrue(prompt.startswith(f"{gm.PREAMBLE} Your last reply never reached the player"))
+        awareness = next(line for line in prompt.splitlines() if "Awareness" in line)
+        sneaking = next(line for line in prompt.splitlines() if "Sneaking" in line)
+        self.assertTrue(awareness.endswith("(during a turn of yours the player never saw)"))
+        self.assertNotIn("never saw", sneaking)
+        self.assertNotIn("unseen", json.loads((self.root / ".solo" / "agent.json").read_text()))  # this one was seen
+        gm.turn(self.root, "And then?")
+        self.assertEqual(self.calls("claude")[1][-1], "And then?")
+
     def test_a_turn_killed_with_the_machine_isnt_thinking_forever(self):
         (self.root / ".solo").mkdir(exist_ok=True)
         turn = self.root / ".solo" / "turn.json"
