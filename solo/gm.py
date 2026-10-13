@@ -17,6 +17,7 @@ This is the only part of solo that runs an agent. The engine still never calls a
 import fcntl
 import hashlib
 import json
+import math
 import os
 import re
 import shutil
@@ -549,12 +550,16 @@ _STOPPED_AT = {
 }
 
 
-def _number(name, default):
+def _number(name, default, whole=False):
+    """A limit from the environment. One that is no limit (zero, below it, not a number, endless, or for a
+    count, less than one) would end every turn at once or never: the default stands instead."""
     try:
         value = float(os.environ.get(name) or default)
-        return value if value > 0 else float(default)
     except ValueError:
-        return float(default)
+        value = 0.0
+    if not math.isfinite(value) or (value < 1 if whole else value <= 0):
+        value = float(default)
+    return int(value) if whole else value
 
 
 def _max_seconds():
@@ -562,14 +567,14 @@ def _max_seconds():
 
 
 def _max_turns():
-    return int(_number("SOLO_GM_MAX_TURNS", _MAX_TURNS))
+    return _number("SOLO_GM_MAX_TURNS", _MAX_TURNS, whole=True)
 
 
 def budget():
     """What a session may spend: the environment, else what the player set, else the defaults."""
     saved = _load(state_home() / "gm.json")
     return {"usd": _number("SOLO_GM_BUDGET_USD", saved.get("budget_usd") or _BUDGET_USD),
-            "turns": int(_number("SOLO_GM_BUDGET_TURNS", saved.get("budget_turns") or _BUDGET_TURNS))}
+            "turns": _number("SOLO_GM_BUDGET_TURNS", saved.get("budget_turns") or _BUDGET_TURNS, whole=True)}
 
 
 def set_budget(usd=None, turns=None):
@@ -659,10 +664,7 @@ def _record_spend(root, used, result):
 
 
 def _quiet_limit():
-    try:
-        return float(os.environ.get("SOLO_GM_TIMEOUT") or _QUIET_LIMIT)
-    except ValueError:
-        return float(_QUIET_LIMIT)
+    return _number("SOLO_GM_TIMEOUT", _QUIET_LIMIT)
 
 
 def _end_group(process):

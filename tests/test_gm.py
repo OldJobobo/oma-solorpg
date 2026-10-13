@@ -201,6 +201,18 @@ class GmTest(Agents):
         self.assertEqual(result["status"], "error")
         self.assertEqual(result["error"], "The GM's turn ran past 2 seconds, so it was ended. Try again.")
 
+    def test_a_limit_that_is_no_limit_leaves_the_default(self):
+        # SOLO_GM_TIMEOUT=0 used to end every turn the moment it began.
+        self.agent("claude", CLAUDE_STREAM)
+        with unittest.mock.patch.dict(os.environ, {"SOLO_GM_TIMEOUT": "0"}):
+            self.assertEqual(gm.turn(self.root, "Hi")["status"], "done")
+        for value in ("0", "-5", "nan", "inf", "soon"):
+            with unittest.mock.patch.dict(os.environ, {"SOLO_GM_TIMEOUT": value, "SOLO_GM_MAX_SECONDS": value, "SOLO_GM_MAX_TURNS": value,
+                                                       "SOLO_GM_BUDGET_USD": value, "SOLO_GM_BUDGET_TURNS": value}):
+                self.assertEqual((gm._quiet_limit(), gm._max_seconds(), gm._max_turns(), gm.budget()), (180, 900, 40, {"usd": 10.0, "turns": 200}), value)
+        with unittest.mock.patch.dict(os.environ, {"SOLO_GM_MAX_TURNS": "0.5", "SOLO_GM_BUDGET_TURNS": "0.5", "SOLO_GM_TIMEOUT": "0.5"}):
+            self.assertEqual((gm._max_turns(), gm.budget()["turns"], gm._quiet_limit()), (40, 200, 0.5))
+
     def test_a_turn_that_ran_out_of_model_calls_says_so_in_a_sentence(self):
         self.agent("claude", [{"type": "system", "subtype": "init", "session_id": "s"},
                               {"type": "result", "subtype": "error_max_turns", "is_error": False, "session_id": "s", "num_turns": 40}])
