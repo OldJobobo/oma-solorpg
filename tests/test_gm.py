@@ -660,6 +660,7 @@ class Isolation(Agents):
         first = self.calls("claude")[0]
         self.assertEqual(first[first.index("--setting-sources") + 1], "")
         self.assertNotIn("--restricted", first)
+        self.assertNotIn("--permission-mode", first)  # its help doesn't name dontAsk
         # Another claude (an update): its --help is read afresh.
         self.agent("claude", CLAUDE_STREAM, help="  --verbose")
         script = self.bin / "claude"
@@ -669,6 +670,16 @@ class Isolation(Agents):
         self.assertFalse({"--restricted", "--setting-sources"} & set(second))
         self.assertIn("your own Claude Code settings", gm.status(self.root)["note"])
         self.assertEqual((self.tmp / "claude.help").read_text(), "asked\nasked\n")
+
+    def test_the_gm_runs_under_dont_ask_whatever_mode_claude_or_the_account_starts_with(self):
+        # With no settings file a GM turn still ran in the mode Claude Code starts with, which an account can make
+        # auto: a classifier then lets through commands the allowed list leaves out.
+        self.agent("claude", CLAUDE_STREAM, help='  --restricted  Restricted mode\n  --permission-mode <mode>  (choices: "acceptEdits",\n'
+                                                 '      "auto", "bypassPermissions", "manual", "dontAsk", "plan")')
+        gm.turn(self.root, "Hi")
+        first = self.calls("claude")[0]
+        self.assertIn("--restricted", first)
+        self.assertEqual(first[first.index("--permission-mode") + 1], "dontAsk")
 
     def test_a_help_that_failed_is_asked_again_and_its_turn_says_whose_settings_it_ran_with(self):
         # A --help that failed once was kept as "knows neither" for as long as that claude stayed installed.

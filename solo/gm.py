@@ -79,6 +79,9 @@ _CLAUDE_KIT = ("--strict-mcp-config", "--no-chrome", "--tools", "Bash,Read", "--
 # it put there. A Claude Code the player opens on the campaign in a terminal still reads it. --restricted
 # keeps the settings files out and confines Read to the campaign and the skill; a Claude Code too old for it
 # is given no setting sources, and one too old for that runs with the player's settings, which the turn notes.
+# With no settings file, the permission mode is still the one the player's account or Claude Code itself
+# starts with, and under auto a classifier lets through commands the list leaves out: where the help names
+# dontAsk, the GM runs under it, and whatever the list doesn't allow is refused.
 _UNISOLATED = ("This Claude Code's help names neither --restricted nor --setting-sources, so the GM's turn ran with your own "
                "Claude Code settings. Update Claude Code.")
 # The GM's pace, which the player picks on the Table, and the effort level it asks of the
@@ -703,10 +706,11 @@ def _end_group(process):
 
 
 def _settings_flags():
-    """The flags that keep the settings files out of a Claude Code turn, as far as the claude on PATH knows
-    them, or None when its help names neither. Its --help is read once for each claude, by path, modification
-    time and size (some installs give every file the same time), and the answer kept in ~/.cache/solo: an option
-    it doesn't know would fail every turn."""
+    """The flags that keep the settings files out of a Claude Code turn and set its permission mode to dontAsk,
+    as far as the claude on PATH knows them, or None when its help names neither --restricted nor
+    --setting-sources. Its --help is read once for each claude, by path, modification time and size (some
+    installs give every file the same time), and the answer kept in ~/.cache/solo: an option it doesn't know
+    would fail every turn."""
     found = shutil.which("claude")
     if not found:
         return []  # the turn says it couldn't start the GM
@@ -717,7 +721,7 @@ def _settings_flags():
         return []
     path = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "solo" / "claude-flags.json"
     known = _load(path)
-    if known.get("claude") != str(binary) or known.get("stamp") != stamp:
+    if known.get("claude") != str(binary) or known.get("stamp") != stamp or "dont_ask" not in known:
         env = {k: v for k, v in os.environ.items() if k not in NESTING}
         try:
             done = subprocess.run([found, "--help"], capture_output=True, text=True, timeout=30, env=env, stdin=subprocess.DEVNULL)
@@ -728,7 +732,8 @@ def _settings_flags():
             # does: it is asked again next turn, and this one runs with neither flag and says so.
             return None
         text = done.stdout
-        known = {"claude": str(binary), "stamp": stamp, "restricted": "--restricted" in text, "setting_sources": "--setting-sources" in text}
+        known = {"claude": str(binary), "stamp": stamp, "restricted": "--restricted" in text, "setting_sources": "--setting-sources" in text,
+                 "dont_ask": '"dontAsk"' in text}
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
             temporary = path.with_name(f"{path.name}.{os.getpid()}")
@@ -736,10 +741,11 @@ def _settings_flags():
             os.replace(temporary, path)
         except OSError:  # a cache: asked again next turn
             pass
+    mode = ["--permission-mode", "dontAsk"] if known.get("dont_ask") else []
     if known.get("restricted"):
-        return ["--restricted"]
+        return ["--restricted", *mode]
     elif known.get("setting_sources"):
-        return ["--setting-sources", ""]
+        return ["--setting-sources", "", *mode]
     return None
 
 
