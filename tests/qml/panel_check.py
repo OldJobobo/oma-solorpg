@@ -637,6 +637,8 @@ def magic_and_dragons(item, panel, out, work, wait):
     if sorted(a["use"] for a in sheet_view["abilities"] if a["use"]) != ["alone", "attack", "rest", "round"]:
         problems.append(f"the abilities aren't sorted into where they are asked for: {sheet_view['abilities']}")
     panel.grabWindow().save(str(out / "table-magic.png"))
+    if labelled(panel.contentItem(), "The Old Road · Day 1, 00:00") is None:  # the time as the Book says it
+        problems.append("the Table doesn't say the time as the Book does (Day 1, 00:00)")
     # In a fight the weapons come right under the last roll, above the spells and abilities.
     axe, magic = button(panel.contentItem(), "Long axe"), labelled(panel.contentItem(), "Magic")
     if axe is None or magic is None or axe.mapToScene(QPointF(0, 0)).y() > magic.mapToScene(QPointF(0, 0)).y():

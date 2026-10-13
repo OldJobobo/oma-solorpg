@@ -802,12 +802,6 @@ Item {
     return ["hostile", "unfriendly", "neutral", "friendly", "allied"][value + 2] || String(value)
   }
 
-  function elapsed(seconds) {
-    var rest = seconds % 86400
-    var pad = n => (n < 10 ? "0" : "") + n
-    return Math.floor(seconds / 86400) + "d " + pad(Math.floor(rest / 3600)) + ":" + pad(Math.floor(rest % 3600 / 60))
-  }
-
   function carriesTorch() {
     return root.pc !== null && root.pc.items.some(i => /(^|\s)torch(es)?$/i.test(i))
   }
@@ -1791,7 +1785,7 @@ Item {
               visible: root.game !== null
               color: root.dim
               size: Commons.Style.font.bodySmall
-              text: root.game ? (root.game.scene_title || "") + " · " + root.elapsed(root.game.time) + " in" : ""
+              text: root.game ? (root.game.scene_title || "") + " · " + Common.elapsed(root.game.time) : ""
             }
 
             RowLayout {

@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Effects
 import QtQuick.Layouts
 import "Md.js" as Md
+import "Common.js" as Common
 
 // The Book: where the story is read and told. The GM's narration streams in as it is
 // written, every roll stops the page for a moment, scenes open with their name, and the
@@ -153,13 +154,6 @@ Item {
       if (beats[i].kind === "gm" || beats[i].kind === "player") return false
     }
     return false
-  }
-
-  function elapsed(seconds) {
-    var day = Math.floor(seconds / 86400) + 1
-    var rest = seconds % 86400
-    var pad = n => (n < 10 ? "0" : "") + n
-    return "Day " + day + ", " + pad(Math.floor(rest / 3600)) + ":" + pad(Math.floor(rest % 3600 / 60))
   }
 
   Rectangle {
@@ -385,7 +379,7 @@ Item {
               font.family: book.theme.mono
               font.pixelSize: book.theme.small
               color: book.theme.dim
-              text: book.game ? book.game.title + " · " + book.elapsed(book.game.time) : ""
+              text: book.game ? book.game.title + " · " + Common.elapsed(book.game.time) : ""
             }
           }
 

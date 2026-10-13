@@ -2,6 +2,13 @@
 
 // What the Table and the Book both need: their quieter text colours, and the game's time in words.
 
+// Time in the game as the hero lives it: Day 1, 00:00 is when the adventure began.
+function elapsed(seconds) {
+  var rest = seconds % 86400
+  var pad = n => (n < 10 ? "0" : "") + n
+  return "Day " + (Math.floor(seconds / 86400) + 1) + ", " + pad(Math.floor(rest / 3600)) + ":" + pad(Math.floor(rest % 3600 / 60))
+}
+
 // WCAG's contrast between two colours (Qt colours, channels from 0 to 1).
 function contrast(a, b) {
   function channel(v) { return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4) }
