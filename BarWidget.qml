@@ -1,7 +1,8 @@
 import QtQuick
 import Quickshell
 import Quickshell.Io
-import qs.Commons
+// Qualified: from Qt 6.12 QtQuick has a Color of its own, which a bare Color would mean.
+import qs.Commons as Commons
 import qs.Ui
 
 // The d20 in the bar. It follows the game: it spins when a die is cast and lands with a
@@ -22,7 +23,7 @@ BarWidget {
   readonly property bool dying: pc !== null && !!pc.dying
   readonly property bool dead: pc !== null && pc.dead === true
   readonly property bool waiting: game !== null && game.awaiting_player === true && !dead && !(game.ended)
-  readonly property color resting: root.waiting ? Color.accent : (root.bar ? root.bar.barForeground : Color.foreground)
+  readonly property color resting: root.waiting ? Commons.Color.accent : (root.bar ? root.bar.barForeground : Commons.Color.foreground)
 
   // The last roll the d20 has spun for, so a reload never spins it again, and the flare
   // it lands with (gold, the Book's Dragon colour, or red).
@@ -43,7 +44,7 @@ BarWidget {
     var seq = roll ? roll.seq : 0
     if (root.rollSeen >= 0 && seq > root.rollSeen) {
       var outcome = roll.outcome || {}
-      root.flare = outcome.dragon ? "#d9a441" : Color.urgent
+      root.flare = outcome.dragon ? "#d9a441" : Commons.Color.urgent
       spin.flares = !!(outcome.dragon || outcome.demon)
       spin.restart()
     }

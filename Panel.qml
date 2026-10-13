@@ -3,7 +3,8 @@ import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
-import qs.Commons
+// Qualified: from Qt 6.12 QtQuick has a Color of its own, which a bare Color would mean.
+import qs.Commons as Commons
 import qs.Ui
 import "book"
 
@@ -135,8 +136,8 @@ Item {
     ? (library.adventures.filter(a => a.id === root.pickedAdventure)[0] || library.adventures[0]) : null
   readonly property var system: adventure ? library.systems.filter(s => s.id === adventure.system)[0] || null : null
 
-  readonly property color textColor: Color.popups.text
-  readonly property color dim: Qt.darker(Color.popups.text, 1.6)
+  readonly property color textColor: Commons.Color.popups.text
+  readonly property color dim: Qt.darker(Commons.Color.popups.text, 1.6)
   readonly property color faint: Qt.rgba(textColor.r, textColor.g, textColor.b, 0.15)
 
   function open(payloadJson) {
@@ -766,8 +767,8 @@ Item {
 
   function rollColor() {
     var outcome = root.lastCheck ? root.lastCheck.outcome : null
-    return outcome && outcome.dragon ? theme.gold : outcome && !outcome.success ? Color.urgent
-      : outcome && (outcome.successes > 1 || outcome.hit === "strong_hit") ? Color.accent : root.textColor
+    return outcome && outcome.dragon ? theme.gold : outcome && !outcome.success ? Commons.Color.urgent
+      : outcome && (outcome.successes > 1 || outcome.hit === "strong_hit") ? Commons.Color.accent : root.textColor
   }
 
   function visibleClocks() {
@@ -838,24 +839,24 @@ Item {
   // Omarchy's theme, in the words the Book uses. The Book is plain QtQuick and reads only this.
   QtObject {
     id: theme
-    readonly property color text: Color.popups.text
+    readonly property color text: Commons.Color.popups.text
     readonly property color dim: root.dim
     readonly property color faint: Qt.rgba(text.r, text.g, text.b, 0.22)
-    readonly property color background: Color.popups.background
-    readonly property color surface: Qt.tint(Color.popups.background, Qt.rgba(text.r, text.g, text.b, 0.05))
-    readonly property color accent: Color.accent
-    readonly property color urgent: Color.urgent
+    readonly property color background: Commons.Color.popups.background
+    readonly property color surface: Qt.tint(Commons.Color.popups.background, Qt.rgba(text.r, text.g, text.b, 0.05))
+    readonly property color accent: Commons.Color.accent
+    readonly property color urgent: Commons.Color.urgent
     // Dragons and candlelight: one warm gold that reads on dark and light themes alike.
     readonly property color gold: "#d9a441"
-    readonly property string mono: Style.font.family
+    readonly property string mono: Commons.Style.font.family
     readonly property string serif: "serif"
-    readonly property real small: Style.font.bodySmall
-    readonly property real body: Style.font.body
-    readonly property real prose: Math.round(Style.font.body * 1.5)
-    readonly property real title: Style.font.title
-    readonly property real heading: Math.round(Style.font.heading * 1.2)
-    readonly property real display: Style.font.display
-    readonly property real radius: Style.cornerRadius
+    readonly property real small: Commons.Style.font.bodySmall
+    readonly property real body: Commons.Style.font.body
+    readonly property real prose: Math.round(Commons.Style.font.body * 1.5)
+    readonly property real title: Commons.Style.font.title
+    readonly property real heading: Math.round(Commons.Style.font.heading * 1.2)
+    readonly property real display: Commons.Style.font.display
+    readonly property real radius: Commons.Style.cornerRadius
   }
 
   // The Book: a normal window, so Hyprland tiles it beside the Table.
@@ -944,22 +945,22 @@ Item {
 
   // Text here comes from packs and from the GM's commits, so it is never read as HTML.
   component Line: Text {
-    property int size: Style.font.body
+    property int size: Commons.Style.font.body
     Layout.fillWidth: true
     textFormat: Text.PlainText
     color: root.textColor
-    font.family: Style.font.family
+    font.family: Commons.Style.font.family
     font.pixelSize: size
     wrapMode: Text.Wrap
   }
 
   component Heading: Text {
     Layout.fillWidth: true
-    Layout.topMargin: Style.space(10)
+    Layout.topMargin: Commons.Style.space(10)
     textFormat: Text.PlainText
     color: root.dim
-    font.family: Style.font.family
-    font.pixelSize: Style.font.caption
+    font.family: Commons.Style.font.family
+    font.pixelSize: Commons.Style.font.caption
     font.capitalization: Font.AllUppercase
     font.letterSpacing: 1
   }
@@ -967,8 +968,8 @@ Item {
   component ErrorLine: Line {
     property string place: ""
     visible: root.error !== "" && root.errorAt === place
-    color: Color.urgent
-    size: Style.font.bodySmall
+    color: Commons.Color.urgent
+    size: Commons.Style.font.bodySmall
     text: root.error
   }
 
@@ -996,12 +997,12 @@ Item {
     property string label: ""
     property bool lit: false
     property bool quiet: false
-    implicitWidth: tagText.implicitWidth + Style.space(12)
-    implicitHeight: tagText.implicitHeight + Style.space(6)
-    radius: Style.cornerRadius
-    color: lit ? Qt.rgba(Color.urgent.r, Color.urgent.g, Color.urgent.b, 0.25) : "transparent"
+    implicitWidth: tagText.implicitWidth + Commons.Style.space(12)
+    implicitHeight: tagText.implicitHeight + Commons.Style.space(6)
+    radius: Commons.Style.cornerRadius
+    color: lit ? Qt.rgba(Commons.Color.urgent.r, Commons.Color.urgent.g, Commons.Color.urgent.b, 0.25) : "transparent"
     border.width: 1
-    border.color: lit ? Color.urgent : root.faint
+    border.color: lit ? Commons.Color.urgent : root.faint
 
     Text {
       id: tagText
@@ -1009,26 +1010,26 @@ Item {
       textFormat: Text.PlainText
       text: tag.label
       color: tag.quiet && !tag.lit ? root.dim : root.textColor
-      font.family: Style.font.family
-      font.pixelSize: Style.font.caption
+      font.family: Commons.Style.font.family
+      font.pixelSize: Commons.Style.font.caption
     }
   }
 
   component Choice: Button {
     foreground: root.textColor
     bordered: true
-    fontSize: Style.font.bodySmall
-    horizontalPadding: Style.space(8)
-    verticalPadding: Style.space(3)
+    fontSize: Commons.Style.font.bodySmall
+    horizontalPadding: Commons.Style.space(8)
+    verticalPadding: Commons.Style.space(3)
   }
 
   component Primary: Button {
     Layout.fillWidth: true
-    Layout.topMargin: Style.space(8)
+    Layout.topMargin: Commons.Style.space(8)
     foreground: root.textColor
     bordered: true
     selected: true
-    verticalPadding: Style.space(8)
+    verticalPadding: Commons.Style.space(8)
   }
 
   component Card: Rectangle {
@@ -1038,11 +1039,11 @@ Item {
     signal clicked()
     default property alias content: cardColumn.data
     Layout.fillWidth: true
-    implicitHeight: cardColumn.implicitHeight + Style.space(16)
-    radius: Style.cornerRadius
+    implicitHeight: cardColumn.implicitHeight + Commons.Style.space(16)
+    radius: Commons.Style.cornerRadius
     color: card.clickable && cardMouse.containsMouse ? root.faint : "transparent"
     border.width: selected ? 2 : 1
-    border.color: selected ? Color.accent : root.faint
+    border.color: selected ? Commons.Color.accent : root.faint
 
     // Under the content, so a button inside a card takes its own clicks.
     MouseArea {
@@ -1056,8 +1057,8 @@ Item {
 
     ColumnLayout {
       id: cardColumn
-      anchors { left: parent.left; right: parent.right; top: parent.top; margins: Style.space(8) }
-      spacing: Style.space(2)
+      anchors { left: parent.left; right: parent.right; top: parent.top; margins: Commons.Style.space(8) }
+      spacing: Commons.Style.space(2)
     }
   }
 
@@ -1068,9 +1069,9 @@ Item {
     property int from: 0
     property int to: 5
     signal stepped(int value)
-    spacing: Style.space(4)
+    spacing: Commons.Style.space(4)
 
-    Line { Layout.fillWidth: false; text: stepper.label; size: Style.font.bodySmall }
+    Line { Layout.fillWidth: false; text: stepper.label; size: Commons.Style.font.bodySmall }
     Choice { text: "−"; onClicked: stepper.stepped(Math.max(stepper.from, stepper.value - 1)) }
     Line { Layout.fillWidth: false; text: String(stepper.value); font.bold: stepper.value > stepper.from }
     Choice { text: "+"; onClicked: stepper.stepped(Math.min(stepper.to, stepper.value + 1)) }
@@ -1083,12 +1084,12 @@ Item {
     property string when: ""
     readonly property var choices: root.ridersFor(scope).filter(a => when === "" || a.on === null || a.on === when)
     Layout.fillWidth: true
-    spacing: Style.space(4)
+    spacing: Commons.Style.space(4)
     visible: choices.length > 0 && root.pc !== null && !root.dying && !root.dead
 
     Line {
       Layout.fillWidth: false
-      size: Style.font.caption
+      size: Commons.Style.font.caption
       color: root.dim
       text: ({ attack: "With the blow:", defend: "With a parry or dodge:", round: "For the new round:", rest: "With the rest:" })[riders.scope] || ""
     }
@@ -1115,7 +1116,7 @@ Item {
     property var range: ({ min: -6, max: 10 })
     readonly property real unit: rail.width / (range.max - range.min)
     Layout.fillWidth: true
-    spacing: Style.space(2)
+    spacing: Commons.Style.space(2)
 
     RowLayout {
       Layout.fillWidth: true
@@ -1129,7 +1130,7 @@ Item {
     Rectangle {
       id: rail
       Layout.fillWidth: true
-      implicitHeight: Style.space(8)
+      implicitHeight: Commons.Style.space(8)
       radius: height / 2
       color: root.faint
 
@@ -1145,7 +1146,7 @@ Item {
         x: (Math.min(0, bar.track.value) - bar.range.min) * bar.unit
         width: Math.abs(bar.track.value) * bar.unit
         height: parent.height
-        color: bar.track.value < 0 ? Color.urgent : Color.accent
+        color: bar.track.value < 0 ? Commons.Color.urgent : Commons.Color.accent
         Behavior on x { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
         Behavior on width { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
       }
@@ -1171,14 +1172,14 @@ Item {
   component Boxes: Row {
     id: boxes
     property var track: ({ ticks: 0 })
-    spacing: Style.space(2)
+    spacing: Commons.Style.space(2)
 
     Repeater {
       model: root.progressSpec ? root.progressSpec.boxes : 0
       delegate: Rectangle {
         required property int index
-        width: Style.space(20)
-        height: Style.space(12)
+        width: Commons.Style.space(20)
+        height: Commons.Style.space(12)
         color: "transparent"
         border.width: 1
         border.color: root.dim
@@ -1186,7 +1187,7 @@ Item {
         Rectangle {
           anchors { left: parent.left; right: parent.right; bottom: parent.bottom; margins: 1 }
           height: (parent.height - 2) * root.boxTicks(boxes.track, index) / (root.progressSpec ? root.progressSpec.ticks : 4)
-          color: Color.accent
+          color: Commons.Color.accent
         }
       }
     }
@@ -1199,7 +1200,7 @@ Item {
     property int maximum: 1
     readonly property real share: Math.max(0, Math.min(1, value / Math.max(1, maximum)))
     Layout.fillWidth: true
-    spacing: Style.space(2)
+    spacing: Commons.Style.space(2)
 
     RowLayout {
       Layout.fillWidth: true
@@ -1213,7 +1214,7 @@ Item {
     Rectangle {
       id: track
       Layout.fillWidth: true
-      implicitHeight: Style.space(6)
+      implicitHeight: Commons.Style.space(6)
       radius: height / 2
       color: root.faint
 
@@ -1222,7 +1223,7 @@ Item {
         width: track.width * meter.share
         height: parent.height
         radius: parent.radius
-        color: Color.urgent
+        color: Commons.Color.urgent
         opacity: 0.5
         Behavior on width {
           SequentialAnimation {
@@ -1236,7 +1237,7 @@ Item {
         width: track.width * meter.share
         height: parent.height
         radius: parent.radius
-        color: meter.share <= 0.25 ? Color.urgent : meter.share <= 0.5 ? theme.gold : Color.accent
+        color: meter.share <= 0.25 ? Commons.Color.urgent : meter.share <= 0.5 ? theme.gold : Commons.Color.accent
         Behavior on width { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
         Behavior on color { ColorAnimation { duration: 400 } }
       }
@@ -1246,7 +1247,7 @@ Item {
   PanelWindow {
     visible: root.opened
     anchors { top: true; right: true; bottom: true }
-    implicitWidth: Style.space(340)
+    implicitWidth: Commons.Style.space(340)
     color: "transparent"
     exclusionMode: ExclusionMode.Auto
     WlrLayershell.namespace: "solo-play"
@@ -1256,15 +1257,15 @@ Item {
 
     Rectangle {
       anchors.fill: parent
-      anchors.margins: Style.gapsOut
-      color: Color.popups.background
+      anchors.margins: Commons.Style.gapsOut
+      color: Commons.Color.popups.background
       border.width: 1
-      border.color: Color.popups.border
-      radius: Style.cornerRadius
+      border.color: Commons.Color.popups.border
+      radius: Commons.Style.cornerRadius
 
       Flickable {
         anchors.fill: parent
-        anchors.margins: Style.space(12)
+        anchors.margins: Commons.Style.space(12)
         contentHeight: column.implicitHeight
         boundsBehavior: Flickable.StopAtBounds
         clip: true
@@ -1274,17 +1275,17 @@ Item {
         ColumnLayout {
           id: column
           width: parent.width
-          spacing: Style.space(6)
+          spacing: Commons.Style.space(6)
 
           // Header ------------------------------------------------------------------
 
           RowLayout {
             Layout.fillWidth: true
-            spacing: Style.space(4)
+            spacing: Commons.Style.space(4)
 
             Line {
               text: root.view === "new" ? "New adventure" : root.view === "table" && root.game ? root.game.title : "oma-solorpg"
-              size: Style.font.heading
+              size: Commons.Style.font.heading
               font.bold: true
               elide: Text.ElideRight
               wrapMode: Text.NoWrap
@@ -1314,7 +1315,7 @@ Item {
           ColumnLayout {
             visible: root.view === "home"
             Layout.fillWidth: true
-            spacing: Style.space(6)
+            spacing: Commons.Style.space(6)
 
             Line {
               visible: root.library !== null && root.library.campaigns.length === 0
@@ -1334,12 +1335,12 @@ Item {
 
                 Line { text: modelData.title; font.bold: true }
                 Line {
-                  size: Style.font.bodySmall
+                  size: Commons.Style.font.bodySmall
                   text: [modelData.hero + (modelData.info ? ", " + modelData.info : ""), modelData.scene].filter(t => t !== "").join(" · ")
                 }
                 Line {
                   visible: (modelData.said || "") !== ""
-                  size: Style.font.bodySmall
+                  size: Commons.Style.font.bodySmall
                   color: root.dim
                   maximumLineCount: 2
                   elide: Text.ElideRight
@@ -1347,7 +1348,7 @@ Item {
                 }
                 Line {
                   visible: (modelData.ended || "") !== ""
-                  size: Style.font.bodySmall
+                  size: Commons.Style.font.bodySmall
                   font.italic: true
                   text: "Ended: " + (modelData.ended || "")
                 }
@@ -1355,7 +1356,7 @@ Item {
                   Layout.fillWidth: true
                   visible: root.deleting !== modelData.path
                   Line {
-                    size: Style.font.caption
+                    size: Commons.Style.font.caption
                     color: root.dim
                     text: [modelData.current ? "current" : "", modelData.played ? "played " + modelData.played.replace("T", " ") : ""]
                       .filter(t => t !== "").join(" · ")
@@ -1368,18 +1369,18 @@ Item {
                 // Deleting can't be undone, so it takes a second click on the card itself.
                 Line {
                   visible: root.deleting === modelData.path
-                  Layout.topMargin: Style.space(4)
-                  size: Style.font.bodySmall
-                  color: Color.urgent
+                  Layout.topMargin: Commons.Style.space(4)
+                  size: Commons.Style.font.bodySmall
+                  color: Commons.Color.urgent
                   text: "Delete this campaign for good? The story, " + (modelData.hero || "the hero") + " and the whole log go with it"
                         + (modelData.dead ? ", and " + modelData.hero + " leaves the Hall of the Fallen." : ".")
                 }
                 RowLayout {
                   visible: root.deleting === modelData.path
-                  spacing: Style.space(4)
+                  spacing: Commons.Style.space(4)
                   Choice {
                     text: action.running && root.errorAt === "home" ? "Deleting…" : "Delete for good"
-                    foreground: Color.urgent
+                    foreground: Commons.Color.urgent
                     enabled: !action.running
                     onClicked: {
                       var wasCurrent = modelData.current
@@ -1414,28 +1415,28 @@ Item {
 
                 RowLayout {
                   Layout.fillWidth: true
-                  spacing: Style.space(8)
+                  spacing: Commons.Style.space(8)
 
                   Text {
                     textFormat: Text.PlainText
-                    font.family: Style.font.family
-                    font.pixelSize: Style.font.caption * 0.8
+                    font.family: Commons.Style.font.family
+                    font.pixelSize: Commons.Style.font.caption * 0.8
                     color: root.dim
                     text: modelData.portrait.join("\n")
                   }
 
                   ColumnLayout {
                     Layout.fillWidth: true
-                    spacing: Style.space(2)
+                    spacing: Commons.Style.space(2)
                     Line { text: modelData.name; font.bold: true }
-                    Line { size: Style.font.caption; color: root.dim; text: modelData.info }
+                    Line { size: Commons.Style.font.caption; color: root.dim; text: modelData.info }
                     Line {
-                      size: Style.font.bodySmall
+                      size: Commons.Style.font.bodySmall
                       text: "Fell in " + (modelData.scene || "the dark") + (modelData.by ? " to " + modelData.by : "") + ", " + modelData.adventure + "."
                     }
                     Line {
                       visible: modelData.epitaph !== ""
-                      size: Style.font.bodySmall
+                      size: Commons.Style.font.bodySmall
                       font.italic: true
                       text: "\u201C" + modelData.epitaph + "\u201D"
                     }
@@ -1453,7 +1454,7 @@ Item {
           ColumnLayout {
             visible: root.view === "new"
             Layout.fillWidth: true
-            spacing: Style.space(6)
+            spacing: Commons.Style.space(6)
 
             Heading { text: "1  Adventure" }
 
@@ -1466,11 +1467,11 @@ Item {
 
                 Line { text: modelData.title; font.bold: true }
                 Line {
-                  size: Style.font.caption
+                  size: Commons.Style.font.caption
                   color: root.dim
                   text: (root.library.systems.filter(s => s.id === modelData.system)[0] || { name: modelData.system || "no system named" }).name
                 }
-                Line { visible: modelData.summary !== ""; size: Style.font.bodySmall; text: modelData.summary }
+                Line { visible: modelData.summary !== ""; size: Commons.Style.font.bodySmall; text: modelData.summary }
               }
             }
 
@@ -1479,7 +1480,7 @@ Item {
               model: root.library ? root.library.problems || [] : []
               delegate: Line {
                 required property string modelData
-                size: Style.font.caption
+                size: Commons.Style.font.caption
                 color: root.dim
                 text: "Not loaded: " + modelData
               }
@@ -1489,14 +1490,14 @@ Item {
 
             Line {
               visible: root.adventure !== null && root.system === null
-              color: Color.urgent
-              size: Style.font.bodySmall
+              color: Commons.Color.urgent
+              size: Commons.Style.font.bodySmall
               text: "This adventure's system pack isn't installed, or its rules aren't built from your books yet (make dragonbane)."
             }
 
             Flow {
               Layout.fillWidth: true
-              spacing: Style.space(4)
+              spacing: Commons.Style.space(4)
               visible: root.system !== null
 
               Choice {
@@ -1523,13 +1524,13 @@ Item {
                 id: table
                 required property var modelData
                 Layout.fillWidth: true
-                spacing: Style.space(3)
+                spacing: Commons.Style.space(3)
 
-                Line { text: table.modelData.label; size: Style.font.caption; color: root.dim }
+                Line { text: table.modelData.label; size: Commons.Style.font.caption; color: root.dim }
 
                 Flow {
                   Layout.fillWidth: true
-                  spacing: Style.space(4)
+                  spacing: Commons.Style.space(4)
 
                   Choice {
                     text: "Any"
@@ -1553,7 +1554,7 @@ Item {
             RowLayout {
               Layout.fillWidth: true
               visible: root.system !== null
-              spacing: Style.space(6)
+              spacing: Commons.Style.space(6)
 
               TextField {
                 id: nameField
@@ -1576,37 +1577,37 @@ Item {
 
               Line {
                 text: root.preview ? (root.heroName.trim() || root.preview.name) : ""
-                size: Style.font.title
+                size: Commons.Style.font.title
                 font.bold: true
               }
               Line {
-                size: Style.font.bodySmall
+                size: Commons.Style.font.bodySmall
                 color: root.dim
                 text: root.preview ? root.values(root.preview.info).join(" · ") : ""
               }
               Line {
-                size: Style.font.bodySmall
+                size: Commons.Style.font.bodySmall
                 text: root.preview ? Object.keys(root.preview.attributes).map(k => k.toUpperCase() + " " + root.preview.attributes[k]).join("  ") : ""
               }
               Line {
-                size: Style.font.bodySmall
+                size: Commons.Style.font.bodySmall
                 text: root.preview ? Object.keys(root.preview.tracks).map(k => k.toUpperCase() + " " + (root.preview.tracks[k].min !== undefined ? root.signed(root.preview.tracks[k].value) : root.preview.tracks[k].max))
                   .concat(Object.keys(root.preview.ratings).map(k => k + " " + root.preview.ratings[k])).join(" · ") : ""
               }
               Line {
                 visible: root.preview !== null && Object.keys(root.preview.skills).length > 0
-                size: Style.font.bodySmall
+                size: Commons.Style.font.bodySmall
                 text: root.preview ? "Trained: " + Object.keys(root.preview.skills).filter(k => root.preview.skills[k].trained)
                   .map(k => root.preview.skills[k].name + " " + root.preview.skills[k].value).join(", ") : ""
               }
               Line {
                 visible: root.preview !== null && root.preview.abilities.length > 0
-                size: Style.font.bodySmall
+                size: Commons.Style.font.bodySmall
                 text: root.preview ? "Abilities: " + root.preview.abilities.join(", ") : ""
               }
               Line {
                 visible: root.preview !== null && root.preview.items.length > 0
-                size: Style.font.bodySmall
+                size: Commons.Style.font.bodySmall
                 color: root.dim
                 text: root.preview ? "Gear: " + root.preview.items.join(", ") : ""
               }
@@ -1617,7 +1618,7 @@ Item {
             Heading { text: "3  Table settings (optional)" }
 
             Line {
-              size: Style.font.caption
+              size: Commons.Style.font.caption
               color: root.dim
               text: "The GM reads these every session. Lines never happen in the story; veils happen off screen. Separate them with commas."
             }
@@ -1651,7 +1652,7 @@ Item {
             }
 
             Line {
-              size: Style.font.caption
+              size: Commons.Style.font.caption
               color: root.dim
               text: "Begin opens the Book, and the GM tells the opening scene."
             }
@@ -1665,7 +1666,7 @@ Item {
           ColumnLayout {
             visible: root.view === "table"
             Layout.fillWidth: true
-            spacing: Style.space(6)
+            spacing: Commons.Style.space(6)
 
             Line {
               visible: root.game === null
@@ -1676,7 +1677,7 @@ Item {
             Line {
               visible: root.game !== null
               color: root.dim
-              size: Style.font.bodySmall
+              size: Commons.Style.font.bodySmall
               text: root.game ? (root.game.scene_title || "") + " · " + root.elapsed(root.game.time) + " in" : ""
             }
 
@@ -1706,7 +1707,7 @@ Item {
               selected: true
 
               Line { text: root.dead ? "The adventure is over" : "The adventure has ended"; font.bold: true }
-              Line { size: Style.font.bodySmall; text: root.game && root.game.ended ? root.game.ended.text : "" }
+              Line { size: Commons.Style.font.bodySmall; text: root.game && root.game.ended ? root.game.ended.text : "" }
             }
 
             // Where you left off: the GM's last words exactly as recorded, so the table
@@ -1719,12 +1720,12 @@ Item {
               clickable: false
 
               Line {
-                size: Style.font.bodySmall
+                size: Commons.Style.font.bodySmall
                 text: root.game && root.game.last_said ? root.game.last_said.text : ""
               }
               Line {
                 visible: root.game !== null && root.game.awaiting_player === true
-                size: Style.font.caption
+                size: Commons.Style.font.caption
                 color: root.dim
                 text: "Waiting for your answer"
               }
@@ -1736,14 +1737,14 @@ Item {
 
             Line {
               visible: root.pc !== null
-              size: Style.font.title
+              size: Commons.Style.font.title
               font.bold: true
               text: root.pc ? root.pc.name : ""
             }
 
             Line {
               visible: root.pc !== null && Object.keys(root.pc.info).length > 0
-              size: Style.font.bodySmall
+              size: Commons.Style.font.bodySmall
               color: root.dim
               text: root.pc ? root.values(root.pc.info).join(" · ") : ""
             }
@@ -1770,7 +1771,7 @@ Item {
 
             Flow {
               Layout.fillWidth: true
-              spacing: Style.space(4)
+              spacing: Commons.Style.space(4)
               visible: root.pc !== null && root.labels.conditions.length > 0
 
               Repeater {
@@ -1787,7 +1788,7 @@ Item {
             // At 0 HP only the death roll is left to click (or, alone, rallying and saving yourself).
             Line {
               visible: root.atZero
-              color: Color.urgent
+              color: Commons.Color.urgent
               font.bold: true
               text: root.atZero && root.labels.dying ? root.pc.name + " is dying: " + root.pc.dying.successes + " of " + root.labels.dying.rally
                 + " successes, " + root.pc.dying.failures + " of " + root.labels.dying.die + " failures. Any hit is a failure." : ""
@@ -1795,7 +1796,7 @@ Item {
 
             Flow {
               Layout.fillWidth: true
-              spacing: Style.space(4)
+              spacing: Commons.Style.space(4)
               visible: root.atZero
 
               Primary {
@@ -1823,7 +1824,7 @@ Item {
 
             Line {
               visible: root.pc !== null && ((root.pc.abilities || []).length > 0 || Object.keys(root.pc.ratings || {}).length > 0)
-              size: Style.font.bodySmall
+              size: Commons.Style.font.bodySmall
               color: root.dim
               text: root.pc ? (root.pc.abilities || []).concat(Object.keys(root.pc.ratings || {}).map(k => k + " " + root.pc.ratings[k])).join(" · ") : ""
             }
@@ -1835,7 +1836,7 @@ Item {
             RowLayout {
               visible: root.pc !== null && !root.dying && !root.dead && root.moves === null
               Layout.fillWidth: true
-              spacing: Style.space(12)
+              spacing: Commons.Style.space(12)
 
               Stepper { label: "Boons"; value: root.boons; onStepped: function(value) { root.boons = value } }
               Stepper { label: "Banes"; value: root.banes; onStepped: function(value) { root.banes = value } }
@@ -1847,8 +1848,8 @@ Item {
               readonly property var names: root.pc ? Object.keys(root.pc.attributes) : []
               Layout.fillWidth: true
               columns: names.length > 4 ? Math.ceil(names.length / 2) : Math.max(1, names.length)
-              columnSpacing: Style.space(4)
-              rowSpacing: Style.space(4)
+              columnSpacing: Commons.Style.space(4)
+              rowSpacing: Commons.Style.space(4)
               visible: root.pc !== null && !root.dying && !root.dead && root.moves === null
 
               Repeater {
@@ -1865,7 +1866,7 @@ Item {
 
             Flow {
               Layout.fillWidth: true
-              spacing: Style.space(4)
+              spacing: Commons.Style.space(4)
               visible: root.pc !== null && !root.dying && !root.dead && root.moves === null
 
               Repeater {
@@ -1889,7 +1890,7 @@ Item {
             // A game of moves (Ironsworn): the stats are what a move adds, and the hero makes moves.
             Flow {
               Layout.fillWidth: true
-              spacing: Style.space(4)
+              spacing: Commons.Style.space(4)
               visible: root.moves !== null && root.pc !== null && !root.dead
 
               Repeater {
@@ -1914,7 +1915,7 @@ Item {
                 id: group
                 required property var modelData
                 Layout.fillWidth: true
-                spacing: Style.space(2)
+                spacing: Commons.Style.space(2)
 
                 Heading {
                   text: (root.openGroups[group.modelData.name] ? "▾ " : "▸ ") + group.modelData.name
@@ -1931,7 +1932,7 @@ Item {
 
                 Flow {
                   Layout.fillWidth: true
-                  spacing: Style.space(4)
+                  spacing: Commons.Style.space(4)
                   visible: !!root.openGroups[group.modelData.name]
 
                   Repeater {
@@ -1949,7 +1950,7 @@ Item {
 
             Line {
               visible: root.pickedMove !== ""
-              size: Style.font.caption
+              size: Commons.Style.font.caption
               color: root.dim
               text: root.pickedMove !== "" && root.moves && root.moves[root.pickedMove]
                 ? root.moves[root.pickedMove].name + ": " + (root.moves[root.pickedMove].kind === "progress" ? "which one?" : "roll with which stat?") : ""
@@ -1957,7 +1958,7 @@ Item {
 
             Flow {
               Layout.fillWidth: true
-              spacing: Style.space(4)
+              spacing: Commons.Style.space(4)
               visible: root.pickedMove !== ""
 
               Repeater {
@@ -1975,9 +1976,9 @@ Item {
             RowLayout {
               id: rollCard
               visible: root.lastCheck !== null && !root.dead
-              Layout.topMargin: Style.space(4)
+              Layout.topMargin: Commons.Style.space(4)
               Layout.fillWidth: true
-              spacing: Style.space(10)
+              spacing: Commons.Style.space(10)
               property string face: root.rollFace()
               property int ticks: 0
 
@@ -2014,8 +2015,8 @@ Item {
                 Layout.preferredWidth: rollSizer.width
                 horizontalAlignment: Text.AlignHCenter
                 textFormat: Text.PlainText
-                font.family: Style.font.family
-                font.pixelSize: Math.round(Style.font.title * 2.1)
+                font.family: Commons.Style.font.family
+                font.pixelSize: Math.round(Commons.Style.font.title * 2.1)
                 font.bold: true
                 color: tumble.running ? root.dim : root.rollColor()
                 text: rollCard.face
@@ -2030,14 +2031,14 @@ Item {
 
               ColumnLayout {
                 Layout.fillWidth: true
-                spacing: Style.space(1)
+                spacing: Commons.Style.space(1)
                 Line {
-                  size: Style.font.body
+                  size: Commons.Style.font.body
                   font.bold: true
                   text: root.rollHead()
                 }
                 Line {
-                  size: Style.font.body
+                  size: Commons.Style.font.body
                   font.bold: true
                   color: root.rollColor()
                   opacity: tumble.running ? 0 : 1
@@ -2045,7 +2046,7 @@ Item {
                   Behavior on opacity { NumberAnimation { duration: 200 } }
                 }
                 Line {
-                  size: Style.font.caption
+                  size: Commons.Style.font.caption
                   color: root.dim
                   opacity: tumble.running ? 0 : 1
                   text: root.diceText()
@@ -2064,7 +2065,7 @@ Item {
 
               Flow {
                 Layout.fillWidth: true
-                spacing: Style.space(4)
+                spacing: Commons.Style.space(4)
 
                 Repeater {
                   model: root.dragonOptions()
@@ -2080,7 +2081,7 @@ Item {
 
               Line {
                 visible: root.dragonNote() !== ""
-                size: Style.font.caption
+                size: Commons.Style.font.caption
                 color: root.dim
                 text: root.dragonNote()
               }
@@ -2102,13 +2103,13 @@ Item {
             Line {
               visible: root.canPush
               color: root.dim
-              size: Style.font.caption
+              size: Commons.Style.font.caption
               text: root.pushChoices.length > 0 ? "Push the roll by taking a condition:" : "Push the roll:"
             }
 
             Flow {
               Layout.fillWidth: true
-              spacing: Style.space(4)
+              spacing: Commons.Style.space(4)
               visible: root.canPush
 
               Repeater {
@@ -2142,7 +2143,7 @@ Item {
 
             RowLayout {
               Layout.fillWidth: true
-              spacing: Style.space(12)
+              spacing: Commons.Style.space(12)
               visible: root.magic !== null && !root.dying && !root.dead
 
               Stepper {
@@ -2154,7 +2155,7 @@ Item {
               }
 
               Line {
-                size: Style.font.caption
+                size: Commons.Style.font.caption
                 color: root.dim
                 text: root.magic ? "Ready " + root.magic.ready + " of " + root.magic.limit : ""
               }
@@ -2162,10 +2163,10 @@ Item {
 
             Flow {
               Layout.fillWidth: true
-              spacing: Style.space(4)
+              spacing: Commons.Style.space(4)
               visible: root.magic !== null && root.magic.body.length > 0 && !root.dying && !root.dead
 
-              Line { Layout.fillWidth: false; size: Style.font.caption; color: root.dim; text: "Power from the body:" }
+              Line { Layout.fillWidth: false; size: Commons.Style.font.caption; color: root.dim; text: "Power from the body:" }
 
               Repeater {
                 model: root.magic ? root.magic.body : []
@@ -2181,7 +2182,7 @@ Item {
 
             Flow {
               Layout.fillWidth: true
-              spacing: Style.space(4)
+              spacing: Commons.Style.space(4)
               visible: root.magic !== null && !root.dying && !root.dead
 
               Repeater {
@@ -2207,7 +2208,7 @@ Item {
                 id: spellRow
                 required property var modelData
                 Layout.fillWidth: true
-                spacing: Style.space(4)
+                spacing: Commons.Style.space(4)
 
                 Line { text: spellRow.modelData.name + (spellRow.modelData.cost !== null ? " · " + spellRow.modelData.cost + " " + root.magic.track.toUpperCase() : "") }
 
@@ -2230,14 +2231,14 @@ Item {
 
             Line {
               visible: root.preparing !== ""
-              size: Style.font.caption
+              size: Commons.Style.font.caption
               color: root.dim
               text: "You hold as many as you can: put which aside for " + root.preparing + "?"
             }
 
             Flow {
               Layout.fillWidth: true
-              spacing: Style.space(4)
+              spacing: Commons.Style.space(4)
               visible: root.preparing !== ""
 
               Repeater {
@@ -2267,7 +2268,7 @@ Item {
 
             Flow {
               Layout.fillWidth: true
-              spacing: Style.space(4)
+              spacing: Commons.Style.space(4)
               visible: !root.dying && !root.dead
 
               Repeater {
@@ -2303,7 +2304,7 @@ Item {
                 }
 
                 Line {
-                  size: Style.font.caption
+                  size: Commons.Style.font.caption
                   color: root.dim
                   text: (trackCard.modelData.rank ? trackCard.modelData.rank + " " : "")
                     + (root.progressSpec ? (root.progressSpec.kinds[trackCard.modelData.kind] || root.progressSpec.unranked[trackCard.modelData.kind] || "").toLowerCase() : "")
@@ -2313,7 +2314,7 @@ Item {
                 Boxes { track: trackCard.modelData }
 
                 RowLayout {
-                  spacing: Style.space(4)
+                  spacing: Commons.Style.space(4)
 
                   Choice {
                     text: "Mark progress"
@@ -2340,7 +2341,7 @@ Item {
             ColumnLayout {
               visible: trackFold.open && root.moves !== null && root.pc !== null && !root.dead
               Layout.fillWidth: true
-              spacing: Style.space(4)
+              spacing: Commons.Style.space(4)
 
               TextField {
                 id: trackName
@@ -2352,7 +2353,7 @@ Item {
 
               Flow {
                 Layout.fillWidth: true
-                spacing: Style.space(4)
+                spacing: Commons.Style.space(4)
 
                 Repeater {
                   model: root.progressSpec ? Object.keys(root.progressSpec.kinds) : []
@@ -2367,7 +2368,7 @@ Item {
 
               Flow {
                 Layout.fillWidth: true
-                spacing: Style.space(4)
+                spacing: Commons.Style.space(4)
 
                 Repeater {
                   model: root.progressSpec ? Object.keys(root.progressSpec.ranks) : []
@@ -2397,7 +2398,7 @@ Item {
               visible: root.pc !== null && (root.pc.marks || []).length > 0 && !root.dead
 
               Line {
-                size: Style.font.bodySmall
+                size: Commons.Style.font.bodySmall
                 color: root.dim
                 text: root.pc ? "Marked: " + (root.pc.marks || []).map(k => root.pc.skills[k] ? root.pc.skills[k].name : k).join(", ") : ""
               }
@@ -2415,7 +2416,7 @@ Item {
 
             Line {
               visible: root.fight !== null
-              size: Style.font.caption
+              size: Commons.Style.font.caption
               color: root.dim
               text: "Initiative: " + root.orderText()
             }
@@ -2449,14 +2450,14 @@ Item {
 
             Line {
               visible: root.fight !== null && !root.dying && !root.dead && root.standing().length > 0 && !root.fight.incoming
-              size: Style.font.caption
+              size: Commons.Style.font.caption
               color: root.dim
               text: "Attack the selected foe (boons and banes above apply):"
             }
 
             Flow {
               Layout.fillWidth: true
-              spacing: Style.space(4)
+              spacing: Commons.Style.space(4)
               visible: root.fight !== null && !root.dying && !root.dead && root.standing().length > 0 && !root.fight.incoming
 
               Repeater {
@@ -2479,7 +2480,7 @@ Item {
 
             Line {
               visible: root.fight !== null && !!root.fight.incoming
-              color: Color.urgent
+              color: Commons.Color.urgent
               font.bold: true
               text: root.fight && root.fight.incoming ? root.fight.incoming.name + " hits: " + root.fight.incoming.damage
                 + " damage" + (root.kit.armor ? ", armor " + root.kit.armor : "") : ""
@@ -2487,7 +2488,7 @@ Item {
 
             Flow {
               Layout.fillWidth: true
-              spacing: Style.space(4)
+              spacing: Commons.Style.space(4)
               visible: root.fight !== null && !!root.fight.incoming
 
               Choice {
@@ -2540,7 +2541,7 @@ Item {
 
             Flow {
               Layout.fillWidth: true
-              spacing: Style.space(4)
+              spacing: Commons.Style.space(4)
               visible: root.pc !== null && !root.dead
 
               Repeater {
@@ -2581,8 +2582,8 @@ Item {
               visible: root.pc !== null && !root.dead && (!!(root.game && root.game.light) || root.carriesTorch())
 
               Line {
-                size: Style.font.bodySmall
-                color: root.game && root.game.dark && !root.game.light ? Color.urgent : root.textColor
+                size: Commons.Style.font.bodySmall
+                color: root.game && root.game.dark && !root.game.light ? Commons.Color.urgent : root.textColor
                 text: root.game && root.game.light ? root.game.light.label + ": " + root.hours(root.game.light.left) + " left"
                   : root.game && root.game.dark ? "It is dark here." : "No light burning."
               }
@@ -2611,7 +2612,7 @@ Item {
 
             Flow {
               Layout.fillWidth: true
-              spacing: Style.space(4)
+              spacing: Commons.Style.space(4)
               visible: root.pc !== null && !root.dead && !!root.labels.fortune
 
               Repeater {
@@ -2629,7 +2630,7 @@ Item {
 
             Flow {
               Layout.fillWidth: true
-              spacing: Style.space(4)
+              spacing: Commons.Style.space(4)
               visible: root.pc !== null && !root.dead
 
               Repeater {
@@ -2664,7 +2665,7 @@ Item {
 
             Line {
               visible: root.lastOracle() !== "" && !root.dead
-              size: Style.font.bodySmall
+              size: Commons.Style.font.bodySmall
               text: root.lastOracle()
             }
 
@@ -2680,21 +2681,21 @@ Item {
                 id: clockRow
                 required property var modelData
                 Layout.fillWidth: true
-                spacing: Style.space(2)
+                spacing: Commons.Style.space(2)
 
                 Line { text: clockRow.modelData.label + "  " + clockRow.modelData.value + "/" + clockRow.modelData.segments }
 
                 Row {
-                  spacing: Style.space(3)
+                  spacing: Commons.Style.space(3)
 
                   Repeater {
                     model: clockRow.modelData.segments
                     delegate: Rectangle {
                       required property int index
-                      width: Style.space(14)
-                      height: Style.space(6)
+                      width: Commons.Style.space(14)
+                      height: Commons.Style.space(6)
                       radius: 2
-                      color: index < clockRow.modelData.value ? Color.urgent : root.faint
+                      color: index < clockRow.modelData.value ? Commons.Color.urgent : root.faint
                     }
                   }
                 }
@@ -2725,7 +2726,7 @@ Item {
 
             Flow {
               Layout.fillWidth: true
-              spacing: Style.space(4)
+              spacing: Commons.Style.space(4)
 
               Repeater {
                 model: root.game ? root.game.clues : []
@@ -2740,14 +2741,14 @@ Item {
 
             Line {
               visible: root.pc !== null && root.pc.items.length > 0
-              size: Style.font.bodySmall
+              size: Commons.Style.font.bodySmall
               text: root.pc ? root.pc.items.join(", ") : ""
             }
 
             Line {
               visible: root.game !== null && !!root.game.load
-              size: Style.font.bodySmall
-              color: root.game && root.game.load && root.game.load.over ? Color.urgent : root.dim
+              size: Commons.Style.font.bodySmall
+              color: root.game && root.game.load && root.game.load.over ? Commons.Color.urgent : root.dim
               text: root.game && root.game.load ? "Carrying " + root.game.load.carried + " of " + root.game.load.capacity + (root.game.load.over ? ": over the load" : "") : ""
             }
 
@@ -2757,9 +2758,9 @@ Item {
                 id: mending
                 required property var modelData
                 Layout.fillWidth: true
-                spacing: Style.space(4)
+                spacing: Commons.Style.space(4)
 
-                Line { text: "The " + mending.modelData.label.toLowerCase() + " is " + mending.modelData.condition; size: Style.font.bodySmall }
+                Line { text: "The " + mending.modelData.label.toLowerCase() + " is " + mending.modelData.condition; size: Commons.Style.font.bodySmall }
 
                 Choice {
                   text: "Mend"
@@ -2783,7 +2784,7 @@ Item {
 
             Line {
               visible: root.prefsText() !== ""
-              size: Style.font.bodySmall
+              size: Commons.Style.font.bodySmall
               color: root.dim
               text: root.prefsText()
             }
@@ -2794,7 +2795,7 @@ Item {
               model: root.recent()
               delegate: Line {
                 required property var modelData
-                size: Style.font.bodySmall
+                size: Commons.Style.font.bodySmall
                 color: modelData.type === "check" || modelData.type === "push" ? root.textColor : root.dim
                 text: modelData.text
               }
@@ -2807,7 +2808,7 @@ Item {
 
             Flow {
               Layout.fillWidth: true
-              spacing: Style.space(4)
+              spacing: Commons.Style.space(4)
               visible: paceFold.visible && paceFold.open
 
               Repeater {
@@ -2832,7 +2833,7 @@ Item {
 
             Flow {
               Layout.fillWidth: true
-              spacing: Style.space(4)
+              spacing: Commons.Style.space(4)
               visible: effectsFold.open
 
               Repeater {
