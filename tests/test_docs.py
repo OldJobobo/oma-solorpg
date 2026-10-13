@@ -53,5 +53,14 @@ class MakefileTest(unittest.TestCase):
         self.assertEqual(targets - phony, set())
 
 
+class LicenseTest(unittest.TestCase):
+    def test_license_is_the_mit_text_alone_so_github_can_tell_which_it_is(self):
+        text = (ROOT / "LICENSE").read_text(encoding="utf-8")
+        self.assertTrue(text.startswith("MIT License\n"))
+        self.assertTrue(text.endswith("DEALINGS IN THE\nSOFTWARE.\n"))
+        # What the license doesn't cover is said in NOTICE.md instead.
+        self.assertIn("It does not cover Dragonbane", (ROOT / "NOTICE.md").read_text(encoding="utf-8"))
+
+
 if __name__ == "__main__":
     unittest.main()

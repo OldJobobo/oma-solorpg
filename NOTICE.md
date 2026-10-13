@@ -24,6 +24,8 @@ What isn't here: the rest of Ironsworn's text (its NPCs, the atlas, the truths) 
 
 The engine, the plugin, the skills, The Red Tusk Hall, The Bell Under the Hill (its text and its people are original), the heroes Ragna, Hrafna, Torvald and Eydis, the hero name lists, the text portraits, the `system.toml`, `creation.toml` and pre-made heroes of `packs/ironsworn`, and the made-up test rules in `tests/fixtures` are this project's own, under the MIT License ([LICENSE](LICENSE)).
 
+That license covers the code and this project's own content. It does not cover Dragonbane, its terms or the "A Supplement for Dragonbane" logo, which belong to Fria Ligan AB and are used under its license (above).
+
 ## Generative AI
 
 The game master is a generative AI: your coding agent writes the story as you play.
