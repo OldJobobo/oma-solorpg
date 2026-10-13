@@ -378,12 +378,12 @@ class BuildTest(unittest.TestCase):
         made.line(1, 80, "LANTERNS", style=HEADING)
         made.mark(1, "1. Lanterns")
         made.save()
-        self.builds, self.fail, self.playable = 0, None, True
+        self.builds, self.stop, self.playable = 0, None, True
 
         def build(pack):
             self.builds += 1
-            if self.fail:
-                raise SoloError(self.fail)
+            if self.stop:
+                raise SoloError(self.stop)
             pack.system.update({"name": "Lanterns", "build": self.builds, **({"family": "d20-under"} if self.playable else {})})
             pack.item("lanterns", "Lanterns", "mechanic", [1], ["system.toml:build"])
 
@@ -402,7 +402,7 @@ class BuildTest(unittest.TestCase):
         self.assertEqual((self.built(), sorted(path.name for path in self.systems.iterdir())), (2, ["lanterns"]))
 
     def test_a_build_that_fails_keeps_the_pack_that_was_there(self):
-        self.fail = "a section the recipe expects isn't there"
+        self.stop = "a section the recipe expects isn't there"
         with self.assertRaisesRegex(SoloError, "a section the recipe expects"):
             books.build(self.tmp / "extract", systems=self.systems, replace=True)
         self.assertEqual((self.built(), sorted(path.name for path in self.systems.iterdir())), (1, ["lanterns"]))
