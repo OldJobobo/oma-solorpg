@@ -332,6 +332,8 @@ def _checked(item, pack, loaded, book, lines):
         return [f"{item['id']}: {where} has no text to read the pack against (a scanned page has none): run ocrmypdf on the PDF and "
                 f"extract it again, or write what the page's picture says in picture/{item['pages'][0]:04d}.txt in the extract"]
     words = set(re.findall(r"[a-z0-9]+", text))
+    # A number with its unit set close after it ("2H", "10m") is the number too.
+    words |= {found.group(1) for found in map(re.compile(r"(\d+)[a-z]+").fullmatch, list(words)) if found}
     found = []
     for ref in item["to"]:
         data = _data_for(ref, loaded)
@@ -521,10 +523,9 @@ def _track_dice(entry, tracks, prefix=""):
 
 
 def _says_number(number, text, words):
-    """Whether the pages have a number: as digits, with a unit set close after it ("2H"), in words
-    ("two", "twice"), or (meters) in kilometers."""
-    return (str(number) in words or any(re.fullmatch(rf"{number}[a-z]+", word) for word in words)
-            or any(word in words for word in _NUMBER_WORDS.get(number, ()))
+    """Whether the pages have a number: as digits (with a unit after them, "2H", too: see _checked), in
+    words ("two", "twice"), or (meters) in kilometers."""
+    return (str(number) in words or any(word in words for word in _NUMBER_WORDS.get(number, ()))
             or (number % 1000 == 0 and re.search(rf"\b{number // 1000}\s*kilomet", text) is not None))
 
 
