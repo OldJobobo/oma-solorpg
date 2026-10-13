@@ -2000,9 +2000,16 @@ class Campaign:
             elif "hp" not in stats:
                 raise SoloError(f"{npc_id} has no stats.hp in the adventure pack, so it can't be fought here: narrate it, or give it stats")
             count = sum(1 for foe in [*present.values(), *roster.values()] if foe["npc"] == npc_id)
-            foe_id = npc_id if count == 0 else f"{npc_id}_{count + 1}"
+            foe_id, number = npc_id, count + 1
+            if count or foe_id in present or foe_id in roster:
+                # A second cultist is cultist_2, unless that is someone else's id: an adventure's own
+                # cultist_2, or a foe already in the fight. Two foes with one id would be one foe.
+                foe_id = f"{npc_id}_{number}"
+                while foe_id in self.state["npcs"] or foe_id in present or foe_id in roster:
+                    number += 1
+                    foe_id = f"{npc_id}_{number}"
             roster[foe_id] = {
-                "npc": npc_id, "name": npc["name"] + (f" {count + 1}" if count else ""),
+                "npc": npc_id, "name": npc["name"] + (f" {number}" if foe_id != npc_id else ""),
                 "hp": int(stats["hp"]), "max": int(stats["hp"]), "armor": int(stats.get("armor", 0)), "down": False,
             }
             # A monster with ferocity 2 acts twice a round; an immune one shrugs off weapons.
