@@ -31,6 +31,11 @@ from PySide6.QtQuick import QQuickItem, QQuickView  # noqa: E402
 LAUNCHED = []
 
 
+def said(item):
+    """What the Table says went wrong, from its commands and from its reads ("" when nothing did)."""
+    return "\n".join(t for t in (item.property(name).toVariant()["text"] for name in ("error", "queryError")) if t)
+
+
 def prop(kind, name, default, notify=None):
     """A read-write Qt property stored on the instance."""
     def get(self):
@@ -86,14 +91,21 @@ class Process(QObject):
         LAUNCHED.append(list(self.command))
 
     def _run(self):
-        done = subprocess.run([str(c) for c in self.command], capture_output=True, text=True)
+        try:
+            done = subprocess.run([str(c) for c in self.command], capture_output=True, text=True)
+        except OSError:
+            # A program that can't start, as Quickshell has it: no streams and no exit, only `running` going false.
+            self._running = False
+            self.runningChanged.emit()
+            return
         for stream, text in ((self.stdout, done.stdout), (self.stderr, done.stderr)):
             if stream is not None:
                 stream.text = text
                 stream.streamFinished.emit()
+        # Quickshell's order: the streams end, then the exit (no longer running), then `running` changes.
         self._running = False
-        self.runningChanged.emit()
         self.exited.emit(done.returncode, 0)
+        self.runningChanged.emit()
 
 
 class FileView(QObject):
@@ -262,6 +274,7 @@ def main(out):
     errors += deleted_while_dying(item, bar, work, wait)
     errors += a_game_of_moves(item, panel, out, work, wait)
     errors += magic_and_dragons(item, panel, out, work, wait)
+    errors += errors_by_source(item, work, wait)
     print("bar tooltip:", bar.rootObject().tooltip())
     print("launched:")
     for command in LAUNCHED:
@@ -284,8 +297,8 @@ def begin_and_ask(item, panel, out, work, wait):
     item.setProperty("tone", "-grim, and quiet")
     item.begin()
     wait(3000)
-    if item.property("error"):
-        return [f"Begin failed: {item.property('error')}"]
+    if said(item):
+        return [f"Begin failed: {said(item)}"]
     game = Path((work / "state" / "solo" / "current").read_text().strip())
     state = json.loads((game / "state.json").read_text())
     if (state["pc"]["name"], state["prefs"]["tone"]) != ("-Brokk", "-grim, and quiet"):
@@ -297,7 +310,7 @@ def begin_and_ask(item, panel, out, work, wait):
     wait(1500)
     log = json.loads((game / "state.json").read_text())["log"]
     if not any('"-is anyone watching?"' in entry["text"] for entry in log):
-        problems.append(f"the oracle didn't get the question: {item.property('error') or log[-1]['text']}")
+        problems.append(f"the oracle didn't get the question: {said(item) or log[-1]['text']}")
     panel.grabWindow().save(str(out / "table-alive.png"))
     return problems
 
@@ -326,7 +339,7 @@ def an_x_card(item, panel, out, work, wait):
     wait(2500)
     state = json.loads((game / "state.json").read_text())
     if len(state["struck"]) != 1 or state["prefs"]["lines"] != ["-spiders"]:
-        problems.append(f"the cut didn't reach the engine: {item.property('error') or state['struck']}, {state['prefs']}")
+        problems.append(f"the cut didn't reach the engine: {said(item) or state['struck']}, {state['prefs']}")
     said = [" ".join(str(a) for a in command) for command in LAUNCHED]
     if not any("gm turn" in line for line in said):
         problems.append(f"the GM wasn't asked to carry on after the cut (launched: {said})")
@@ -383,8 +396,8 @@ def a_game_of_moves(item, panel, out, work, wait):
     panel.grabWindow().save(str(out / "new-ironsworn.png"))
     item.begin()
     wait(3000)
-    if item.property("error"):
-        return [f"Begin (Ironsworn) failed: {item.property('error')}"]
+    if said(item):
+        return [f"Begin (Ironsworn) failed: {said(item)}"]
     game = Path((work / "state" / "solo" / "current").read_text().strip())
     item.open(json.dumps({"view": "table"}))
     wait(1500)
@@ -398,11 +411,11 @@ def a_game_of_moves(item, panel, out, work, wait):
     wait(1500)
     tracks = {t["name"] for t in state()["progress"].values()}
     if "-Silence the bell" not in tracks:
-        problems.append(f"the Table didn't start the vow: {item.property('error') or tracks}")
+        problems.append(f"the Table didn't start the vow: {said(item) or tracks}")
     item.rollMove("face_danger", "edge", "")
     wait(1500)
     if state()["last_check"]["type"] != "act" or state()["last_check"]["stat"] != "edge":
-        problems.append(f"the Table's move wasn't rolled: {item.property('error') or state()['last_check']}")
+        problems.append(f"the Table's move wasn't rolled: {said(item) or state()['last_check']}")
     item.setProperty("adds", 1)
     item.pickMove("gather_information")  # one stat: it rolls at once, with the add
     wait(1500)
@@ -428,7 +441,7 @@ def a_game_of_moves(item, panel, out, work, wait):
     item.rollTrack(next(t for t in item.openTracks().toVariant() if t["kind"] == "vow"))
     wait(1500)
     if state()["last_check"].get("track") is None:
-        problems.append(f"the Table's progress roll wasn't made: {item.property('error') or state()['last_check']}")
+        problems.append(f"the Table's progress roll wasn't made: {said(item) or state()['last_check']}")
     panel.grabWindow().save(str(out / "table-ironsworn-vow.png"))
     return problems
 
@@ -472,16 +485,16 @@ def magic_and_dragons(item, panel, out, work, wait):
     item.cast(next(s for s in item.ready().toVariant() if s["name"] == "Ember"), False)
     wait(1500)
     cast = [e for e in state()["log"] if e["type"] == "spell"]
-    if item.property("error") or not cast or wp() != 7:
-        problems.append(f"the Table's cast didn't cost two levels of Ember: {item.property('error') or wp()}")
+    if said(item) or not cast or wp() != 7:
+        problems.append(f"the Table's cast didn't cost two levels of Ember: {said(item) or wp()}")
     if item.property("power") != 1:
         problems.append("the power level didn't go back to 1 after the cast")
 
     item.toggleRider("Quickdraw")
     item.act(["fight", "--round"] + list(item.useArgs("round", "").toVariant()), "fight", None)
     wait(1500)
-    if item.property("error") or wp() != 5 or item.property("riders").toVariant() != ["Quickdraw"]:
-        problems.append(f"Quickdraw wasn't paid with the new round: {item.property('error') or wp()}")
+    if said(item) or wp() != 5 or item.property("riders").toVariant() != ["Quickdraw"]:
+        problems.append(f"Quickdraw wasn't paid with the new round: {said(item) or wp()}")
     item.spent("round", "")
     if item.property("riders").toVariant() != []:
         problems.append("a switched-on ability stayed on after the roll it was for")
@@ -494,7 +507,7 @@ def magic_and_dragons(item, panel, out, work, wait):
     item.putAside(next(s for s in item.ready().toVariant() if s["name"] == "Ward"))
     wait(1500)
     if "Lash" not in state()["pc"]["prepared"] or "Ward" in state()["pc"]["prepared"]:
-        problems.append(f"the Table's prepare didn't swap the spells: {item.property('error') or state()['pc']['prepared']}")
+        problems.append(f"the Table's prepare didn't swap the spells: {said(item) or state()['pc']['prepared']}")
 
     with campaign.session(game) as c:
         c.attack("cultist", weapon="long_axe", rng=Dice(1))  # a natural 1: a Dragon, which waits for the player
@@ -507,8 +520,8 @@ def magic_and_dragons(item, panel, out, work, wait):
     panel.grabWindow().save(str(out / "table-dragon-choice.png"))
     item.act(["dragon", "double"], "dragon", None)
     wait(1500)
-    if state()["choice"] or item.property("error"):
-        problems.append(f"the Dragon's choice wasn't answered: {item.property('error') or state()['choice']}")
+    if state()["choice"] or said(item):
+        problems.append(f"the Dragon's choice wasn't answered: {said(item) or state()['choice']}")
 
     with campaign.session(game) as c:
         c.append("durability", weapon="long_axe", label="Long axe", how="parry", damaged=True, broke=True, cause=None)
@@ -519,22 +532,69 @@ def magic_and_dragons(item, panel, out, work, wait):
     panel.grabWindow().save(str(out / "table-broken-axe.png"))
     item.act(["repair", "long_axe", "--artisan"], "gear", None)
     wait(1500)
-    if state()["pc"].get("damaged") or item.property("error"):
-        problems.append(f"the Table's mend didn't mend it: {item.property('error') or state()['pc'].get('damaged')}")
+    if state()["pc"].get("damaged") or said(item):
+        problems.append(f"the Table's mend didn't mend it: {said(item) or state()['pc'].get('damaged')}")
 
     item.act(["ability", "--cost", "2", "--", "Far gaze"], "ability", None)
     wait(1500)
-    if item.property("error") or wp() != 3:
-        problems.append(f"an ability that costs what the hero chooses wasn't paid: {item.property('error') or wp()}")
+    if said(item) or wp() != 3:
+        problems.append(f"an ability that costs what the hero chooses wasn't paid: {said(item) or wp()}")
     with campaign.session(game) as c:
         c.end_fight()
     wait(1000)
     item.toggleRider("Mender")
     item.act(["rest", "stretch"] + list(item.useArgs("rest", "stretch").toVariant()), "rest", None)
     wait(1500)
-    if item.property("error") or wp() != 1 and not any(e["type"] == "ability" for e in state()["log"]):
-        problems.append(f"Mender wasn't paid with the rest: {item.property('error') or wp()}")
+    if said(item) or wp() != 1 and not any(e["type"] == "ability" for e in state()["log"]):
+        problems.append(f"Mender wasn't paid with the rest: {said(item) or wp()}")
     panel.grabWindow().save(str(out / "table-magic-rested.png"))
+    return problems
+
+
+def errors_by_source(item, work, wait):
+    """A command and a read that fail each say why where they belong, and neither covers the other: a read that fails
+    after a refused command leaves the command's reason, and a command that goes through leaves the read's. A solo
+    that can't start at all is said too, and the read waiting behind one that couldn't start still runs."""
+    problems = []
+    item.act(["death-roll"], "dying", None)  # the hero isn't dying
+    wait(1500)
+    refused = item.property("error").toVariant()
+    if refused["place"] != "dying" or "isn't dying" not in refused["text"]:
+        problems.append(f"a refused death roll didn't say why at the death roll: {refused}")
+    item.ask("preview", ["character", "--system", str(work / "no-such-system")], "")
+    wait(1500)
+    if item.property("error").toVariant() != refused:
+        problems.append(f"a read that failed covered what the command said: {item.property('error').toVariant()}")
+    unread = item.property("queryError").toVariant()
+    if unread["place"] != "preview" or not unread["text"]:
+        problems.append(f"the read that failed didn't say why at the preview: {unread}")
+    item.act(["light", "torch"], "light", None)
+    wait(1500)
+    if said(item) != unread["text"] or item.property("queryError").toVariant() != unread:
+        problems.append(f"a command that went through changed what the read said: {said(item)!r}")
+    # For a moment the plugin's bin/solo isn't there.
+    solo = work / "plugin" / "bin"
+    solo.unlink()
+    solo.symlink_to(work / "nowhere")
+    try:
+        item.act(["light", "--out"], "light", None)
+        item.setProperty("pace", "unread")
+        item.ask("library", ["library"], "")
+        item.ask("pace", ["gm", "pace"], "")  # waits behind the library
+        wait(1000)
+    finally:
+        solo.unlink()
+        solo.symlink_to(REPO / "bin")
+    unstarted = item.property("error").toVariant()
+    if unstarted["place"] != "light" or "couldn't run" not in unstarted["text"]:
+        problems.append(f"a command that couldn't start didn't say so: {unstarted}")
+    waited = item.property("queryError").toVariant()
+    if waited["place"] != "pace" or "couldn't run" not in waited["text"]:
+        problems.append(f"the read waiting behind one that couldn't start never ran: {waited}")
+    item.ask("pace", ["gm", "pace"], "")
+    wait(1500)
+    if item.property("pace") == "unread" or item.property("queryError").toVariant()["place"] == "pace":
+        problems.append(f"the reads stopped after one couldn't start: pace {item.property('pace')!r}, {said(item)!r}")
     return problems
 
 

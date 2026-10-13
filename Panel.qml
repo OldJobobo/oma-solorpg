@@ -45,8 +45,11 @@ Item {
   // The campaign whose card is asking "delete for good?", by folder.
   property string deleting: ""
   property string view: "home"
-  property string error: ""
-  property string errorAt: ""
+  // What went wrong and where to say it, {text, place}, one for each source: the commands
+  // that change something (and a click refused before one ran), and the ones that only
+  // read. A read that fails never covers what a command said, nor the other way round.
+  property var error: ({ text: "", place: "" })
+  property var queryError: ({ text: "", place: "" })
 
   // New adventure. The seed makes the preview exactly the hero that Begin creates.
   property string pickedAdventure: ""
@@ -155,10 +158,10 @@ Item {
 
   function openBook() {
     if (root.campaign !== "") {
-      root.ask("agent", ["-C", root.campaign, "gm", "agent"])
+      root.ask("agent", ["-C", root.campaign, "gm", "agent"], "book")
       // A turn that died unfinished (the machine went down) is written down as stopped,
       // so the Book doesn't wait on it; turn.json brings the news.
-      root.ask("turn", ["-C", root.campaign, "gm", "status"])
+      root.ask("turn", ["-C", root.campaign, "gm", "status"], "book")
       root.bookOpen = true
     }
   }
@@ -287,7 +290,7 @@ Item {
   Component.onCompleted: {
     Quickshell.execDetached([root.solo, "desk", "restore"])
     root.ask("effects", ["desk", "settings"])
-    root.ask("sounds", ["desk", "sound"])
+    root.ask("sounds", ["desk", "sound"], "effects")
     root.ask("pace", ["gm", "pace"])
   }
 
@@ -298,7 +301,8 @@ Item {
   function show(view) {
     root.view = view
     root.deleting = ""
-    root.error = ""
+    root.error = { text: "", place: "" }
+    root.queryError = { text: "", place: "" }
     if (view !== "table") {
       root.ask("library", ["library"])
     }
@@ -306,13 +310,22 @@ Item {
 
   // Commands that change something. `done` runs after a success.
   function run(args, place, done) {
-    if (!action.running) {
-      root.error = ""
-      root.errorAt = place
-      action.done = done || null
+    if (action.job === null) {
+      root.error = { text: "", place: "" }
+      action.said = ""
+      action.job = { place: place, done: done || null }
       action.command = [root.solo].concat(args)
       action.running = true
     }
+  }
+
+  // A command has ended: `said` is what to tell the player ("" for nothing), `ok` whether it went through.
+  function ran(said, ok) {
+    var job = action.job
+    action.job = null
+    currentFile.reload()
+    if (said !== "") root.error = { text: said, place: job.place }
+    if (ok && job.done) job.done()
   }
 
   function act(args, place, done) {
@@ -322,17 +335,52 @@ Item {
   }
 
   // Commands that only read (JSON on stdout). One runs at a time; the latest request
-  // of each kind waits for its turn.
-  function ask(kind, args) {
-    if (query.running) {
+  // of each kind waits for its turn. What goes wrong shows at `place`, the kind unless said.
+  function ask(kind, args, place) {
+    if (query.job !== null) {
       var pending = Object.assign({}, query.pending)
-      pending[kind] = args
+      pending[kind] = { args: args, place: place || kind }
       query.pending = pending
     } else {
-      query.kind = kind
+      query.out = ""
+      query.said = ""
+      query.job = { kind: kind, place: place || kind }
       query.command = [root.solo].concat(args)
       query.running = true
     }
+  }
+
+  // A read has ended (`said` as for ran()), and the next one waiting starts.
+  function answered(said) {
+    var job = query.job
+    query.job = null
+    if (said !== "") root.queryError = { text: said, place: job.place }
+    else if (root.queryError.place === job.place) root.queryError = { text: "", place: "" }
+    root.received(job.kind, query.out)
+    var kinds = Object.keys(query.pending)
+    if (kinds.length > 0) {
+      var next = query.pending[kinds[0]]
+      var rest = Object.assign({}, query.pending)
+      delete rest[kinds[0]]
+      query.pending = rest
+      root.ask(kinds[0], next.args, next.place)
+    }
+  }
+
+  // What solo said on stderr, as the player reads it; with nothing said, a failing exit code.
+  function trouble(said, code) {
+    var text = said.trim().replace(/^solo: /, "")
+    return text !== "" ? text : code !== 0 ? "solo stopped without saying why (exit code " + code + ")." : ""
+  }
+
+  // A process that never started has no exit: Quickshell only lets `running` go false.
+  function unstarted() {
+    return "The plugin couldn't run " + root.solo + ". Is the plugin's folder complete?"
+  }
+
+  // What went wrong at a place, from either source.
+  function errorsAt(place) {
+    return [root.error, root.queryError].filter(e => e.place === place && e.text !== "").map(e => e.text).join("\n")
   }
 
   function received(kind, text) {
@@ -497,8 +545,7 @@ Item {
   function startTrack() {
     var name = trackName.text.trim()
     if (name === "") {
-      root.error = "Name it first: a vow, a road or a foe."
-      root.errorAt = "track"
+      root.error = { text: "Name it first: a vow, a road or a foe.", place: "track" }
     } else {
       root.act(["track", "add", "--kind", root.trackKind, "--rank", root.trackRank, "--", name], "track", () => trackName.text = "")
     }
@@ -530,8 +577,7 @@ Item {
   function askOracle() {
     var text = question.text.trim()
     if (text === "") {
-      root.error = "Type a yes/no question first."
-      root.errorAt = "oracle"
+      root.error = { text: "Type a yes/no question first.", place: "oracle" }
     } else {
       var kind = root.labels.fortune ? ["--kind", root.oracleKind] : []
       root.act(["ask", "--likely", root.odds].concat(kind).concat(["--", text]), "oracle", () => question.text = "")
@@ -878,7 +924,7 @@ Item {
       turn: root.turn
       agent: root.agentInfo
       campaign: root.campaign
-      actionError: root.errorAt === "book" ? root.error : ""
+      actionError: root.errorsAt("book")
       active: bookWindow.visible
       onSend: text => root.speak(text)
       onStop: Quickshell.execDetached([root.solo, "-C", root.campaign, "gm", "stop"])
@@ -892,7 +938,7 @@ Item {
         root.opened = true
         root.show("table")
       }
-      onOpenTerminal: root.run(["play", root.campaign, "--terminal"], "gm")
+      onOpenTerminal: root.run(["play", root.campaign, "--terminal"], "book")
     }
   }
 
@@ -900,48 +946,36 @@ Item {
     id: speaker
   }
 
+  // The command running now ({place, done}) and what it says on stderr. The streams end
+  // before the exit does, so the exit has all of it.
   Process {
     id: action
-    property var done: null
+    property var job: null
+    property string said: ""
     stderr: StdioCollector {
       waitForEnd: true
-      onStreamFinished: root.error = text.trim().replace(/^solo: /, "")
+      onStreamFinished: action.said = text
     }
-    onExited: (exitCode, exitStatus) => {
-      var done = action.done
-      action.done = null
-      currentFile.reload()
-      if (exitCode === 0 && done) done()
-    }
+    onExited: (exitCode, exitStatus) => root.ran(root.trouble(action.said, exitCode), exitCode === 0)
+    onRunningChanged: if (!running && action.job !== null) root.ran(root.unstarted(), false)
   }
 
   Process {
     id: query
-    property string kind: ""
-    property var pending: ({})
+    property var job: null          // {kind, place}
+    property var pending: ({})      // kind: {args, place}
+    property string out: ""
+    property string said: ""
     stdout: StdioCollector {
       waitForEnd: true
-      onStreamFinished: root.received(query.kind, text)
+      onStreamFinished: query.out = text
     }
     stderr: StdioCollector {
       waitForEnd: true
-      onStreamFinished: {
-        if (text.trim() !== "") {
-          root.error = text.trim().replace(/^solo: /, "")
-          root.errorAt = query.kind
-        }
-      }
+      onStreamFinished: query.said = text
     }
-    onExited: {
-      var kinds = Object.keys(query.pending)
-      if (kinds.length > 0) {
-        var args = query.pending[kinds[0]]
-        var rest = Object.assign({}, query.pending)
-        delete rest[kinds[0]]
-        query.pending = rest
-        root.ask(kinds[0], args)
-      }
-    }
+    onExited: (exitCode, exitStatus) => root.answered(root.trouble(query.said, exitCode))
+    onRunningChanged: if (!running && query.job !== null) root.answered(root.unstarted())
   }
 
   // Text here comes from packs and from the GM's commits, so it is never read as HTML.
@@ -968,10 +1002,10 @@ Item {
 
   component ErrorLine: Line {
     property string place: ""
-    visible: root.error !== "" && root.errorAt === place
+    visible: text !== ""
     color: Commons.Color.urgent
     size: Commons.Style.font.bodySmall
-    text: root.error
+    text: root.errorsAt(place)
   }
 
   // A heading that folds its section away. Click it to open or close.
@@ -1380,9 +1414,9 @@ Item {
                   visible: root.deleting === modelData.path
                   spacing: Commons.Style.space(4)
                   Choice {
-                    text: action.running && root.errorAt === "home" ? "Deleting…" : "Delete for good"
+                    text: action.job !== null && action.job.place === "home" ? "Deleting…" : "Delete for good"
                     foreground: Commons.Color.urgent
-                    enabled: !action.running
+                    enabled: action.job === null
                     onClicked: {
                       var wasCurrent = modelData.current
                       root.run(["delete", modelData.path, "--yes"], "home", () => {
@@ -1646,8 +1680,8 @@ Item {
             }
 
             Primary {
-              text: action.running && root.errorAt === "begin" ? "Starting…" : "Begin adventure"
-              enabled: root.adventure !== null && root.preview !== null && !action.running
+              text: action.job !== null && action.job.place === "begin" ? "Starting…" : "Begin adventure"
+              enabled: root.adventure !== null && root.preview !== null && action.job === null
               opacity: enabled ? 1 : 0.5
               onClicked: root.begin()
             }
@@ -1802,7 +1836,7 @@ Item {
 
               Primary {
                 text: "Death roll"
-                enabled: !action.running
+                enabled: action.job === null
                 onClicked: root.act(["death-roll"], "dying")
               }
 
@@ -2074,7 +2108,7 @@ Item {
                     required property var modelData
                     text: modelData.label
                     tooltipText: modelData.tip
-                    enabled: !action.running
+                    enabled: action.job === null
                     onClicked: root.act(["dragon", modelData.option].concat(modelData.foe !== "" ? [modelData.foe] : []), "dragon")
                   }
                 }
@@ -2194,7 +2228,7 @@ Item {
                   tooltipText: (modelData.trick ? "A magic trick: always ready, and it works" : "Rank " + modelData.rank + (modelData.school ? ", " + modelData.school : ""))
                     + (modelData.damage && root.fight ? ". Hits the foe you aimed at" : "") + (modelData.heal ? ". Heals you" : "")
                   selected: !modelData.trick
-                  enabled: root.waiting === null && !action.running
+                  enabled: root.waiting === null && action.job === null
                   opacity: enabled ? 1 : 0.5
                   onClicked: root.cast(modelData, false)
                 }
@@ -2223,7 +2257,7 @@ Item {
                 Choice {
                   text: "From the grimoire"
                   tooltipText: spellRow.modelData.reaction ? "A reaction spell can't be cast from the grimoire" : "Cast it unprepared: it takes twice as long"
-                  enabled: root.waiting === null && !action.running && !spellRow.modelData.reaction
+                  enabled: root.waiting === null && action.job === null && !spellRow.modelData.reaction
                   opacity: enabled ? 1 : 0.4
                   onClicked: root.cast(spellRow.modelData, true)
                 }
@@ -2278,7 +2312,7 @@ Item {
                   required property var modelData
                   text: modelData.name + " (" + root.abilityCost(modelData) + ")"
                   tooltipText: modelData.afford ? "Pay for it; the GM reads its page" : "Not enough to pay for it"
-                  enabled: modelData.afford && !action.running
+                  enabled: modelData.afford && action.job === null
                   opacity: enabled ? 1 : 0.4
                   onClicked: root.useAbility(modelData)
                 }
@@ -2766,14 +2800,14 @@ Item {
                 Choice {
                   text: "Mend"
                   tooltipText: "A roll to mend it"
-                  enabled: !action.running
+                  enabled: action.job === null
                   onClicked: root.act(["repair", mending.modelData.id], "gear")
                 }
 
                 Choice {
                   text: "Artisan"
                   tooltipText: "An artisan mends it, with no roll"
-                  enabled: !action.running
+                  enabled: action.job === null
                   onClicked: root.act(["repair", mending.modelData.id, "--artisan"], "gear")
                 }
               }
