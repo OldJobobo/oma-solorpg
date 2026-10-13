@@ -41,13 +41,14 @@ def build(pack):
 
 
 def _ranges(book, section):
-    """[[top, value], ...] from a table of ranges ("1–5", "16–18"): what the score reaches, and what it gives."""
+    """[[top, value], ...] from a table of ranges (in a made-up one, "1–4", "15–17"): what the score reaches, and what it gives."""
     _, rows = grid.read(section.lines(own=True), book.glue)
     return [[int(re.split(r"[–-]", cell[0])[-1].rstrip("+")), int(cell[1])] for cell in (row["cells"] for row in rows)]
 
 
 def _damage_bonus(book, section):
-    """The damage bonus by STR and AGL: up to 12 none, 13-16 a die, 17 and more a bigger one."""
+    """The damage bonus by STR and AGL: a row for each range of the score, giving no die or a die (in a made-up table, up to 9 none, 10-13 a
+    D4, 14 and more a D8), the last range open-ended."""
     header, rows = grid.read(section.lines(own=True), book.glue)
     table = []
     for cells in (row["cells"] for row in rows):

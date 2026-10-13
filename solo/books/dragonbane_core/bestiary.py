@@ -125,7 +125,7 @@ def _blow(text, weapon):
 
 
 def _damage(text, weapon):
-    """(dice, kind) of an attack's damage: stated ("2D10 slashing damage", "2D8, plus D6"), the distance a victim is thrown when the attack does the
+    """(dice, kind) of an attack's damage: stated (made up: "3D4 slashing damage", "2D6, plus D4"), the distance a victim is thrown when the attack does the
     same amount of damage, or the monster's weapon's, more than it or twice its dice. None for an attack that does none."""
     found = _DAMAGE.search(text)
     if found:
@@ -183,7 +183,7 @@ def _skills(text):
 
 
 def _animals(pack, section):
-    """The common animals: a row each, with its attack and skills in words ("Bite (skill level 14, damage 2D6)")."""
+    """The common animals: a row each, with its attack and skills in words (a made-up one: "Bite (skill level 9, damage D8)")."""
     book = pack.book
     _, rows = grid.read(section.lines(), book.glue)
     made = []

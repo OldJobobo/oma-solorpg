@@ -132,7 +132,7 @@ def _list(text):
 
 def _kits(texts, known):
     """(kits, gear) from the sentences of a gear table, one for each set. A slot is one part of a sentence, with an alternative
-    for each thing it offers ("broadsword/battle axe" is two); what every set holds alone is `gear`, the rest is the kits."""
+    for each thing it offers ("lantern/candle" is two); what every set holds alone is `gear`, the rest is the kits."""
     sets = [[[_item(alternative, known) for alternative in part.split("/")] for part in text.split(",")] for text in texts]
     common = set.intersection(*({tuple(slot[0]) for slot in kit if len(slot) == 1} for kit in sets))
     shared = lambda slot: len(slot) == 1 and tuple(slot[0]) in common
@@ -143,7 +143,7 @@ def _kits(texts, known):
 
 def _item(text, known):
     """The things one alternative of a gear set names: a weapon or a piece of armor by the name of its entry, dice in braces
-    (`D8 food rations` is `{1d8} food rations`), and what the book counts out ("two daggers")."""
+    (`D6 candles` is `{1d6} candles`), and what the book counts out ("two lanterns")."""
     text = text.strip()
     counted = re.match(r"(two|three|four|five)\s+(.+?)s?$", text, re.I)
     if counted:
@@ -154,8 +154,8 @@ def _item(text, known):
 
 
 def _ages(book, section):
-    """Young, adult, old: a range of the D6, what each changes of the attributes ("STR, AGL, and CON -2, INT and WIL +1") and how
-    many of the trained skills are the player's own (the six from the profession come first: "6+2")."""
+    """Each age, a row of the table: its range of the die, what it changes of the attributes (in a made-up row, "CON and WIL -1, CHA +2") and
+    how many trained skills are the player's own after the profession's, which come first (a made-up "5+3")."""
     options = {}
     table = dice.read(section.find("Table: Effects of Age").lines(own=True), book.glue)
     for row in table["rows"]:

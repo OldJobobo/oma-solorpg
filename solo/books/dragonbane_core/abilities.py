@@ -39,8 +39,8 @@ def build(pack):
 
 
 def _requires(text, skills):
-    """The skill level an ability asks for: {kind, level} for a group of skills ("Any melee weapon skill 12"), {skills, level} for named ones
-    ("Axes, Hammers, or Swords 12")."""
+    """The skill level an ability asks for: {kind, level} for a group of skills ("Any melee weapon skill 9", made up), {skills, level} for
+    named ones ("Knives, Slings, or Staves 7")."""
     found = re.match(r"(.+?)\s+(\d+)$", text.strip())
     if not found:
         return None

@@ -11,10 +11,10 @@ import re
 from ... import packs
 from .. import grid
 
-# The skill a weapon uses, by the words in its name, first match wins. The book lists what each
-# skill covers ("knives and daggers", "spears and tridents, including lances") and gives a
-# shield and a halberd none: a shield parries with any STR-based melee skill and this uses
-# BRAWLING; a halberd is a long piercing weapon and goes with the spears.
+# The skill a weapon uses, by the words in its name, first match wins. The book says in each
+# skill's entry which weapons it covers, and gives a shield and a halberd none: a shield parries
+# with any STR-based melee skill and this uses BRAWLING; a halberd is a long piercing weapon and
+# goes with the spears.
 WEAPON_SKILLS = [
     ("crossbow", "crossbows"), ("bow", "bows"), ("sling", "slings"), ("shield", "brawling"),
     ("sword|scimitar", "swords"), ("axe", "axes"), ("hammer|mace|club|flail|morningstar|blunt object", "hammers"),
@@ -95,7 +95,7 @@ def _entry(name, category, cells, page):
 
 def _price(cost):
     """(price, note): "5 silver" as it is; "2 gold/day" is 2 gold per day; a price with more to it
-    ("2 gold × potency") or none ("—") is "varies", and the note says what the book gave."""
+    ("3 gold × dose", made up) or none ("—") is "varies", and the note says what the book gave."""
     amount = re.match(r"^((?:\d+ (?:gold|silver|copper)\s*)+)(.*)$", cost)
     rest = amount.group(2).strip() if amount else cost
     if amount and not rest:
@@ -155,7 +155,7 @@ def _range(text):
 
 
 def _banes(effect):
-    """The skills an armor or a helmet puts a bane on ("Bane on EVADE and SNEAKING rolls."), and
+    """The skills an armor or a helmet puts a bane on (in a made-up cell, "Bane on ACROBATICS and SWIMMING rolls."), and
     "ranged_attack" for all ranged attacks."""
     found = re.match(r"Bane on (.+?)(?: rolls)?\.?$", effect)
     if not found:
@@ -175,7 +175,7 @@ def _weapon_skills(book):
 
 
 def _coins(book):
-    """{coin: worth in the smallest}, from the coins sidebar ("Ten copper coins equal one silver")."""
+    """{coin: worth in the smallest}, from the coins sidebar (a made-up one: "Five tin coins equal one copper")."""
     text = book.find("2. Your Player Character", "Gear", "Sidebar: Coins").text(own=True).lower()
     ratios = {small: (_COINS[n], big) for n, small, big in re.findall(r"(\w+) (\w+) coins equal one (\w+)", text) if n in _COINS}
     coins = {small: 1 for small in ratios if small not in {big for _, big in ratios.values()}}

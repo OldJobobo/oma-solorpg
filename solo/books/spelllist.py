@@ -2,7 +2,7 @@
 reaches and how long it lasts (the lines under its title), and, for the ones the engine can cast, what they do: the damage or healing, the foes it goes on to,
 what a power level adds, how it can be avoided and what kind of damage it is.
 
-A page names only what it has: an enchanting has a rank and a prerequisite, an alchemical recipe ingredients and a price. "Any school of magic" or "Any rank 5
+A page names only what it has: an enchanting has a rank and a prerequisite, an alchemical recipe ingredients and a price. "Any school of magic" or "Any rank 3
 spell" is no prerequisite the engine can check, and the page keeps the words.
 """
 
@@ -50,7 +50,7 @@ def trick(school, name, page):
 
 
 def _prerequisite(text):
-    """What a spell asks for first: nothing the engine checks for "Any school ..." or "Any rank 5 spell", else the school or the spells, one entry each ("A and B");
+    """What a spell asks for first: nothing the engine checks for "Any school ..." or "Any rank 3 spell", else the school or the spells, one entry each ("A and B");
     "A or B" is one entry that is a list of either."""
     if not text or re.match(r"any\b", text, re.I):
         return []

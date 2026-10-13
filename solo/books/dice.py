@@ -2,9 +2,9 @@
 
 A book sets a roll table in whatever shape the page allows: a header with the die and what it gives, the
 rows under it; the same table in two halves side by side, or a long one continued in the next column;
-a number with its text in the same line ("1-2 Warhammer ...") or in a cell of its own; a column of
+a number with its text in the same line ("1-2 A lantern ...") or in a cell of its own; a column of
 results that wrap. And a table of several dice, one column each, read together as a sentence
-(the quest: "One day, <D4>, the characters come across <D6> ...").
+(in a made-up one: "At <D4>, a stranger brings <D6> ...").
 
 A row is found by its number: the next one of the die, at the start of a line, in a column of numbers;
 its words are the text in that column from there to the next number, with what wraps under it.
@@ -138,7 +138,7 @@ def _columns(starts):
 
 def _cells(start, others, glue):
     """What a row holds, a cell to each column of words it stands in: the words of the number's line after the number, and
-    the lines under or beside it, each column read down and joined (a name that wraps, "Teeth knocked" and "out")."""
+    the lines under or beside it, each column read down and joined (a name that wraps, "A lamp that" and "goes out")."""
     pieces = [(line["x0"], line["y0"], line["text"].strip()) for line in others]
     if start["rest"]:
         line = start["line"]
@@ -164,7 +164,7 @@ def _cells(start, others, glue):
 def columns(lines, glue):
     """[{faces, rows}] for a table of several dice, one column each, which the book reads together as a sentence: dice
     labels across the top ("D4", "D6" ...) and the row numbers in a column of their own to the left. A column of a
-    smaller die has "—" in the rows it doesn't use. Cells the PDF set in one line ("a flooded chamber 2D8 goblins")
+    smaller die has "—" in the rows it doesn't use. Cells the PDF set in one line ("a dry well 2D6 crows")
     are cut apart where the words have a gap."""
     marks = sorted((line for line in lines if is_marker(line) and not _DIE.match(line["text"].strip()).group(2)), key=lambda line: line["x0"])
     heads = [line for line in lines if line["size"] < 8.6 and line["font"].endswith("-Bold")]
