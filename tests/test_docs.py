@@ -61,6 +61,18 @@ class LicenseTest(unittest.TestCase):
         # What the license doesn't cover is said in NOTICE.md instead.
         self.assertIn("It does not cover Dragonbane", (ROOT / "NOTICE.md").read_text(encoding="utf-8"))
 
+    def test_the_ironsworn_credit_says_every_change_the_importer_makes(self):
+        import tomllib
+        from solo import datasworn
+        notice = (ROOT / "NOTICE.md").read_text(encoding="utf-8")
+        credit = tomllib.loads((ROOT / "packs" / "ironsworn" / "system.toml").read_text(encoding="utf-8"))["credit"]
+        self.assertIn(credit, notice)
+        pointer = datasworn._clean("{{table:classic/oracles/moves/pay_the_price}}", {"moves/pay_the_price": "pay_the_price"})
+        self.assertIn(pointer, notice)
+        self.assertEqual(datasworn._clean("Roll on {{table:classic/oracles/left/out}}.", {}), "Roll on .")
+        self.assertIn("A link to a table that wasn't imported is removed", notice)
+        self.assertIn("Datasworn", notice)
+
 
 if __name__ == "__main__":
     unittest.main()
