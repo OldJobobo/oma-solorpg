@@ -1,5 +1,5 @@
 name: An import went wrong
-description: A rulebook, an adventure or a Foundry export didn't become the pack it should have
+description: A book, an adventure or a Foundry export didn't become the pack it should have
 title: "Import: "
 labels: ["import"]
 body:
@@ -14,7 +14,8 @@ body:
     attributes:
       label: What were you importing?
       options:
-        - A rulebook (make rules)
+        - Dragonbane's books by their importers (make dragonbane, or solo import book)
+        - A rulebook by an agent (make rules, make supplement)
         - An adventure from a PDF (make adventure PDF=...)
         - An adventure from a Foundry export (make adventure FOUNDRY=...)
         - A character from Foundry
@@ -27,6 +28,7 @@ body:
     attributes:
       label: Where did it go wrong?
       options:
+        - solo import book (a book's importer: it stopped, or said a section has changed)
         - solo extract (the pages, the chapters, the tables)
         - solo inventory
         - solo import table
@@ -59,7 +61,7 @@ body:
     attributes:
       label: Output
       description: |
-        The last lines of the failing command (`solo extract`, `solo import table`, `solo audit`, `make check`). Cut anything quoted from the book first: `solo audit` quotes the first words of a table result it can't find on a page.
+        The last lines of the failing command (`make dragonbane`, `solo import book`, `solo extract`, `solo import table`, `solo audit`, `make check`). Cut anything quoted from the book first: `solo audit` quotes the first words of a table result it can't find on a page.
       render: text
   - type: textarea
     id: environment

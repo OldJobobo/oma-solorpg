@@ -1,5 +1,7 @@
 # Pack format
 
+Contents: [System pack](#system-pack-packssystem-or-gamessolosystemssystem) · [Adventure pack](#adventure-pack-examplesid-or-gamessoloadventuresid) · [Rules pages](#rules-pages-rulestopicmd-in-either-kind-of-pack) · [Inventory](#inventory-inventorytoml-in-either-kind-of-pack) · [Extracted books](#extracted-books-gamessolosourcesbook) · [Dragons in a fight](#dragons-in-a-fight) · [Conditions and triggers](#conditions-and-triggers) · [Commits](#commits-what-the-gm-writes) · [Format versions](#format-versions)
+
 Every key a system pack or an adventure pack can hold, as the engine reads it. Hand-written files are TOML; files an importer generates are JSON (or, for `solo import datasworn`, TOML marked as generated), and a TOML file beside a JSON one wins on any key both set. `solo validate` checks all of this; `solo outline` shows an adventure on one page. Worked examples: `examples/red-tusk` and `examples/bell-under-the-hill` for adventures; `packs/dragonbane` for a game's names; `packs/ironsworn` for a whole game of the `action-roll` family; `tests/fixtures/house` for every system section of the skill families, with made-up values.
 
 ## System pack: `packs/<system>/` or `~/Games/solo/systems/<system>/`
@@ -263,7 +265,25 @@ Clock triggers: `time:<unit>`, `activity` (a command that took a stretch or more
 
 ## Commits (what the GM writes)
 
-`solo commit '<json>'`, every key optional: `note`, `facts` (`hero.<key>` facts follow the hero into later adventures), `npc` (`name`, `faction`, `attitude`, `fate`, `location`, `memory`, `template`, `attacker`, `monster`; for an NPC the adventure doesn't have, also `role`, `description`, `voice`, `wants`, `fears`). A person keeps their name: a different `name` for someone who already has one is refused, unless the commit has an `override` with the reason (they give their name at last), and `solo review` lists it, `faction` (a standing, or `standing`, `memory`, `name`), `promise` (`id`, `npc`, `terms`, `status`), `consequence` (`id`, `text`, `npc`, `at` (scene ids), `when` (a condition), `after` (game time), `status`: open, done, dropped), `pc` (tracks as `"+n"`/`"-n"` or a number to set; a negative number is a loss; `conditions`, `items`, `abilities` (what the hero has learned: heroic abilities, assets) and `spells`/`prepared` with `add`/`remove`, a name or a list. An ability that raises a track (Robust) raises it when added, and can be added again if it stacks. A track stops at its own range: momentum runs from `min` to what impacts leave of `max`; in an `action-roll` system an impact keeps its track from rising), `clock`, `time`, `clue`, `chaos`, `learn` (`npc.wants`, `npc.fears`, `npc.<secret>`), `chronicle`, `end`, `override`.
+`solo commit '<json>'`. Every key is optional.
+
+| Key | What it holds |
+|---|---|
+| `note` | What happened, in a line for the log |
+| `facts` | Facts the story has settled; `hero.<key>` facts follow the hero into later adventures |
+| `npc` | `name`, `faction`, `attitude`, `fate`, `location`, `memory`, `template`, `attacker`, `monster`; for an NPC the adventure doesn't have, also `role`, `description`, `voice`, `wants`, `fears`. A person keeps their name: a different `name` for someone who already has one is refused, unless the commit has an `override` with the reason (they give their name at last), and `solo review` lists it |
+| `faction` | A standing, or `standing`, `memory`, `name` |
+| `promise` | `id`, `npc`, `terms`, `status` |
+| `consequence` | `id`, `text`, `npc`, `at` (scene ids), `when` (a condition), `after` (game time), `status`: open, done, dropped |
+| `pc` | Tracks as `"+n"`/`"-n"` or a number to set; a negative number is a loss. `conditions`, `items`, `abilities` (what the hero has learned: heroic abilities, assets) and `spells`/`prepared` with `add`/`remove`, a name or a list. An ability that raises a track (Robust) raises it when added, and can be added again if it stacks. A track stops at its own range: momentum runs from `min` to what impacts leave of `max`; in an `action-roll` system an impact keeps its track from rising |
+| `clock` | Clocks by id, each `"+n"` or a number |
+| `time` | Game time that passes, in the system's units (`{"stretch": 1}`) or in seconds, minutes, hours and days; words like `"10 minutes"` are read too |
+| `clue` | Clue ids the hero found |
+| `chaos` | The chaos factor, `"+1"` or `"-1"` |
+| `learn` | `npc.wants`, `npc.fears`, `npc.<secret>` |
+| `chronicle` | A recap, written at the end of a session |
+| `end` | How the adventure closed |
+| `override` | The reason for a change the rules would otherwise refuse, logged |
 
 ## Format versions
 

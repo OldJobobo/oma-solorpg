@@ -22,7 +22,11 @@ It is a VTT, not a video game. There are no graphics beyond text: the scene is a
 
 ## Quick start
 
-You need Omarchy, `make`, Python 3.11+ and your agent (`claude` or `codex`).
+You need:
+
+- Omarchy
+- `make` and Python 3.11 or newer
+- Claude Code (`claude`) or Codex (`codex`), as Omarchy's default agent
 
 ```bash
 git clone https://github.com/cabral/oma-solorpg ~/Code/oma-solorpg && cd ~/Code/oma-solorpg
@@ -30,29 +34,80 @@ git checkout --detach 26048dee18cc6d139fb4281b17f16b4a01faf805   # a fixed commi
 make install                                              # links solo, the GM skills and the plugin, and enables it
 ```
 
-To remove it, run `make uninstall`: it disables the plugin and deletes the symlinks `make install` made (`~/.local/bin/solo`, the plugin link, the GM skills in your agents' skill folders), and nothing else. Your campaigns and packs in `~/Games/solo/` stay; delete that folder yourself if you want them gone. `make install` only ever creates symlinks and never replaces a real file.
+Then click the d20 in the bar, choose New adventure, pick The Bell Under the Hill and Begin. That is Ironsworn, and it needs nothing else: no book, no import.
 
-The commit above is the latest release at the time of writing; to try something newer, read what changed (`git log`, `git diff`) before you check it out, since `make install` links this folder into your desktop and your agents' skill folders.
+For Dragonbane, see [Dragonbane](#dragonbane). If something didn't work, `make install` printed what is missing, and [Troubleshooting](#troubleshooting) says what to do.
 
-Then click the d20 in the bar, choose New adventure, pick **The Bell Under the Hill** and Begin. That is Ironsworn, and it needs nothing else: no book, no import.
+## Install
 
-Dragonbane needs your own PDFs. Point `make dragonbane` at a folder of them and it builds every pack it has an importer for, in about twenty seconds and without an agent:
+`make install` runs `solo setup --plugin`, then `omarchy plugin enable` to switch the plugin on. Setup links three things into your home:
+
+- `~/.local/bin/solo`, the engine's command;
+- the GM skills, into the skill folder of each agent you have (Claude Code's, Codex's and pi's; an agent counts as there when its command is on PATH or its own folder is in your home);
+- the plugin, as `~/.config/omarchy/plugins/cabral.oma-solorpg`.
+
+It only ever creates symlinks, and never replaces a real file: one in the way is skipped, and the line says so. Running it again is harmless. After the links it prints a short check, a line each for Python, PATH, Omarchy and its shell, `hyprctl` (the desktop effects), your agent and PyMuPDF (only the imports need it), each saying ok or what to do.
+
+The clone is pinned to a commit on purpose. The commit in [Quick start](#quick-start) is the latest release at the time of writing, and `make install` links this folder into your desktop and your agents' skill folders, so what runs is what you checked out and read. To move to a newer one, see [Update](#update).
+
+`make` alone lists every target. `AGENT=codex make rules ...` picks the agent for the targets that use one; the default is Omarchy's default agent.
+
+## Update
 
 ```bash
-uv pip install --system pymupdf                           # only the import reads PDFs
-make dragonbane BOOKS=~/Books/Dragonbane                  # a folder of your PDFs (or one PDF)
-make check                                                # audits each pack against its book
+cd ~/Code/oma-solorpg
+git fetch --tags origin
+git log --oneline HEAD..origin/main          # what changed since your commit
+git checkout --detach <commit or tag>        # the one the Quick start names now
+make install
 ```
 
-It reads each book's bookmarks and layout, writes your private packs into `~/Games/solo/systems/` and audits every one against the book's own pages. For the core rules that is everything the engine runs (the numbers of every roll and fight, the weapons and armor, all the gear, the tables, character creation, the bestiary, the heroic abilities, the spells), plus a rules page for each section of the book that has words of its own. The same goes for the Book of Magic (its schools, spells, tricks and recipes), the three card decks (treasure, improvised weapons, adventure hooks) and the solo booklet (the fortune chart, the inspiration table, the threat counter, the exploration tables). The importers are deterministic: the same PDFs give the same packs, and anything an importer had to decide it says in a note. Nothing of a book is in this repository (the importers hold where things are and how to read them; the words come from your PDF each time), and nothing they write lands in this folder.
+Read what changed before you check it out, for the reason the clone is pinned: [CHANGELOG.md](CHANGELOG.md) says it in words, and `git diff HEAD <commit or tag>` shows it. `make install` again links anything new (a skill, an agent you installed since). Your campaigns and packs in `~/Games/solo` are left as they are.
 
-The same command builds the adventures into `~/Games/solo/adventures`, from the Quickstart (The Sinking Tower, with its seven pre-generated heroes) and the Adventure Book (its campaign, titled The Secret of the Dragon Emperor: the opening on the road, the village of Outskirt as the hub, eleven adventure sites to journey to from it). Each place of a site is a scene with its read-aloud text and its GM notes, the ways between them are exits (a door the text calls locked, blocked or hidden is a gated exit the GM opens when the heroes get through), and every person and monster has the stat block the book gives; they show up on the New adventure screen, and the build says where it had to choose (a map is a picture, so a way the text doesn't give is linked from the place before it, and said). Clocks and timers are the GM's, as they are in the book.
+## Uninstall
 
-A book no importer knows (another printing, another adventure) is read by your agent instead: `make rules BOOK=<pdf>` and `make supplement ID=<id> BOOK=<pdf>` start that, and `make adventure` does it for an adventure, with the `solo-rules-import` and `solo-import` skills. `make dragonbane` says which of your PDFs it left for them.
+`make uninstall` puts back whatever the desktop effects changed (`solo desk restore`), disables the plugin and deletes the symlinks `make install` made (`~/.local/bin/solo`, the plugin link, the GM skills in your agents' skill folders). Nothing else.
 
-If you already have packs an agent wrote from the same books, `solo import book` won't overwrite them: build the new ones beside them (`--systems ~/Games/solo/new`) and `solo compare ~/Games/solo/new/dragonbane-rulebook ~/Games/solo/systems/dragonbane-rulebook` shows, area by area, what differs, before you decide which to keep.
+These stay, for you to delete if you want them gone:
 
-`make` alone lists every target. `AGENT=codex make rules ...` picks the agent for the ones that use one; the default is Omarchy's default agent.
+- `~/Games/solo`: your campaigns, and the packs and adventures you built or imported;
+- `~/.local/state/solo`: which campaign is current, the GM's pace and budget, and the desktop effects you switched off;
+- `~/.cache/solo` and `~/.cache/solo-play`: parsed packs and the sounds, made again when needed.
+
+## Troubleshooting
+
+### PyMuPDF
+
+Only the imports read PDFs (`make dragonbane`, `make rules`, `make supplement`, `make adventure PDF=...`, `solo extract`), and they need PyMuPDF. Playing never does.
+
+On Omarchy, and on Arch in general:
+
+```bash
+sudo pacman -S python-pymupdf
+```
+
+Arch marks its system Python as externally managed (PEP 668), so `pip install` and `uv pip install --system` refuse to install into it; the package from pacman is the way.
+
+Elsewhere, `python3 -m pip install --user pymupdf`. If pip says the environment is externally managed there too, use a virtual environment, and run the import with it active, since `solo` runs on the first `python3` on PATH:
+
+```bash
+python3 -m venv ~/.venvs/solo && ~/.venvs/solo/bin/pip install pymupdf
+. ~/.venvs/solo/bin/activate && make dragonbane BOOKS=~/Books/Dragonbane
+```
+
+### No agent found
+
+The Book runs Omarchy's default agent headless, and it can drive two: Claude Code (`claude`) and Codex (`codex`). `solo setup` says which agent it found. If it found none, install one of them and make it Omarchy's default agent (`omarchy default agent`), then run `make install` again so its skill folder gets the GM skills. Another agent still plays, in a terminal: Terminal on the table, or `solo play --terminal`.
+
+### Python too old
+
+`solo` needs Python 3.11 or newer, and says so in a sentence on an older one. It runs on the first `python3` on PATH. Omarchy's is new enough; elsewhere, install a newer Python from your distribution and make sure `python3 --version` shows it.
+
+### The plugin doesn't show
+
+- Run `make install` again and read its lines: the plugin link should say `ok` or `linked`, and the check should find `omarchy` and `omarchy-shell`.
+- `~/.config/omarchy/plugins/cabral.oma-solorpg` should point at this folder.
+- Enable it by hand with `omarchy plugin enable cabral.oma-solorpg`, and have the shell look again with `omarchy-shell shell rescanPlugins`.
 
 ## Play
 
@@ -62,7 +117,14 @@ With clicks only:
 2. New adventure: pick an adventure (The Bell Under the Hill plays Ironsworn with nothing else installed; The Red Tusk Hall plays on the Dragonbane rules you built from your book), then a hero: a pre-made one, or Random, with any kin, profession and age you want to lock in Dragonbane. Reroll until you like the sheet; type a name if you want one. Optionally set the tone and your lines and veils: things that never happen in the story, and things that happen only off screen. The GM reads them every session.
 3. Begin adventure. The Book opens beside the table, the scene's name decrypts across the page, and the GM writes the opening.
 4. Write to the GM at the bottom of the Book. Its answer streams in as it is written. On the table, click a skill or attribute to roll it (set boons and banes first), push a failed roll, rest, light a torch, or ask the oracle. The GM sees all of it in the log. In Ironsworn the table has moves instead of skills: click a move (and the stat it rolls, and any adds), burn momentum on a roll it could save, start a vow, mark progress on it, and make its progress roll.
-5. In Dragonbane, when the GM starts a fight, the Book draws it as a still scene (you, the foes in initiative order, the last blow between you) and the table shows your weapons. Pick a foe and click a weapon to attack; when a foe hits you, choose Evade, Parry or Take it. A Dragon on your roll waits for what it does (double the blow, a free attack on another foe, pierce armor) in a card of its own. A hero with spells has them under Magic: set a power level, click a spell that is ready to cast it (the foe you picked takes the damage), prepare another from the Grimoire, or cast it from there. The abilities that go with a blow, a parry, a rest or a new round are switched on first and paid for with the roll; the others are one click and the GM reads their page. A weapon that is damaged or broken says so on its button, with Mend (a roll) and Artisan (none) in Gear, where the load shows too. At 0 HP you're dying and Death roll is the only button left.
+5. In Dragonbane, when the GM starts a fight:
+   - The Book draws it as a still scene: you, the foes in initiative order, the last blow between you. The table shows your weapons.
+   - Pick a foe and click a weapon to attack. When a foe hits you, choose Evade, Parry or Take it.
+   - A Dragon on your roll waits for what it does (double the blow, a free attack on another foe, pierce armor) in a card of its own.
+   - A hero with spells has them under Magic: set a power level and click a spell that is ready to cast it (the foe you picked takes the damage), prepare another from the Grimoire, or cast it from there.
+   - The abilities that go with a blow, a parry, a rest or a new round are switched on first and paid for with the roll. The others are one click, and the GM reads their page.
+   - A weapon that is damaged or broken says so on its button. Mend (a roll) and Artisan (none) are in Gear, where the load shows too.
+   - At 0 HP you're dying, and Death roll is the only button left.
 
 Right-click the d20 to open the Book again. The Campaigns button lists every game with its hero and scene, so resuming is one click. Delete on a card removes a campaign you've abandoned, folder and all, after a second click to confirm (`solo delete <dir>` from a terminal).
 
@@ -92,7 +154,17 @@ The GM runs headless: `solo gm turn` drives Claude Code or Codex one turn at a t
 
 ## The desktop joins in
 
-While a game is on, Omarchy plays along. A Dragon flashes your window borders gold and floods the screen with gold light; a Demon turns the borders red, drains the colour and tears the picture at its edges; a blow jolts the screen. These land when the Book's dice do. While your hero is dying the borders stay dark red and a red rim closes round the screen, further with every failed death roll; when they die the screen goes grey and cold for a while and a bell tolls. Omens ripple the screen and arrive as notifications. The table has sounds, all made on the spot the first time they're needed: dice that rattle and land in time with the Book's, a chime for a Dragon, a growl for a Demon, a war drum when a fight starts, a torch catching, a page turning when the GM speaks. The screen warms like candlelight while the Book is open, and the screensaver shows your hero instead of the logo. The bar's d20 lights up when the GM is waiting for you, pulses while you're dying and turns into a skull when you die.
+While a game is on, Omarchy plays along:
+
+- A Dragon flashes your window borders gold and floods the screen with gold light.
+- A Demon turns the borders red, drains the colour and tears the picture at its edges.
+- A blow jolts the screen. These land when the Book's dice do.
+- While your hero is dying, the borders stay dark red and a red rim closes round the screen, further with every failed death roll.
+- When they die, the screen goes grey and cold for a while and a bell tolls.
+- Omens ripple the screen and arrive as notifications.
+- The table has sounds, all made on the spot the first time they're needed: dice that rattle and land in time with the Book's, a chime for a Dragon, a growl for a Demon, a war drum when a fight starts, a torch catching, a page turning when the GM speaks.
+- The screen warms like candlelight while the Book is open, and the screensaver shows your hero instead of the logo.
+- The bar's d20 lights up when the GM is waiting for you, pulses while you're dying and turns into a skull when you die.
 
 Each of these puts back exactly what it changed (your border colours, your own screen shader, your screen temperature, your screensaver text), and each can be switched off under Desktop effects on the table.
 
@@ -111,7 +183,7 @@ In a game of moves (Ironsworn) the loop is the same and the first step is the mo
 
 Questions nobody rolls for go down a fixed ladder: first the adventure text, then a skill check, then the oracle (`solo ask`), which takes its odds from the tracked state. The agent never picks the answer. The full protocol is in [skills/solo-gm/SKILL.md](skills/solo-gm/SKILL.md).
 
-Without a solo rules book, the oracle is the engine's own: a likelihood oracle that brings its own surprises. Some answers come with a random event tied to the people and threads in play, and entering a scene can find it altered or interrupted, as often as a chaos factor (1 to 9) says. With Dragonbane's solo rules built into your pack, the oracle is the book's own chart (below).
+Without a solo rules book, the oracle is the engine's own: a likelihood oracle that brings its own surprises. Some answers come with a random event tied to the people and threads in play, and entering a scene can find it altered or interrupted, as often as a chaos factor (1 to 9) says. With Dragonbane's solo rules built into your pack, the oracle is the book's own chart (see [Dragonbane](#dragonbane)).
 
 Fights, dying and advancement are rules in the system pack, run by the engine: initiative cards, weapon damage through armor, death rolls at 0 HP, and skills marked by Dragons and Demons and rolled up at the end of a session.
 
@@ -128,24 +200,56 @@ A campaign can run for many sessions, and the GM may start any of them knowing n
 
 ## Ironsworn
 
-Ironsworn is written for solo play, and its moves, oracles and assets are published under the Creative Commons Attribution 4.0 license. Unlike Dragonbane's, they can ship with this project: `packs/ironsworn` is a whole game, and a fresh install plays it with no book. The starter adventure, The Bell Under the Hill, is this project's own: a hamlet, a road, a barrow and an oath, for one hero and one sitting, with a vow, a journey, a bond and a fight in it.
+Ironsworn is written for solo play, and its moves, oracles and assets are published under a Creative Commons license that lets them ship with this project, with credit ([NOTICE.md](NOTICE.md) has it, and what was changed). `packs/ironsworn` is a whole game, and a fresh install plays it with no book. The starter adventure, The Bell Under the Hill, is this project's own: a hamlet, a road, a barrow and an oath, for one hero and one sitting, with a vow, a journey, a bond and a fight in it.
 
-- **The action roll**: an action die and a stat (and any adds) against two challenge dice. Beat both for a strong hit, one for a weak hit, neither for a miss; challenge dice that match are a twist. `solo act <move> --stat <stat>`, or click the move on the table. The GM gets the move's own words for the result and decides what it gives or costs.
-- **Momentum** runs from -6 to +10. After a roll it can be burned (`solo burn`, or the button beside the roll): the challenge dice under it are cancelled, and it falls back to its reset. Each impact (wounded, shaken, unprepared and the rest) lowers its ceiling and its reset by one.
-- **Progress tracks** measure vows, journeys, fights and bonds: ten boxes of four ticks, marked by rank and read by a progress roll when the hero ends the challenge (`solo track`). The table draws them as boxes.
-- **The oracle** is a d100 with odds from small chance to almost certain, and a double is a twist; the book's tables for names, places, settlements, turning points and Pay the Price are `solo table`.
-- **Where it comes from**: the moves, tables and assets are converted from [Datasworn](https://github.com/rsek/datasworn)'s copy of the rulebook by `solo import datasworn`, each with its page and its credit. The rest of the book's text (its NPCs, atlas and truths) is under CC BY-NC-SA, which is for non-commercial use only and asks the same license of anything built from it; it isn't here, and the game doesn't need it. [NOTICE.md](NOTICE.md) has the credit and the details.
+- The action roll: an action die and a stat (and any adds) against two challenge dice. Beat both for a strong hit, one for a weak hit, neither for a miss; challenge dice that match are a twist. `solo act <move> --stat <stat>`, or click the move on the table. The GM gets the move's own words for the result and decides what it gives or costs.
+- Momentum runs from -6 to +10. After a roll it can be burned (`solo burn`, or the button beside the roll): the challenge dice under it are cancelled, and it falls back to its reset. Each impact (wounded, shaken, unprepared and the rest) lowers its ceiling and its reset by one.
+- Progress tracks measure vows, journeys, fights and bonds: ten boxes of four ticks, marked by rank and read by a progress roll when the hero ends the challenge (`solo track`). The table draws them as boxes.
+- The oracle is a d100 with odds from small chance to almost certain, and a double is a twist; the book's tables for names, places, settlements, turning points and Pay the Price are `solo table`.
+- The moves, tables and assets are converted from [Datasworn](https://github.com/rsek/datasworn)'s copy of the rulebook by `solo import datasworn`, each with its page and its credit. The rest of the book's text (its NPCs, atlas and truths) is under a non-commercial license, so it isn't here, and the game doesn't need it.
 
 ## Dragonbane
 
-oma-solorpg is a third-party supplement for Dragonbane, published as a virtual tabletop module under Free League's [Dragonbane Third-Party Tabletop Module License](https://freeleaguepublishing.com/community-content/free-tabletop-licenses/). You need the Dragonbane core game to play it.
+oma-solorpg is a third-party supplement for Dragonbane, published as a virtual tabletop module under Free League's [Dragonbane Third-Party Tabletop Module License](https://freeleaguepublishing.com/community-content/free-tabletop-licenses/). You need the Dragonbane core game to play it. The license lets a supplement use the game's terms and cite its pages, not carry a copy of its rules ([NOTICE.md](NOTICE.md)), so the rules come from your own books.
 
-The license lets a supplement use Dragonbane's terminology and refer to its pages, and it does not let a supplement carry a copy of the rules. So this repository ships the words and none of the rules:
+### Building it from your books
+
+Point `make dragonbane` at a folder of your PDFs. It builds every pack it has an importer for, in about twenty seconds and without an agent. The imports need PyMuPDF; on Omarchy that is `sudo pacman -S python-pymupdf`, and [Troubleshooting](#pymupdf) has the other systems.
+
+```bash
+make dragonbane BOOKS=~/Books/Dragonbane                  # a folder of your PDFs (or one PDF)
+make check                                                # audits each pack against its book
+```
+
+It reads each book's bookmarks and layout, writes your private packs into `~/Games/solo/systems/` and audits every one against the book's own pages:
+
+- The core rules give everything the engine runs (the numbers of every roll and fight, the weapons and armor, all the gear, the tables, character creation, the bestiary, the heroic abilities, the spells), plus a rules page for each section of the book that has words of its own.
+- The Book of Magic gives its schools, spells, tricks and recipes.
+- The three card decks give the treasure, improvised weapons and adventure hooks.
+- The solo booklet gives the fortune chart, the inspiration table, the threat counter and the exploration tables.
+
+The packs are layered. `~/Games/solo/systems/dragonbane-rulebook` holds the core rules, a pack for each further book is laid over it (the Book of Magic, the card decks), and `~/Games/solo/systems/dragonbane` sits on top with the solo rules, each listed under the `extends` of the one above. Campaigns use the top one.
+
+The importers are deterministic: the same PDFs give the same packs, and anything an importer had to decide it says in a note. They hold where things are in a book and how to read them; the words come from your PDF each time, and nothing they write lands in this folder.
+
+The same command builds the adventures into `~/Games/solo/adventures`, and they show up on the New adventure screen:
+
+- the Quickstart: The Sinking Tower, with its seven pre-generated heroes;
+- the Adventure Book: its campaign, titled The Secret of the Dragon Emperor, with the opening on the road, the village of Outskirt as the hub, and eleven adventure sites to journey to from it.
+
+Each place of a site is a scene with its read-aloud text and its GM notes, and the ways between them are exits. A door the text calls locked, blocked or hidden is a gated exit the GM opens when the heroes get through. Every person and monster has the stat block the book gives. The build says where it had to choose: a map is a picture, so a way the text doesn't give is linked from the place before it, and said. Clocks and timers are the GM's, as they are in the book.
+
+A book no importer knows (another printing, another adventure) is read by your agent instead: `make rules BOOK=<pdf>` and `make supplement ID=<id> BOOK=<pdf>` start that with the `solo-rules-import` skill, and `make adventure` does it for an adventure with `solo-import`. `make dragonbane` says which of your PDFs it left for them.
+
+If you already have packs an agent wrote from the same books, `solo import book` won't overwrite them. Build the new ones beside them (`--systems ~/Games/solo/new`), and `solo compare ~/Games/solo/new/dragonbane-rulebook ~/Games/solo/systems/dragonbane-rulebook` shows, area by area, what differs, before you decide which to keep.
+
+### What this repository holds
 
 - `packs/dragonbane` holds the game's names (attributes, conditions, skills, what HP and WP are called), a list of hero names per kin, and the text portraits. Its `needs` list says what a campaign can't start without, and the engine refuses to start one on Dragonbane until your own packs supply it.
-- The numbers, tables and procedures come from your books. `make dragonbane` builds them into `~/Games/solo/systems/dragonbane-rulebook` (the core rules), a pack for each further book laid over it (the Book of Magic, the card decks) and `~/Games/solo/systems/dragonbane` on top of them (the solo rules), each listed under the `extends` of the one above. Campaigns use the top one.
 - The Red Tusk Hall and Ragna are this project's own, written for Dragonbane.
 - The tests run on made-up rules (`tests/fixtures/house`) in the same shapes, so they need no book either.
+
+### Playing alone
 
 With the solo rules built, the engine runs Dragonbane alone the way Alone in Deepfall Breach does: a hero with an extra heroic ability, the fortune chart and its inspiration words for the questions a GM would answer, effects for a Dragon or a Demon outside a fight, threats that close in while you delay, searching and scavenging, simple NPCs with attacker roles, healing and rallying alone, and the core set's treasure deck if you type in your cards. On the table these are the oracle's columns, Tend my wounds at a rest, Sole Survivor beside the push buttons, and Rally and Save yourself beside the death roll. `solo rule fortune` (or threats, searching, healing alone) shows each rule as the engine runs it.
 
@@ -205,17 +309,24 @@ Don't publish packs built from books you bought. They stay in `~/Games/solo`, wh
 
 ## Commands
 
+`solo -C <campaign folder> <command>` runs a command on that campaign; without `-C`, `solo` finds the campaign from the folder you're in, then takes the current one.
+
 | | |
 |---|---|
 | `solo scene` / `npc <id>` / `rule <topic>` | what the GM reads (Markdown) |
 | `solo check <skill> [--boons N --banes N]` / `push [--condition C \| --sole-survivor]` | rolls through the system's resolver (games of skills) |
 | `solo act <move> [--stat S] [--add N] [--track ID]` / `burn` | a move's roll, with the book's words for the result; burning momentum on it (games of moves) |
 | `solo track add <name> --kind K --rank R` / `mark <id> [--times N]` / `set <id> [--ticks N] [--rank R]` / `end <id> --how H` / `list` | progress tracks: vows, journeys, fights, bonds (games of moves) |
-| `solo rest <round\|stretch\|shift> [--heal C] [--tend]` | rests from the system pack; time passes |
+| `solo rest <round\|stretch\|shift> [--heal C] [--tend] [--use A]` | rests from the system pack; time passes |
+| `solo journey <km> [--mounted] [--road] [--difficult]` / `camp` | travel a shift at a time until the hero arrives or something needs the GM; finding a place to rest in the wild |
 | `solo roll <expr>` / `table <id>` / `ask "<question>" [--kind K] [--likely L \| --npc id \| --meaning]` | dice, tables, the oracle |
 | `solo threat add\|random\|advance\|end` / `search` / `scavenge` | threats, searching and scavenging (when the pack has solo rules) |
 | `solo fight <npc>... [--join \| --round \| --end]` / `attack [<foe>] --with W` / `enemy [<foe>]` / `ally <npc> [<foe>]` / `defend evade\|parry\|take` | fights |
+| `solo dragon double\|attack\|pierce [<foe>]` | what a Dragon on the hero's attack does: double the blow, a free attack on another foe, or pierce armor |
 | `solo wound <foe\|hero> <dice\|all> --why W [--through-armor] [--double]` | harm that isn't a weapon blow: fire, spells, traps; `hero` for a fall or a trap on the hero (armor counts) |
+| `solo repair <weapon> [--artisan]` | mend a damaged or broken weapon: a roll, or an artisan and none |
+| `solo cast <spell> [--power N] [--target F] [--grimoire]` / `prepare <spell> [--drop S]` / `learn <spell> [--from teacher\|grimoire]` | magic: cast a spell the hero knows (its WP paid, its school rolled), hold one ready, learn a new one |
+| `solo ability <name> [--cost N]` | pay for a heroic ability the GM runs from its rules page, and log it |
 | `solo death-roll [--heal]` / `rally` / `hero <character>` / `mark <skill>` / `advance` | dying (or saving yourself, rallying alone), carrying on after a death, advancement |
 | `solo prefs [--tone T] [--line L] [--veil V] [--clear]` | the player's table settings (the GM can't run it without asking) |
 | `solo voice <skill> <text>` / `light [torch] [--out]` | a skill speaks up if a quiet roll succeeds; torches burn down |
@@ -226,16 +337,17 @@ Don't publish packs built from books you bought. They stay in `~/Games/solo`, wh
 | `solo gm budget [dollars] [--turns N] [--reset]` | what one GM session may spend (10 dollars, 200 turns, by default); the Book stops with a plain sentence when it is used up (the GM can't run it) |
 | `solo strike [--note N] [--line L] [--veil V]` | the X-card, the Book's "cut the GM's last message": it leaves the page and `recall`, and the GM is told not to come back to it (the player's, not the GM's) |
 | `solo report [-n N] [--no-messages] [--out F]` | a bug report safe to post: ids, numbers and dice, the GM's commands and the engine and pack versions, with the books' words left out |
+| `solo review [--trace F]` | the campaign checked as a play test would: refused commands, bookkeeping in the story, foes that never struck back, consequences never paid, a person with two names |
 | `solo desk flash\|dying\|death\|candle\|omen\|screensaver\|sound\|restore\|settings` | desktop effects, always restored |
 | `solo recall <words>` / `history` | the GM's long memory: search everything said and written down, or the whole story in order |
 | `solo state` / `log` / `rebuild` / `validate` / `outline` | inspection, repair and review |
-| `solo new [<adventure>]` / `character` / `library` / `use` / `play [--terminal]` | campaigns and heroes |
+| `solo new [<adventure>]` / `character` / `library` / `use` / `play [--terminal]` / `delete <dir> [--yes]` | campaigns and heroes |
 | `solo setup` / `import` / `extract <pdf>` / `inventory` / `audit` / `compare` | installation and content: a book's PDF as text, a pack built from a book (`import book`), a first inventory, a table from the book, Ironsworn from Datasworn, a pack checked against its inventory and its pages, two packs side by side |
 | `solo campaign new\|next\|roll\|check` | a campaign from a premise: roll it, roll its next mission from what the hero did, roll for its author, check it's written and every roll is used |
 
 ## Development
 
-Pull requests are welcome: [CONTRIBUTING.md](CONTRIBUTING.md) has the one rule (nothing from a book goes in the repository), how to run the checks and how to write a GM scenario. Every pull request runs the tests on Python 3.11 and the newest release.
+Pull requests are welcome: [CONTRIBUTING.md](CONTRIBUTING.md) has the one rule (nothing from a book goes in the repository), how to run the checks, what CI runs on every pull request, and how to write a GM scenario. Report a security problem privately, as [SECURITY.md](SECURITY.md) says.
 
 ```bash
 make test
@@ -260,6 +372,8 @@ python3 tests/qml/render.py /tmp/book       # the Book, rendered against real en
 
 The website is in `site/`, plain HTML with no build step: `make site` serves it locally, and `.github/workflows/pages.yml` publishes it to GitHub Pages. [site/README.md](site/README.md) says where the trailers go and where its screenshots come from.
 
+What changed in each release is in [CHANGELOG.md](CHANGELOG.md).
+
 ## License
 
-The code and this project's own content (The Red Tusk Hall, The Bell Under the Hill, the hero names, the text portraits) are under the [MIT License](LICENSE). Dragonbane and the "A Supplement for Dragonbane" logo belong to Fria Ligan AB and are used under its license. The moves, oracles and assets of `packs/ironsworn` are Shawn Tomkin's, under the Creative Commons Attribution 4.0 International License, with credit; see [NOTICE.md](NOTICE.md).
+The code and this project's own content (The Red Tusk Hall, The Bell Under the Hill, the hero names, the text portraits) are under the [MIT License](LICENSE). Dragonbane, its terms and the "A Supplement for Dragonbane" logo belong to Fria Ligan AB, and the text in `packs/ironsworn` to Shawn Tomkin; both are used under their licenses, which [NOTICE.md](NOTICE.md) explains.

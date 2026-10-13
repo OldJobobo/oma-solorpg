@@ -23,7 +23,7 @@ Read `docs/INGESTION.md` (how books became packs before, and what went wrong) an
 ### 1. Extract
 
 ```bash
-uv pip install --system pymupdf
+sudo pacman -S python-pymupdf            # PyMuPDF on Omarchy; the README's Troubleshooting has other systems
 solo extract ~/Books/<book>.pdf          # into ~/Games/solo/sources/<book>/
 ```
 

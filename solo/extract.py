@@ -124,7 +124,8 @@ def _pymupdf():
     try:
         import pymupdf
     except ImportError:
-        raise SoloError("solo extract needs PyMuPDF: uv pip install --system pymupdf (only extract uses it; play doesn't)") from None
+        raise SoloError("solo extract needs PyMuPDF: on Omarchy, sudo pacman -S python-pymupdf; on another system, see "
+                        "Troubleshooting in the README (only extract uses it; play doesn't)") from None
     if hasattr(pymupdf, "no_recommend_layout"):  # it prints an advert for another package otherwise
         pymupdf.no_recommend_layout()
     return pymupdf

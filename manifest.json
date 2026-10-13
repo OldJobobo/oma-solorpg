@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "id": "cabral.oma-solorpg",
   "name": "oma-solorpg",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "author": "cabral",
-  "description": "A solo virtual tabletop for Omarchy, with your default agent as the game master. The Book tells the story: live narration, dice moments, scene title cards, a text portrait that reacts to your hero, fights drawn in text and a codex. The Table beside it holds the sheet, rolls, rests, light and the oracle, and the desktop joins in: border flashes, candlelight, omens.",
+  "description": "A solo virtual tabletop for Omarchy, with your default agent as the game master. Ironsworn plays free, with no book; Dragonbane is built from your own copy of its books. The Book tells the story: live narration, dice moments, scene title cards, a text portrait that reacts to your hero, fights drawn in text and a codex. The Table beside it holds the sheet, rolls, rests, light and the oracle, and the desktop joins in: border flashes, candlelight, omens.",
   "keywords": [
     "ttrpg",
     "vtt",

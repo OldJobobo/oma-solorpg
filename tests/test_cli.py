@@ -314,21 +314,74 @@ class CliTest(CliCase):
         self.assertEqual([system["id"] for system in library["systems"]], ["ironsworn"])
         self.assertIn("system dragonbane: Dragonbane has only its names so far", library["problems"][0])
 
+    def setup_on(self, *commands, plugin=False):
+        """`solo setup` on a machine where only these commands are on PATH."""
+        found = lambda name: f"/usr/bin/{name}" if name in commands else None
+        with unittest.mock.patch("shutil.which", side_effect=found), unittest.mock.patch("subprocess.run"):
+            return self.solo("setup", *(["--plugin"] if plugin else []))[1]
+
     def test_setup_links_are_idempotent(self):
-        first = self.solo("setup")[1]
-        second = self.solo("setup")[1]
+        (self.tmp / "home" / ".claude").mkdir(parents=True)
+        first = self.setup_on()
+        second = self.setup_on()
         link = self.tmp / "home" / ".claude" / "skills" / "solo-gm"
         self.assertTrue(link.is_symlink())
         self.assertEqual(link.resolve(), (ROOT / "skills" / "solo-gm").resolve())
         self.assertIn("linked", first)
-        self.assertTrue(all(line.startswith(("ok", "note")) for line in second.splitlines()))
+        self.assertFalse([line for line in second.splitlines() if line.startswith(("linked", "updated", "skipped"))])
 
     def test_setup_never_replaces_a_real_file(self):
         target = self.tmp / "home" / ".local" / "bin" / "solo"
         target.parent.mkdir(parents=True)
         target.write_text("mine")
-        self.assertIn("skipped", self.solo("setup")[1])
+        self.assertIn("skipped", self.setup_on())
         self.assertEqual(target.read_text(), "mine")
+
+    def test_setup_links_skills_only_for_the_agents_that_are_installed(self):
+        home = self.tmp / "home"
+        (home / ".claude").mkdir(parents=True)
+        self.setup_on()
+        self.assertTrue((home / ".claude" / "skills" / "solo-gm").is_symlink())
+        self.assertFalse([folder for folder in (".codex", ".agents", ".pi") if (home / folder).exists()])
+        # Codex on PATH: its own folder and the shared one it also reads.
+        self.setup_on("codex")
+        self.assertTrue((home / ".codex" / "skills" / "solo-gm").is_symlink())
+        self.assertTrue((home / ".agents" / "skills" / "solo-gm").is_symlink())
+        self.assertFalse((home / ".pi").exists())
+
+    def test_setup_says_what_is_missing_and_what_to_do(self):
+        os.environ["SOLO_AGENT"] = "claude"
+        out = self.setup_on(plugin=True)
+        self.assertIn("ok       Python 3.", out)
+        self.assertIn("todo     omarchy and omarchy-shell not found", out)
+        self.assertIn("optional hyprctl not found", out)
+        self.assertIn("todo     the default agent is claude, and claude isn't on PATH", out)
+        self.assertIn("no agent found (claude, codex or pi), so no skills were linked", out)
+        self.assertIn("PyMuPDF", out)
+        self.assertIn("Enable it with: omarchy plugin enable", out)
+        out = self.setup_on("omarchy", "omarchy-shell", "hyprctl", "claude", plugin=True)
+        self.assertIn("ok       omarchy and omarchy-shell", out)
+        self.assertIn("ok       hyprctl", out)
+        self.assertIn("ok       the GM is claude, which the Book runs", out)
+        self.assertIn("todo     ~/.local/bin isn't on PATH", out)
+        os.environ["PATH"] = str(self.tmp / "home" / ".local" / "bin")
+        out = self.setup_on("omarchy", "omarchy-shell", "hyprctl", "claude", plugin=True)
+        self.assertNotIn("todo", out)
+        # make install enables the plugin itself when omarchy is there.
+        self.assertNotIn("Enable it with", out)
+
+    def test_setup_tells_an_agent_the_book_cant_run_from_one_it_can(self):
+        os.environ["SOLO_AGENT"] = "opencode"
+        self.assertIn("the default agent is opencode, which the Book can't run", self.setup_on("opencode"))
+
+    def test_solo_on_a_python_older_than_3_11_says_so_in_a_sentence(self):
+        import runpy
+        err = io.StringIO()
+        with unittest.mock.patch("sys.version_info", (3, 10, 12)), redirect_stderr(err), \
+                self.assertRaises(SystemExit) as stopped:
+            runpy.run_path(str(ROOT / "bin" / "solo"), run_name="__main__")
+        self.assertEqual(stopped.exception.code, 1)
+        self.assertEqual(err.getvalue(), "solo needs Python 3.11 or newer, and this is Python 3.10: install a newer python3 and run it again.\n")
 
     def test_play_without_omarchy_explains_what_to_do(self):
         self.new_game()

@@ -8,4 +8,4 @@
 
 ## Nothing from a book
 
-- [ ] No number, table, text or art from any book is in this pull request, tests included. Every rule it holds is made up or this project's own ([CONTRIBUTING.md](../CONTRIBUTING.md)).
+- [ ] No number, table, text or art from any book is in this pull request, tests included. Every rule it holds is made up or this project's own ([CONTRIBUTING.md](https://github.com/cabral/oma-solorpg/blob/main/CONTRIBUTING.md)).
