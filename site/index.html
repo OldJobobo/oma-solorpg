@@ -100,19 +100,13 @@
     <div class="rule" aria-hidden="true"><span></span><i>◆</i><span></span></div>
   </header>
   <div class="win player-win">
-    <!-- A tab shows only once its file is in media/; with one cut, the tabs step aside. -->
+    <!-- A tab and a panel for each cut in media/; with one cut, the tabs step aside. -->
     <div class="tabs" role="tablist" aria-label="Trailer length">
       <button role="tab" type="button" aria-selected="true" aria-controls="v45" id="t45">45 s</button>
-      <button role="tab" type="button" aria-selected="false" aria-controls="v15" id="t15">15 s</button>
     </div>
     <div class="video" id="v45" role="tabpanel" aria-labelledby="t45" data-file="media/oma-solorpg-45s.mp4">
       <video controls playsinline preload="metadata" poster="img/red-title.webp">
         <source src="media/oma-solorpg-45s.mp4" type="video/mp4">
-      </video>
-    </div>
-    <div class="video" id="v15" role="tabpanel" aria-labelledby="t15" data-file="media/oma-solorpg-15s.mp4" hidden>
-      <video controls playsinline preload="metadata" poster="img/tower-title.webp" loop>
-        <source src="media/oma-solorpg-15s.mp4" type="video/mp4">
       </video>
     </div>
   </div>
@@ -363,7 +357,7 @@
     <div class="rule" aria-hidden="true"><span></span><i>◆</i><span></span></div>
   </header>
 
-  <p class="lede drop">oma-solorpg ships Dragonbane's words and none of its rules. Your agent reads your rulebook a chapter at a time and writes a pack the engine can run, every number citing the page it came from. The book never goes through a chat upload, however big it is, and nothing built from it lands in the repository.</p>
+  <p class="lede drop">oma-solorpg ships Dragonbane's words and none of its rules. <code>make dragonbane</code> reads the books it knows from your PDFs, by their bookmarks and layout, with no agent. For a book it doesn't know, your agent reads it a chapter at a time and writes a pack the engine can run, every number citing the page it came from. The book never goes through a chat upload, however big it is, and nothing built from it lands in the repository.</p>
 
   <div class="tiles books-tiles">
     <article class="win steps-win">
@@ -532,39 +526,40 @@ make check-adventure ID=my-adventure</code></pre>
   <header class="card-head">
     <div class="rule" aria-hidden="true"><span></span><i>◆</i><span></span></div>
     <h2 class="decrypt" data-text="Tonight, then">Tonight, then</h2>
-    <p class="card-sub">five commands, then click the d20</p>
+    <p class="card-sub">three commands, then click the d20</p>
     <div class="rule" aria-hidden="true"><span></span><i>◆</i><span></span></div>
   </header>
   <div class="tiles install-tiles">
     <div class="win term install-term">
       <div class="win-head"><span class="win-title">~</span><button type="button" class="copy" data-copy="install-cmds">copy</button></div>
       <pre class="cmd-block big" id="install-cmds"><code>git clone https://github.com/cabral/oma-solorpg ~/Code/oma-solorpg && cd ~/Code/oma-solorpg
-make install
-uv pip install --system pymupdf
-make rules BOOK=~/Books/dragonbane-core.pdf SOLO_BOOK=~/Books/deepfall-breach.pdf
-make check</code></pre>
-      <p class="small"><code>make install</code> links <code>solo</code>, the GM skills and the plugin, and enables it. <code>make rules</code> extracts your books, sets up your private packs in <code>~/Games/solo/systems</code> and opens your agent to fill them. <code>make check</code> audits them against the books. <code>AGENT=codex make rules …</code> picks the agent; the default is Omarchy's.</p>
+git checkout --detach 26048dee18cc6d139fb4281b17f16b4a01faf805
+make install</code></pre>
+      <p class="small">The checkout pins a release, so what runs is what you read. <code>make install</code> links <code>solo</code>, the GM skills and the plugin, enables it, and says what is missing, if anything.</p>
+      <p class="small">Then, with clicks only: the d20 in the bar opens the Table. New adventure, pick The Bell Under the Hill and a hero, Begin. That is Ironsworn, and it needs no book: its free rules come with the plugin. The Book opens beside the Table and the GM writes the opening scene.</p>
+      <ul class="need small">
+        <li><a href="https://omarchy.org">Omarchy</a>, <code>make</code> and Python 3.11 or newer</li>
+        <li>Claude Code or Codex, the agent Omarchy runs for you. Other agents open in a terminal (<code>solo play --terminal</code>), and the Book still shows the story as it is recorded.</li>
+      </ul>
     </div>
 
     <article class="win need-win">
-      <div class="win-head"><span class="win-title">you need</span></div>
-      <ul class="need">
-        <li><a href="https://omarchy.org">Omarchy</a>, <code>make</code> and Python 3.11 or newer</li>
-        <li>Claude Code or Codex, the agent Omarchy runs for you</li>
-        <li>A PDF of the Dragonbane core rules</li>
-        <li>Optional: the solo rules, Alone in Deepfall Breach from the core set</li>
-      </ul>
-      <p class="small">Then, with clicks only: the d20 in the bar opens the Table. New adventure, pick The Red Tusk Hall (it comes with it) and a hero, Begin. The Book opens beside the Table and the GM writes the opening scene.</p>
-      <p class="small dim">Other agents open in a terminal (<code>solo play --terminal</code>), and the Book still shows the story as it is recorded.</p>
+      <div class="win-head"><span class="win-title">dragonbane, from your books</span><button type="button" class="copy" data-copy="dragonbane-cmds">copy</button></div>
+      <pre class="cmd-block" id="dragonbane-cmds"><code>sudo pacman -S python-pymupdf
+make dragonbane BOOKS=~/Books/Dragonbane
+make check</code></pre>
+      <p class="small">Dragonbane plays from your own PDFs. <code>make dragonbane</code> reads a folder of them and builds the core rules, the Book of Magic, the card decks, the solo booklet, The Sinking Tower and the Adventure Book's campaign into private packs in <code>~/Games/solo</code>, in about twenty seconds and with no agent. <code>make check</code> audits them against the books. Then New adventure has The Red Tusk Hall and your books' adventures.</p>
+      <p class="small dim">PyMuPDF reads the PDFs; the <a href="https://github.com/cabral/oma-solorpg#pymupdf">README</a> says how to install it outside Omarchy. A book no importer knows goes to your agent: <code>make rules BOOK=…</code>.</p>
     </article>
 
     <article class="win road-win">
       <div class="win-head"><span class="win-title">roadmap</span><a class="dim" href="https://github.com/cabral/oma-solorpg/blob/main/ROADMAP.md">ROADMAP.md</a></div>
       <ul class="road">
-        <li><span class="tag shipped">shipped</span> Campaign generation from a premise (<code>make campaign</code>), missions written from what your hero did.</li>
-        <li><span class="tag next">next</span> The mechanics your book has and the engine doesn't yet: spells and willpower, weapons that break on a parry, ranged attacks and their ranges, monster traits, encumbrance, journeys rolled by the engine.</li>
-        <li><span class="tag">later</span> A third mechanics family, percentile or d20-over, beside Dragonbane's d20-under and the dice pool.</li>
-        <li><span class="tag">later</span> More games on the dice-pool family, more agents that stream into the Book, the importer on the Table.</li>
+        <li><span class="tag shipped">shipped</span> Ironsworn with no book, Dragonbane's importers (<code>make dragonbane</code>), campaigns from a premise (<code>make campaign</code>), and the X-card and hard limits on a GM turn.</li>
+        <li><span class="tag shipped">shipped</span> Spells and willpower, weapons that break, ranged attacks, monster traits, the load, journeys rolled by the engine.</li>
+        <li><span class="tag next">next</span> Play tests with a real GM: on the imported books, on The Bell Under the Hill, and a baseline to measure every change to the GM against.</li>
+        <li><span class="tag next">next</span> Campaigns on Ironsworn, and the imported adventures' timers as clocks the engine counts.</li>
+        <li><span class="tag">later</span> More agents that stream into the Book, more games on the existing families, the importer on the Table, a character roster.</li>
       </ul>
     </article>
 

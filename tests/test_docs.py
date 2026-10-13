@@ -132,7 +132,7 @@ class RoadmapTest(unittest.TestCase):
 class PyMuPDFTest(unittest.TestCase):
     # Arch marks its system Python as externally managed, so uv and pip refuse to install into it;
     # on Omarchy the package comes from pacman, and the README says what to do elsewhere.
-    PLACES = ["Makefile", "CONTRIBUTING.md", "docs/INGESTION.md", "solo/extract.py", "skills/solo-rules-import/SKILL.md"]
+    PLACES = ["Makefile", "CONTRIBUTING.md", "docs/INGESTION.md", "solo/extract.py", "skills/solo-rules-import/SKILL.md", "site/index.html"]
 
     def test_every_place_that_says_how_to_install_pymupdf_gives_the_pacman_line(self):
         for place in self.PLACES:
@@ -150,6 +150,26 @@ class PyMuPDFTest(unittest.TestCase):
         with unittest.mock.patch.dict(sys.modules, {"pymupdf": None}), self.assertRaises(SoloError) as refused:
             extract._pymupdf()
         self.assertIn("sudo pacman -S python-pymupdf", str(refused.exception))
+
+
+class SiteTest(unittest.TestCase):
+    def site(self):
+        return (ROOT / "site" / "index.html").read_text(encoding="utf-8")
+
+    def test_the_sites_install_is_the_readmes(self):
+        html = self.site()
+        install = html[html.index('<section id="install"'):html.index("</section>", html.index('<section id="install"'))]
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        pin = re.search(r"git checkout --detach ([0-9a-f]{40})", readme).group(1)
+        self.assertIn(f"git checkout --detach {pin}", install, "the site pins the commit the README pins")
+        for words in ("make install", "The Bell Under the Hill", "make dragonbane BOOKS=", "pacman -S python-pymupdf"):
+            self.assertIn(words, install)
+        self.assertNotIn("it comes with it", install)
+        self.assertNotIn("--system pymupdf", html)
+
+    def test_the_page_asks_only_for_media_that_exists(self):
+        for path in re.findall(r'src="(media/[^"]+)"', self.site()):
+            self.assertTrue((ROOT / "site" / path).exists(), path)
 
 
 class ReleaseTest(unittest.TestCase):

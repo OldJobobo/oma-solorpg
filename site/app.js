@@ -801,6 +801,8 @@
       if (tab && tab.getAttribute("aria-selected") === "true") select(left[0]);
       if (tablist) tablist.hidden = left.length < 2;
     }
+    // Only the cuts that exist are in the page, so a missing one never costs a request; one cut needs no tabs.
+    if (tablist) tablist.hidden = tabs.length < 2;
     $$(".video").forEach(function (box) {
       var video = $("video", box), source = $("source", box);
       if (source) source.addEventListener("error", function () { missing(box); });
