@@ -24,7 +24,7 @@ import re
 import unicodedata
 from pathlib import Path
 
-from . import SoloError, packs
+from . import SoloError, dice, packs
 from .extract import SCANNED_BELOW, chapter_level
 from .library import REPO
 
@@ -131,7 +131,8 @@ def audit(pack, kind, extract=None):
     folder = Path(extract).expanduser() if extract else inventory["extract"]
     report["pages"] = _page_coverage(folder, items) if folder else None
     book = _book_pages(folder) if folder else {}
-    report["unverified"] = [line for item in items.values() for line in _checked(item, loaded, book)] if book else []
+    lines = _book_lines(folder) if book else {}
+    report["unverified"] = [line for item in items.values() for line in _checked(item, loaded, book, lines)] if book else []
     report["files"] = _progress(items)
     return report
 
@@ -278,8 +279,9 @@ def _page_coverage(folder, items):
 # Coverage says every item went somewhere; it can't say the pack copied the book right. An
 # agent that half-remembers a rulebook writes plausible numbers. So what a mapped item
 # points at is read back against the pages it cites: a table's results, word for word
-# (order aside, since columns scramble), and in any data (weapons, rests, monsters, gear)
-# every dice expression, stat and price.
+# (order aside, since columns scramble) and, where the page sets the table as rows, each on
+# the row its range starts; its dice against its results' ranges; and in any data (weapons,
+# rests, monsters, gear) every dice expression, stat and price.
 
 _CHECKS_SHOWN = 5
 
@@ -300,13 +302,19 @@ def _book_pages(folder):
     return {number: _norm(text) for number, text in _page_texts(folder).items()}
 
 
+def _book_lines(folder):
+    """{page: [each line of its text, normalised]}: where a table's rows start."""
+    return {number: [line for line in map(_norm, re.sub(r"\u00ad\s*", "", text).splitlines()) if line]
+            for number, text in _page_texts(folder).items()}
+
+
 def _norm(text):
     # A soft hyphen marks where a word may break ("market\u00adplace"), at a line's end too.
     text = unicodedata.normalize("NFKC", re.sub(r"\u00ad\s*", "", str(text))).lower()
     return " ".join(re.sub(r"[\u2010-\u2015\u2212]", "-", text).replace("\u00d7", "x").split())
 
 
-def _checked(item, loaded, book):
+def _checked(item, loaded, book, lines):
     if item["status"] != "mapped" or not item["pages"]:
         return []
     text = " ".join(book.get(page, "") for page in item["pages"])
@@ -327,19 +335,24 @@ def _checked(item, loaded, book):
         parts = [(data, text, where)]
         if ref.startswith("tables/"):
             parts = [({k: v for k, v in data.items() if k not in ("formula", "results")}, text, where)]
-            for result in data.get("results", []):
+            rows = _rows([line for page in item["pages"] for line in lines.get(page, [])], data.get("results", []))
+            for at, result in enumerate(data.get("results", [])):
                 page = result.get("page")
                 own = book.get(page, "") if isinstance(page, int) else text
                 own_where = f"p. {page}" if isinstance(page, int) else where
-                own_words = set(re.findall(r"[a-z0-9]+", own))
-                label = "-".join(dict.fromkeys(str(n) for n in (result.get("range") or ["?", "?"])[:2]))
-                roles = [v["text"] for v in result.values() if isinstance(v, dict) and isinstance(v.get("text"), str)]  # an NPC attack table's columns
-                for said in [result.get("text", ""), *result.get("choices", []), *roles]:
+                own_words = _words(own)
+                label = _label(result)
+                for said in _said(result):
                     missing = _missing_words(said, own_words) or _missing_numbers(said, own_words)
                     if missing:
                         found.append(f"{item['id']}: {ref} result {label} \"{_short(said)}\" isn't on {own_where} "
                                      f"(no {', '.join(missing[:4])})")
+                        break
+                else:
+                    found += [f"{item['id']}: {ref} result {label} \"{_short(_said(result)[0])}\" {line}"
+                              for line in _row_problems(at, rows, own_words, own_where)]
                 parts.append(({k: v for k, v in result.items() if k not in ("range", "page")}, own, own_where))
+            found += [f"{item['id']}: {ref} {line}" for line in _formula_problems(data, where)]
         for part, part_text, part_where in parts:
             for dice in sorted(set(_dice_in(part))):
                 if not _dice_on(dice, part_text):
@@ -444,9 +457,24 @@ def _prices_apart(entries, text, coins):
 _STOP = {"with", "that", "this", "from", "your", "they", "their", "them", "have", "into", "when", "which", "will", "were", "been"}
 
 
+def _words(text):
+    """The words and numbers of normalised text, with a word that a hyphen breaks at a line's end
+    also joined whole ("one-" "handed" is "onehanded" too), as solo extract joins one in a block."""
+    return {*re.findall(r"[a-z0-9]+", text), *("".join(pair) for pair in re.findall(r"([a-z]+)-\s*([a-z]+)", text))}
+
+
+def _tokens(text):
+    """The words of a result that say something: four letters or more, a dice placeholder ({value}) left out."""
+    return [w for w in re.findall(r"[a-z]+", _norm(re.sub(r"\{[^}]*\}", "", str(text)))) if len(w) >= 4 and w not in _STOP]
+
+
+def _has(words, word):
+    return word in words or word.rstrip("s") in words or f"{word}s" in words
+
+
 def _missing_words(text, words):
-    tokens = [w for w in re.findall(r"[a-z]+", _norm(re.sub(r"\{[^}]*\}", "", text))) if len(w) >= 4 and w not in _STOP]
-    missing = [w for w in tokens if w not in words and w.rstrip("s") not in words and f"{w}s" not in words]
+    tokens = _tokens(text)
+    missing = [w for w in tokens if not _has(words, w)]
     return missing if tokens and len(missing) * 3 > len(tokens) else []
 
 
@@ -454,6 +482,131 @@ def _missing_numbers(text, words):
     """The numbers a result names (Potency 12, worth 25 gold) that the page doesn't."""
     numbers = re.findall(r"\b\d+\b", _norm(re.sub(r"\{[^}]*\}", "", text)))
     return [n for n in numbers if n not in words]
+
+
+def _label(result):
+    """A result's range as the report names it: "3", or "3-6"."""
+    return "-".join(dict.fromkeys(str(n) for n in (result.get("range") or ["?", "?"])[:2]))
+
+
+def _said(result):
+    """The words of a result: its text, its choices, and an NPC attack table's text for each kind of attacker."""
+    roles = [v["text"] for v in result.values() if isinstance(v, dict) and isinstance(v.get("text"), str)]
+    return [str(result.get("text", "")), *map(str, result.get("choices", [])), *roles]
+
+
+# A table's rows -------------------------------------------------------------------------
+#
+# A roll table set as rows has each row on the line its range starts ("3-6", "3–6", "3 to 6",
+# a lone "3", "6+" for the last): its words follow the range, and run on over the lines under
+# it when the row wraps. Read that way, each result is checked on its own row, so two results
+# swapped, a range moved, or a word put into a row ("Never runs away" for "Runs away") show. A
+# page's text doesn't always come out as rows: when a table's numbers come out in a column of
+# their own and its words after them, there are no rows to read, and a result's words are only
+# looked for on the page, as before.
+
+_ROW_LINES = 6
+# A range at the start of a line: "3", "3-6", "3 to 6", "6+", and "00" for a hundred.
+_LEAD = re.compile(r"^(\d{1,3})(?:\s*(?:-|to)\s*(\d{1,3}))?(\+)?(?=$|[\s.:)])")
+
+
+def _printed(found, top):
+    """(low, high) of the range a line starts with: "00" is a hundred, and "6+" runs to the table's top."""
+    low, high = (100 if number == "00" else int(number) for number in (found.group(1), found.group(2) or found.group(1)))
+    return low, top if found.group(3) else high
+
+
+def _anywhere(low, high):
+    """A range after a space: the second half of a table set in two halves side by side starts its rows in the middle of a line."""
+    pattern = rf"0*{low}(?!\s*(?:-|to)\s*\d)" if low == high else rf"0*{low}\s*(?:-|to)\s*0*{high}"
+    return re.compile(rf"(?<=\s){pattern}(?=$|[\s.:)])")
+
+
+def _ranged(result):
+    found = result.get("range")
+    return isinstance(found, list) and len(found) == 2 and all(isinstance(n, int) and not isinstance(n, bool) for n in found)
+
+
+def _rows(lines, results):
+    """For each result of a table, the rows of its pages that bear on it: {"label", "said" (its text,
+    choices and roles), "words" (its own words: a column's name before a colon and a note in brackets
+    are the table's), "own" [(text, words) of each row its range starts], "other" [(range, text, words)
+    of each row of the table's span that another range starts]}. A row runs on over the lines under it
+    as far as the result's words would, short of the next row: the last row has no next row to end it,
+    and what is set under the table isn't its own. A result of a deck (`page`) is a card, with no rows."""
+    top = max((result["range"][1] for result in results if _ranged(result)), default=0)
+    leads = [(number, _printed(found, top), found.end()) for number, line in enumerate(lines) for found in [_LEAD.match(line)] if found]
+    leads = [(number, span, end) for number, span, end in leads if 1 <= span[0] <= span[1] <= top]
+    starts = {number for number, _, _ in leads}
+
+    def row(number, end, size):
+        window = [lines[number][end:]]
+        for more in range(number + 1, min(number + _ROW_LINES, len(lines))):
+            if len(" ".join(window)) >= size or more in starts:
+                break
+            window.append(lines[more])
+        text = " ".join(window).strip(" .:)")
+        return text, _words(text)
+
+    rows = []
+    for result in results:
+        said = _said(result)
+        found = {"label": _label(result), "said": said, "own": [], "other": [],
+                 "words": [w for text in said for w in _tokens(re.sub(r"\([^)]*\)|[a-z]+:", " ", _norm(text)))]}
+        if _ranged(result) and "page" not in result:
+            span, size = tuple(result["range"]), len(_norm(" ".join(said)))
+            found["own"] = [row(number, end, size) for number, printed, end in leads if printed == span]
+            if not found["own"]:
+                anywhere = _anywhere(*span)
+                found["own"] = [(text, _words(text)) for line in lines for at in [anywhere.search(line)] if at
+                                for text in [line[at.end():].strip(" .:)")] if re.search(r"[a-z]", text)]
+            found["other"] = [(printed, *row(number, end, size)) for number, printed, end in leads if printed != span]
+        rows.append(found)
+    return rows
+
+
+def _fits(row, words):
+    """Whether a row holds at least half of a result's words."""
+    return bool(words) and sum(_has(row, word) for word in words) * 2 >= len(words)
+
+
+def _row_problems(at, rows, page_words, where):
+    """What is wrong with result `at` on the rows of its table: a word on its row that the page doesn't
+    print at all, another range's row, a row of its own that says something else, or no row. Nothing
+    when the table's numbers came out in a column of their own, and nothing a row's neighbours don't
+    back: a row is only judged where most of the table reads as rows."""
+    row = rows[at]
+    if not row["words"] or any(found["own"] and not any(re.search(r"[a-z]", text) for text, _ in found["own"]) for found in rows):
+        return []
+    if any(_fits(words, row["words"]) for _, words in row["own"]):
+        missing = list(dict.fromkeys(w for said in row["said"] for w in _tokens(said) if not _has(page_words, w)))
+        return [f"isn't on {where} (no {', '.join(missing[:4])})"] if missing else []
+    theirs = [span for span, _, words in row["other"] if _fits(words, row["words"])]
+    if theirs:
+        return [f"is row {'-'.join(dict.fromkeys(map(str, theirs[0])))} on {where}, not row {row['label']}"]
+    fitting = sum(1 for found in rows if any(_fits(words, found["words"]) for _, words in found["own"]))
+    if fitting < 2 or fitting * 2 <= sum(1 for found in rows if found["words"]):
+        return []
+    if row["own"]:
+        return [f"isn't what row {row['label']} on {where} says (\"{_short(row['own'][0][0], 40)}\")"]
+    return [f"has no row {row['label']} on {where}: the page doesn't print that range"]
+
+
+def _formula_problems(table, where):
+    """A table's dice against its results' ranges, which are read against the book's rows: a d20 on
+    a table of six rows is the wrong die."""
+    formula = str(table.get("formula", ""))
+    ranges = [result["range"] for result in table.get("results", []) if _ranged(result)]
+    if not ranges or "@" in formula:
+        return []
+    try:
+        possible = dice.outcomes(formula)
+    except SoloError:
+        return []
+    low, high = min(r[0] for r in ranges), max(r[1] for r in ranges)
+    if (min(possible), max(possible)) != (low, high):
+        return [f"rolls {formula} ({min(possible)}-{max(possible)}), and its results, the rows of {where}, run {low}-{high}"]
+    return []
 
 
 def _short(text, size=60):

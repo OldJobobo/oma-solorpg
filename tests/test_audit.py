@@ -374,6 +374,46 @@ class BookCheckTest(unittest.TestCase):
         report = audit.audit(self.pack, "system")
         self.assertFalse(audit.failed(report), audit.render(report))
 
+    def test_two_rows_of_a_table_swapped_are_each_on_the_others_row(self):
+        found = self.change("tables/fear.toml", 'text = "Shakes and drops what they hold." },\n  { range = [2, 2], text = "Runs away screaming into the night." }',
+                            'text = "Runs away screaming into the night." },\n  { range = [2, 2], text = "Shakes and drops what they hold." }')
+        self.assertIn('rules: tables/fear result 1 "Runs away screaming into the night." is row 2 on p. 1, not row 1', found)
+        self.assertIn('rules: tables/fear result 2 "Shakes and drops what they hold." is row 1 on p. 1, not row 2', found)
+
+    def test_a_word_put_into_a_row_is_found_on_its_row(self):
+        found = self.change("tables/fear.toml", '"Runs away', '"Never runs away')
+        self.assertIn('rules: tables/fear result 2 "Never runs away screaming into the night." isn\'t on p. 1 (no never)', found)
+
+    def test_a_table_rolled_on_another_die_than_its_rows(self):
+        found = self.change("tables/fear.toml", 'formula = "1d6"', 'formula = "1d20"')
+        self.assertIn("rules: tables/fear rolls 1d20 (1-20), and its results, the rows of p. 1, run 1-6", found)
+
+    def test_a_row_that_says_something_else(self):
+        found = self.change("tables/fear.toml", '"Freezes on the spot for a round."', '"Resting heals a long sword."')
+        self.assertIn('rules: tables/fear result 3-6 "Resting heals a long sword." isn\'t what row 3-6 on p. 1 says ("freezes on the spot for a round")', found)
+
+    def test_a_range_the_page_does_not_print(self):
+        found = self.change("tables/fear.toml", '{ range = [2, 2], text = "Runs away screaming into the night." },\n  { range = [3, 6]',
+                            '{ range = [2, 3], text = "Runs away screaming into the night." },\n  { range = [4, 6]')
+        self.assertIn('rules: tables/fear result 2-3 "Runs away screaming into the night." is row 2 on p. 1, not row 2-3', found)
+        self.assertIn('rules: tables/fear result 4-6 "Freezes on the spot for a round." is row 3-6 on p. 1, not row 4-6', found)
+
+    def test_a_row_the_page_does_not_print_at_all(self):
+        write(self.pack / "tables" / "fear.toml", (self.pack / "tables" / "fear.toml").read_text(encoding="utf-8").replace('"1d6"', '"1d7"'))
+        found = self.change("tables/fear.toml", 'round." },\n', 'round." },\n  { range = [7, 7], text = "Resting heals a long sword." },\n')
+        self.assertIn('rules: tables/fear result 7 "Resting heals a long sword." has no row 7 on p. 1: the page doesn\'t print that range', found)
+
+    def test_rows_read_from_a_column_of_numbers_or_set_in_two_halves(self):
+        # The numbers come out in a column of their own and the words after them: there are no rows to read.
+        write(self.book / "pages" / "0001.txt", self.PAGES[1].replace("1 Shakes", "1\n2\n3-6\nShakes").replace("2 Runs", "Runs").replace("3-6 Freezes", "Freezes"))
+        self.assertFalse(audit.failed(audit.audit(self.pack, "system")))
+        # Two halves side by side: the second half's rows start in the middle of a line.
+        write(self.book / "pages" / "0001.txt", self.PAGES[1].replace("hold.\n2 Runs", "hold. 3-6 Freezes on the spot for a round.\n2 Runs")
+              .replace("3-6 Freezes on the spot for a round.\nA", "A"))
+        report = audit.audit(self.pack, "system")
+        self.assertFalse(audit.failed(report), audit.render(report))
+        self.assertIn("is row 2", self.change("tables/fear.toml", '"Shakes and drops what they hold."', '"Runs away screaming into the night."'))
+
     def test_pages_with_no_text_are_no_pass(self):
         for number in self.PAGES:
             write(self.book / "pages" / f"{number:04d}.txt", "\n")  # a scanned book: pictures, no text
