@@ -454,7 +454,7 @@ def markdown(report):
     if flagged or totals["refused"] or totals["forced_moves"] or totals["play_problems"]:
         lines += ["## Found in code", ""]
         lines += [f"- turn {n}, {p['kind']}: {p['detail']}" for n, p in flagged]
-        lines += [f"- refused: `solo {' '.join(r['argv'])}`: {r['error']}" for r in report["refused"]]
+        lines += [f"- refused: `solo {' '.join(r['argv'])}`: {r['error']}" if r["argv"] else f"- refused: {r['error']}" for r in report["refused"]]
         lines += [f"- forced move {m}" for m in totals["forced_moves"]]
         lines += [f"- {f}" for f in totals["play_problems"]]
         lines.append("")

@@ -123,7 +123,8 @@ def two_names(events):
 
 
 def refused_commands(trace):
-    """Commands the engine refused, from a trace file (`SOLO_TRACE`, or the Book's `.solo/trace.jsonl`)."""
+    """Commands the engine refused, from a trace file (`SOLO_TRACE`, or the Book's `.solo/trace.jsonl`), and those
+    Claude Code's permissions refused before they ran (a `solo gm turn` adds them; one that isn't solo has no argv)."""
     findings = []
     try:
         lines = Path(trace).read_text(encoding="utf-8").splitlines()
@@ -134,8 +135,10 @@ def refused_commands(trace):
             item = json.loads(raw)
         except ValueError:
             continue
-        if item.get("error"):
-            findings.append(("refused", f"solo {' '.join(item.get('argv', []))[:80]}: {item['error'][:120]}"))
+        if item.get("error") and item.get("argv"):
+            findings.append(("refused", f"solo {' '.join(item['argv'])[:80]}: {item['error'][:120]}"))
+        elif item.get("error"):
+            findings.append(("refused", item["error"][:200]))
     return findings
 
 

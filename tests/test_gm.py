@@ -213,6 +213,23 @@ class GmTest(Agents):
         with unittest.mock.patch.dict(os.environ, {"SOLO_GM_MAX_TURNS": "0.5", "SOLO_GM_BUDGET_TURNS": "0.5", "SOLO_GM_TIMEOUT": "0.5"}):
             self.assertEqual((gm._max_turns(), gm.budget()["turns"], gm._quiet_limit()), (40, 200, 0.5))
 
+    def test_what_claude_codes_permissions_refused_is_traced_as_refused(self):
+        # A command the allowed list turns away never runs, so solo never traced it: report, review and the play tests missed it.
+        denials = [{"tool_name": "Bash", "tool_use_id": "t1", "tool_input": {"command": "solo setup --plugin", "description": "x"}},
+                   {"tool_name": "Write", "tool_use_id": "t2", "tool_input": {"file_path": "/home/me/.bashrc", "content": "..."}}]
+        self.agent("claude", [*CLAUDE_STREAM[:-1], {**CLAUDE_STREAM[-1], "permission_denials": denials}])
+        with unittest.mock.patch.dict(os.environ, {}):
+            os.environ.pop("SOLO_TRACE", None)
+            gm.turn(self.root, "Hi")
+        trace = self.root / ".solo" / "trace.jsonl"
+        lines = [json.loads(line) for line in trace.read_text().splitlines()]
+        self.assertEqual([(line["argv"], line["error"]) for line in lines],
+                         [(["setup", "--plugin"], "Claude Code's permissions refused it"),
+                          ([], "Claude Code's permissions refused Write: /home/me/.bashrc")])
+        from solo import review
+        self.assertEqual(review.refused_commands(trace), [("refused", "solo setup --plugin: Claude Code's permissions refused it"),
+                                                          ("refused", "Claude Code's permissions refused Write: /home/me/.bashrc")])
+
     def test_a_turn_that_ran_out_of_model_calls_says_so_in_a_sentence(self):
         self.agent("claude", [{"type": "system", "subtype": "init", "session_id": "s"},
                               {"type": "result", "subtype": "error_max_turns", "is_error": False, "session_id": "s", "num_turns": 40}])

@@ -20,6 +20,7 @@ import json
 import math
 import os
 import re
+import shlex
 import shutil
 import signal
 import subprocess
@@ -437,6 +438,7 @@ class Adapter:
                         self.read(event, result, live)
             # Reaped: its pid may soon be another process's, and turn.json mustn't point a stop at it.
             live.update(force=True, agent_pid=None)
+            _trace_denied(env["SOLO_TRACE"], result.get("denied"))
             errors.seek(0)
             errors = errors.read()
         if silent.is_set():
@@ -507,6 +509,8 @@ class Claude(Adapter):
                 "output_tokens": usage.get("output_tokens"),
                 "cost_usd": event.get("total_cost_usd"),
             }
+            # What the allowed list turned away never ran, so solo never traced it.
+            result["denied"] = event.get("permission_denials") or []
             if event.get("is_error") or event.get("subtype") != "success":
                 reason = event.get("result") or "\n".join(map(str, event.get("errors") or []))
                 result["error"] = _STOPPED_AT.get(event.get("subtype")) or _first_line(reason) or "The GM ran into an error."
@@ -841,6 +845,33 @@ def _trim(path, keep=2000, over=512 * 1024):
             path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     except OSError:
         pass
+
+
+def _trace_denied(path, denials):
+    """What the agent's own permissions refused, added to the trace as refused, where `solo report`, `solo
+    review` and the play tests look for what the GM tried: a solo command by its arguments, as solo traces
+    its own, anything else named in the error."""
+    lines = []
+    for denial in denials or []:
+        if not isinstance(denial, dict):
+            continue
+        tool, given = str(denial.get("tool_name") or "a tool"), denial.get("tool_input") or {}
+        command = str(given.get("command") or given.get("file_path") or given.get("url") or json.dumps(given)) if isinstance(given, dict) else str(given)
+        try:
+            words = shlex.split(command)
+        except ValueError:
+            words = command.split()
+        if tool == "Bash" and words and Path(words[0]).name == "solo":
+            argv, error = words[1:], "Claude Code's permissions refused it"
+        else:
+            argv, error = [], f"Claude Code's permissions refused {tool}: {' '.join(command.split())[:200]}"
+        lines.append({"at": datetime.now().isoformat(timespec="seconds"), "argv": argv, "error": error})
+    if lines:
+        try:
+            with open(path, "a", encoding="utf-8") as trace:
+                trace.write("".join(json.dumps(line, ensure_ascii=False) + "\n" for line in lines))
+        except OSError:  # the turn is over; a lost trace line mustn't fail it
+            pass
 
 
 def _asked_to_stop(folder, live):
