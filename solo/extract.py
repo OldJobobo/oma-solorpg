@@ -47,9 +47,7 @@ def extract(pdf, out=None, *, tables=True):
     pdf = Path(pdf).expanduser().resolve()
     if not pdf.is_file():
         raise SoloError(f"no such file: {pdf}")
-    out = Path(out).expanduser().resolve() if out else default_out(pdf)
-    if out == library.REPO or library.REPO in out.parents:
-        raise SoloError(f"{out} is inside the repository: a book's text stays out of it (the default is {default_out(pdf)})")
+    out = library.outside_repository(out or default_out(pdf), default_out(pdf))
     try:
         doc = pymupdf.open(pdf)
     except Exception as error:  # PyMuPDF raises its own types for damaged files

@@ -66,7 +66,7 @@ def build(folder, out=None, replace=False, systems=None, adventures=None):
     kind = kind_of(recipe)
     folders = {"system": Path(systems).expanduser() if systems else library.home() / "systems",
                "adventure": Path(adventures).expanduser() if adventures else library.home() / "adventures"}
-    target = Path(out).expanduser() if out else folders[kind] / recipe.PACK
+    target = library.outside_repository(Path(out).expanduser() if out else folders[kind] / recipe.PACK)
     main = target / (AdventurePack.MAIN if kind == "adventure" else Pack.MAIN)
     made = main.read_text(encoding="utf-8").startswith(MARK) if main.exists() else False
     if main.exists() and not (replace and made):

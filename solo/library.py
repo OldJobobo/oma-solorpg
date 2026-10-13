@@ -26,6 +26,15 @@ def home():
     return Path(os.environ.get("SOLO_HOME") or Path.home() / "Games" / "solo").expanduser()
 
 
+def outside_repository(path, default=None):
+    """`path`, whole, for an importer to write a book's pack, table or text into: never the repository, which is published
+    and holds no book (NOTICE.md). `default` is where it goes when the player names nowhere, for the error to say."""
+    path = Path(path).expanduser().resolve()
+    if path == REPO or REPO in path.parents:
+        raise SoloError(f"{path} is inside the repository: a book's text stays out of it" + (f" (the default is {default})" if default else ""))
+    return path
+
+
 def state_home():
     return Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local/state") / "solo"
 

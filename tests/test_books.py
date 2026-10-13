@@ -12,7 +12,7 @@ from pathlib import Path
 from fake_book import BANNER, BODY, BOX, CELL, HEADER, HEADING, FakeBook
 from test_cli import CliCase
 
-from solo import SoloError, audit, books
+from solo import SoloError, audit, booktables, books, foundry, library
 from solo.books import dice, grid
 from solo.books.pack import Pack
 from solo.books import dragonbane_core
@@ -418,6 +418,33 @@ class BuildTest(unittest.TestCase):
         with self.assertRaisesRegex(SoloError, r"lanterns was built, and the engine says it can't be played \(the pack that was there is kept\):\n  system: family"):
             books.build(self.tmp / "extract", systems=self.systems, replace=True)
         self.assertEqual((self.built(), sorted(path.name for path in self.systems.iterdir())), (1, ["lanterns"]))
+
+
+class RepositoryTest(unittest.TestCase):
+    def test_no_importer_writes_into_the_repository(self):
+        said = r"is inside the repository: a book's text stays out of it"
+        with tempfile.TemporaryDirectory() as folder:
+            # A stand-in for the repository, so that an importer that would write into it writes here.
+            repository = Path(folder) / "repository"
+            inside = repository / "packs" / "from-a-book"
+            made = FakeBook(Path(folder) / "extract")
+            made.line(1, 80, "LANTERNS", style=HEADING)
+            made.mark(1, "1. Lanterns")
+            made.save()
+            recipe = types.SimpleNamespace(NAME="Lanterns", PACK="lanterns", recognizes=lambda book: True, extends=lambda folder: None, build=lambda pack: None)
+            with unittest.mock.patch.object(library, "REPO", repository.resolve()), unittest.mock.patch.object(books, "recipes", lambda: (recipe,)):
+                for kind, out in (("out", inside), ("systems", repository / "packs")):
+                    with self.assertRaisesRegex(SoloError, said):
+                        books.build(Path(folder) / "extract", **{kind: out})
+                with self.assertRaisesRegex(SoloError, said):
+                    audit.scaffold(inside, Path(folder) / "extract")
+                with self.assertRaisesRegex(SoloError, said):
+                    booktables.write("1-3 Rain\n4-6 Sun\n", inside / "tables" / "weather.toml")
+                for write in (lambda: foundry.import_adventure([], inside), lambda: foundry.import_rules([], inside),
+                              lambda: foundry.import_character([], inside / "hero.json", system={})):
+                    with self.assertRaisesRegex(SoloError, said):
+                        write()
+            self.assertFalse(repository.exists())
 
 
 class ImportBookCliTest(CliCase):

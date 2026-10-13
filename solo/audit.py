@@ -797,7 +797,7 @@ def scaffold(pack, folder, source=None):
     itself when it has none) and one per table found, each `todo` with its pages and a
     guessed kind. Every page with text is cited from the start, so the audit's page check
     only has to hold; an agent per chapter file refines, merges, renames and maps them."""
-    pack, folder = Path(pack), Path(folder).expanduser().resolve()
+    pack, folder = library.outside_repository(pack), Path(folder).expanduser().resolve()
     manifest_path, toc_path = folder / "manifest.json", folder / "toc.json"
     if not manifest_path.exists():
         raise SoloError(f"{folder} isn't solo extract's folder (no manifest.json): run solo extract on the book first")
