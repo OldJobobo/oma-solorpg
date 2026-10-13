@@ -22,6 +22,8 @@ WEAPON_SKILLS = [
 ]
 # How the engine names what the book's Features column says.
 _FEATURES = {"can_be_thrown": "thrown"}
+# A grip as a table may write it: "1H", "2H", "1-handed", "Two-handed", "1 H".
+_GRIP = re.compile(r"^(1|2|one|two)[\s-]*h(?:and(?:ed)?)?$", re.I)
 _COINS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10, "twenty": 20, "fifty": 50, "hundred": 100}
 
 
@@ -40,7 +42,7 @@ def build(pack):
         for row in rows:
             cells = grid.Cells(section, header, row)
             name = row["cells"][0]
-            weapon = "grip" in columns and cells["grip"] in ("1H", "2H")
+            weapon = "grip" in columns and _grip(cells["grip"]) is not None
             if name == "Unarmed":
                 pack.facts["unarmed"] = {"damage": _dice(cells["damage"])}
                 continue
@@ -119,7 +121,7 @@ def _weapon(name, cells, skills):
     spec = {"skill": skill, "damage": _dice(cells["damage"])}
     if "no damage bonus" not in cells["features"].lower() and skills.get(skill):
         spec["bonus"] = skills[skill]
-    spec["grip"] = int(cells["grip"][0])
+    spec["grip"] = _grip(cells["grip"])
     if cells["str"] != "—":
         spec["str"] = int(cells["str"])
     spec["range"] = _range(cells["range"])
@@ -132,6 +134,12 @@ def _weapon(name, cells, skills):
     if "requires quiver" in cells["features"].lower() or name == "Sling":
         spec["ranged"] = True
     return spec
+
+
+def _grip(text):
+    """How many hands a weapon takes, from its grip cell; None for a cell that gives no grip."""
+    found = _GRIP.match(text.strip())
+    return None if found is None else 1 if found.group(1).lower() in ("1", "one") else 2
 
 
 def _dice(text):

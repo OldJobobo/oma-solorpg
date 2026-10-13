@@ -348,6 +348,12 @@ class ChangedGearTableTest(unittest.TestCase):
                                                r"this may be another printing than the importer was written for"):
             self.build(["WEAPON", "GRIP", "STR", "RANGE", "DAMAGE", "COST", "SUPPLY", "FEATURES"], ["Sword, Long", "1H", "9", "2", "2D6", "11 gold", "Common", "Slashing"])
 
+    def test_a_grip_written_out_is_a_grip_and_the_weapon_a_weapon(self):
+        names = ["WEAPON", "GRIP", "STR", "RANGE", "DAMAGE", "DURABILITY", "COST", "SUPPLY", "FEATURES"]
+        for grip, hands in (("1-handed", 1), ("Two-handed", 2), ("2 H", 2)):
+            pack = self.build(names, ["Sword, Long", grip, "9", "2", "2D6", "14", "11 gold", "Common", "Slashing"])
+            self.assertEqual(pack.system["weapons"]["long_sword"]["grip"], hands, grip)
+
 
 class BuildTest(unittest.TestCase):
     """books.build with a made-up recipe in place of the real ones: what it writes, and what it keeps when a build goes wrong."""
