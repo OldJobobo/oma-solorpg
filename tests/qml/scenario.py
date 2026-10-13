@@ -79,5 +79,18 @@ def play_ironsworn(out):
     return root
 
 
+def play_cut(out):
+    """The GM speaks, the player rolls, and then cuts what the GM said: the message goes from the middle of the story."""
+    root = campaign.create(Path(tempfile.mkdtemp()) / "game", DRAGONBANE, RED_TUSK, RAGNA)
+    with campaign.session(root) as c:
+        c.say("The gate is shut. A spider the size of a dog drops onto the road.")
+        c.check("awareness", rng=Dice(5))
+    (Path(out) / "uncut.json").write_text((root / "state.json").read_text())
+    with campaign.session(root) as c:
+        c.strike("no spiders")
+    (Path(out) / "cut.json").write_text((root / "state.json").read_text())
+    return root
+
+
 if __name__ == "__main__":
     play(sys.argv[1])

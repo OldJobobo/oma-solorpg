@@ -116,7 +116,13 @@ Item {
         storyModel.insert(0, { seq: beats[i].seq, json: JSON.stringify(beats[i]), opens: beats[i].kind === "gm" && opensScene(beats, i) })
       }
     }
-    while (storyModel.count > beats.length) storyModel.remove(storyModel.count - 1)
+    // A beat that left the story leaves the page, wherever it was: a message the player cut
+    // can have rolls and words after it.
+    var kept = {}
+    beats.forEach(b => kept[b.seq] = true)
+    for (var row = storyModel.count - 1; row >= 0; row--) {
+      if (!kept[storyModel.get(row).seq]) storyModel.remove(row)
+    }
     storyNewest = Math.max(storyNewest, newest)
   }
 

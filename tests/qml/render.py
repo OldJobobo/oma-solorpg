@@ -16,7 +16,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
-from PySide6.QtCore import QMetaObject, QObject, Q_ARG, QTimer, QUrl, SIGNAL  # noqa: E402
+from PySide6.QtCore import QMetaObject, QObject, Q_ARG, Q_RETURN_ARG, QTimer, QUrl, SIGNAL  # noqa: E402
 from PySide6.QtGui import QGuiApplication  # noqa: E402
 from PySide6.QtQuick import QQuickView  # noqa: E402
 
@@ -29,9 +29,11 @@ def main(out):
     data = Path(tempfile.mkdtemp())
     scenario.play(data)
     scenario.play_ironsworn(data)
+    scenario.play_cut(data)
     fight = json.loads((data / "fight.json").read_text())
     dead = json.loads((data / "dead.json").read_text())
     ironsworn = json.loads((data / "ironsworn.json").read_text())
+    uncut, cut = (json.loads((data / f"{name}.json").read_text()) for name in ("uncut", "cut"))
 
     app = QGuiApplication(sys.argv)
     view = QQuickView()
@@ -156,6 +158,16 @@ def main(out):
         "progress": 8, "score": 8, "challenge": [6, 6], "cancelled": [], "beaten": 2, "hit": "strong_hit", "success": True, "match": True}}
     QMetaObject.invokeMethod(dice, "show", Q_ARG("QVariant", progress))
     shot("dice-progress", 2800)
+
+    # A cut message goes from the middle of the story (the player rolled after it): that one leaves the page, and only that one.
+    book.setProperty("campaign", "/games/cut")
+    root.setProperty("game", uncut)
+    wait(300)
+    root.setProperty("game", cut)
+    wait(300)
+    page = QMetaObject.invokeMethod(root, "page", Q_RETURN_ARG("QVariant")).toVariant()
+    if page != [f"{b['seq']}:{b['kind']}" for b in reversed(cut["story"])]:
+        errors.append(f"after the cut the page holds {page}, the story {[(b['seq'], b['kind']) for b in cut['story']]}")
     if errors:
         print("QML warnings:\n" + "\n".join(errors))
         return 2

@@ -30,6 +30,17 @@ Item {
     property real radius: 4
   }
 
+  // What is on the page, newest first, as "seq:kind".
+  function page() {
+    var model = view.resources.filter(r => r && r.count !== undefined && typeof r.get === "function")[0]
+    var out = []
+    for (var i = 0; model && i < model.count; i++) {
+      var beat = JSON.parse(model.get(i).json)
+      out.push(beat.seq + ":" + beat.kind)
+    }
+    return out
+  }
+
   BookView {
     id: view
     objectName: "book"
