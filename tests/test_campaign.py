@@ -160,6 +160,12 @@ class CommitTest(CampaignTest):
             c.commit({"consequence": {"text": "the guard remembers", "after": "2 shifts"}})  # time in words, as a commit's own reads
             self.assertEqual(c.state["consequences"]["the_guard_remembers"]["due_at"], before + 2 * 21600)
 
+    def test_removing_what_the_hero_lacks_warns_about_the_right_list(self):
+        with self.session() as c:
+            event = c.commit({"pc": {"abilities": {"remove": ["Veteran", "Berserker"]}, "items": {"remove": ["rope", "lantern"]}}})
+        self.assertEqual(event["warnings"], ["Berserker isn't among Ragna's abilities", "lantern isn't carried"])
+        self.assertEqual((event["changes"]["pc"]["abilities_remove"], event["changes"]["pc"]["items_remove"]), (["Veteran"], ["rope"]))
+
     def test_a_list_memory_is_refused_and_an_old_one_still_reads(self):
         with self.session() as c:
             count = len(c.events)

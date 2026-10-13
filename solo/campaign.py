@@ -2783,6 +2783,7 @@ class Campaign:
             elif key == "items":
                 result["items_add"] = _names(value.get("add"), "pc items add")
                 result["items_remove"] = [i for i in _names(value.get("remove"), "pc items remove") if i in pc["items"]]
+                warnings += [f"{i} isn't carried" for i in _names(value.get("remove"), "pc items remove") if i not in pc["items"]]
             elif key in ("spells", "prepared"):
                 have = pc.get(key, [])
                 result[f"{key}_add"] = [a for a in _names(value.get("add"), f"pc {key} add") if a not in have]
@@ -2800,7 +2801,7 @@ class Campaign:
                     raised.update({track: int(n) for track, n in (spec.get("max") or {}).items()})
                 if raised:
                     result["max_up"] = dict(raised)
-                warnings += [f"{i} isn't carried" for i in _names(value.get("remove"), "pc abilities remove") if i not in pc["items"]]
+                warnings += [f"{a} isn't among {pc['name']}'s abilities" for a in _names(value.get("remove"), "pc abilities remove") if a not in pc["abilities"]]
             else:
                 money = " (coins and gear are items: {\"pc\": {\"items\": {\"add\": [\"30 silver\"]}}})" if key in _MONEY else ""
                 raise SoloError(f"pc has no {key!r}; use a track ({', '.join(pc['tracks'])}), conditions, items or abilities{money}")
