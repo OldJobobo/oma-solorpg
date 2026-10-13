@@ -670,7 +670,7 @@ def magic_and_dragons(item, panel, out, work, wait):
         problems.append(f"the Table's prepare didn't swap the spells: {trouble(item) or state()['pc']['prepared']}")
 
     with campaign.session(game) as c:
-        c.attack("cultist", weapon="long_axe", rng=Dice(1))  # a natural 1: a Dragon, which waits for the player
+        c.attack("cultist", weapon="long_axe", rng=Dice(1, 3, 3, 3, 3))  # a natural 1: a Dragon, which waits for the player (dice to spare if it can't)
     wait(1500)
     if not state()["choice"]:
         problems.append("a Dragon on the attack didn't wait for a choice")
