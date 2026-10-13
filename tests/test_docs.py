@@ -152,6 +152,19 @@ class PyMuPDFTest(unittest.TestCase):
         self.assertIn("sudo pacman -S python-pymupdf", str(refused.exception))
 
 
+class ReleaseTest(unittest.TestCase):
+    def test_the_manifests_version_has_its_section_in_the_changelog(self):
+        import json
+        manifest = json.loads((ROOT / "manifest.json").read_text(encoding="utf-8"))
+        changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+        self.assertRegex(changelog, rf"\n## {re.escape(manifest['version'])}( \(not yet tagged\))?\n")
+        self.assertIn("\n## 0.3.0\n", changelog)
+        # The description says what a player needs before they install.
+        self.assertIn("Ironsworn plays free", manifest["description"])
+        self.assertIn("your own copy", manifest["description"])
+        self.assertIn("\n## Update\n", (ROOT / "README.md").read_text(encoding="utf-8"))
+
+
 class RepositoryTest(unittest.TestCase):
     def test_ci_installs_what_the_skipping_tests_need_and_loads_the_qml(self):
         workflow = (ROOT / ".github" / "workflows" / "test.yml").read_text(encoding="utf-8")
