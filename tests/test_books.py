@@ -3,12 +3,14 @@ on a made-up book that has the bookmarks of the real one and none of its words o
 
 import tempfile
 import tomllib
+import types
 import unittest
+import unittest.mock
 from pathlib import Path
 
 from fake_book import BANNER, BODY, BOX, CELL, HEADER, HEADING, FakeBook
 
-from solo import audit
+from solo import SoloError, audit, books
 from solo.books import dice, grid
 from solo.books.pack import Pack
 from solo.books import dragonbane_core
@@ -306,6 +308,53 @@ class GearRecipeTest(unittest.TestCase):
         self.assertEqual(report["problems"], [])
         # Every weapon's numbers are on its table's page: a grip of 2 is the page's "2H".
         self.assertEqual(report["unverified"], [])
+
+
+class BuildTest(unittest.TestCase):
+    """books.build with a made-up recipe in place of the real ones: what it writes, and what it keeps when a build goes wrong."""
+
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.tmp = Path(folder.name)
+        made = FakeBook(self.tmp / "extract")
+        made.line(1, 80, "LANTERNS", style=HEADING)
+        made.mark(1, "1. Lanterns")
+        made.save()
+        self.builds, self.fail, self.playable = 0, None, True
+
+        def build(pack):
+            self.builds += 1
+            if self.fail:
+                raise SoloError(self.fail)
+            pack.system.update({"name": "Lanterns", "build": self.builds, **({"family": "d20-under"} if self.playable else {})})
+            pack.item("lanterns", "Lanterns", "mechanic", [1], ["system.toml:build"])
+
+        recipe = types.SimpleNamespace(NAME="Lanterns", PACK="lanterns", recognizes=lambda book: True, extends=lambda folder: None, build=build)
+        patch = unittest.mock.patch.object(books, "recipes", lambda: (recipe,))
+        patch.start()
+        self.addCleanup(patch.stop)
+        self.systems = self.tmp / "systems"
+        books.build(self.tmp / "extract", systems=self.systems)
+
+    def built(self):
+        return tomllib.loads((self.systems / "lanterns" / "system.toml").read_text(encoding="utf-8"))["build"]
+
+    def test_replace_builds_again_and_leaves_nothing_beside_the_pack(self):
+        books.build(self.tmp / "extract", systems=self.systems, replace=True)
+        self.assertEqual((self.built(), sorted(path.name for path in self.systems.iterdir())), (2, ["lanterns"]))
+
+    def test_a_build_that_fails_keeps_the_pack_that_was_there(self):
+        self.fail = "a section the recipe expects isn't there"
+        with self.assertRaisesRegex(SoloError, "a section the recipe expects"):
+            books.build(self.tmp / "extract", systems=self.systems, replace=True)
+        self.assertEqual((self.built(), sorted(path.name for path in self.systems.iterdir())), (1, ["lanterns"]))
+
+    def test_a_system_pack_the_engine_cant_play_is_refused_and_the_old_one_kept(self):
+        self.playable = False
+        with self.assertRaisesRegex(SoloError, r"lanterns was built, and the engine says it can't be played \(the pack that was there is kept\):\n  system: family"):
+            books.build(self.tmp / "extract", systems=self.systems, replace=True)
+        self.assertEqual((self.built(), sorted(path.name for path in self.systems.iterdir())), (1, ["lanterns"]))
 
 
 if __name__ == "__main__":

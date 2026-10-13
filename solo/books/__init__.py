@@ -53,29 +53,49 @@ def plan(folders):
 def build(folder, out=None, replace=False, systems=None, adventures=None):
     """Build the pack for the book `solo extract` left in `folder`: (the pack's folder, the files written, what the recipe has to say). It goes in `out`,
     or in the recipe's own folder of `systems` or `adventures` (default ~/Games/solo/systems and ~/Games/solo/adventures); an adventure is built for the
-    system pack in `systems`. A pack already there is refused, unless `replace` and it was built here."""
+    system pack in `systems`. A pack already there is refused, unless `replace` and it was built here: then the new one is built beside it, and takes
+    its place only once it is built and the engine can play it, so a build that fails leaves the old pack as it was."""
     book = Book(folder)
     recipe = recipe_for(book)
     if recipe is None:
-        raise SoloError(f"{book.manifest.get('source', folder)}: no importer knows this book, or this printing of it (it has {len(book.outline)} bookmarks, "
-                        f"fingerprint {book.fingerprint()[:16]}). Import it with an agent and the solo-rules-import skill.")
+        raise SoloError(unknown(folder))
     kind = kind_of(recipe)
     folders = {"system": Path(systems).expanduser() if systems else library.home() / "systems",
                "adventure": Path(adventures).expanduser() if adventures else library.home() / "adventures"}
     target = Path(out).expanduser() if out else folders[kind] / recipe.PACK
     main = target / (AdventurePack.MAIN if kind == "adventure" else Pack.MAIN)
     made = main.read_text(encoding="utf-8").startswith(MARK) if main.exists() else False
-    if replace and made:
-        shutil.rmtree(target)
-    elif main.exists():
+    if main.exists() and not (replace and made):
         raise SoloError(f"{target} already holds a pack" + (" built by solo import book: --replace builds it again" if made else " (not one this built: build into another folder with --out, then compare)"))
+    building = target.with_name(f".{target.name}.building") if main.exists() else target
+    if building != target:
+        shutil.rmtree(building, ignore_errors=True)  # what a build stopped half way left
     if kind == "adventure":
-        pack = AdventurePack(book, target, recipe.NAME, packs.load_system(folders["system"] / recipe.SYSTEM))
+        pack = AdventurePack(book, building, recipe.NAME, packs.load_system(folders["system"] / recipe.SYSTEM))
     else:
-        pack = Pack(book, target, recipe.NAME, recipe.extends(target.parent))
+        pack = Pack(book, building, recipe.NAME, recipe.extends(target.parent))
     recipe.build(pack)
     written = pack.write(folder)
-    problems = packs.validate(pack.system_pack, packs.load_adventure(target)) if kind == "adventure" else []
+    problems = packs.validate(pack.system_pack, packs.load_adventure(building)) if kind == "adventure" else packs.validate(packs.load_system(building))
     if problems:
-        raise SoloError(f"{target.name} was built, and the engine says it can't be played:\n  " + "\n  ".join(problems))
+        notes = [*book.notes, *pack.notes]
+        if building != target:
+            shutil.rmtree(building)
+        raise SoloError(f"{target.name} was built, and the engine says it can't be played" + (" (the pack that was there is kept)" if building != target else "")
+                        + ":\n  " + "\n  ".join(problems) + "".join(f"\n  note: {note}" for note in notes))
+    if building != target:
+        shutil.rmtree(target)
+        building.rename(target)
     return target, written, [*book.notes, *pack.notes]
+
+
+def unknown(folder):
+    """What to say of a book no recipe knows: how many bookmarks it has and its fingerprint (what tells one printing from another, which a recipe
+    for it would be written against), and, when most of its pages have no text, that it looks scanned."""
+    book = Book(folder)
+    pages = book.manifest.get("pages") or 0
+    blank = sum(1 for page in range(1, pages + 1) if not any(line["text"].strip() for line in book.by_page.get(page, [])))
+    scanned = f" {blank} of its {pages} pages have no text, so it looks scanned: run ocrmypdf on the PDF and import it again." if blank * 2 > pages else ""
+    return (f"{book.manifest.get('source', Path(folder).name)}: no importer knows this book, or this printing of it (it has {len(book.outline)} bookmarks, "
+            f"fingerprint {book.fingerprint()[:16]}).{scanned} An agent with the solo-rules-import or solo-import skill can read it (make rules, make supplement, "
+            "make adventure).")
