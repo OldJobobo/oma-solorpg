@@ -9,6 +9,7 @@ import unittest.mock
 from pathlib import Path
 
 from fake_book import BANNER, BODY, BOX, CELL, HEADER, HEADING, FakeBook
+from test_cli import CliCase
 
 from solo import SoloError, audit, books
 from solo.books import dice, grid
@@ -355,6 +356,40 @@ class BuildTest(unittest.TestCase):
         with self.assertRaisesRegex(SoloError, r"lanterns was built, and the engine says it can't be played \(the pack that was there is kept\):\n  system: family"):
             books.build(self.tmp / "extract", systems=self.systems, replace=True)
         self.assertEqual((self.built(), sorted(path.name for path in self.systems.iterdir())), (1, ["lanterns"]))
+
+
+class ImportBookCliTest(CliCase):
+    """`solo import book` on a folder of PDFs, `solo extract` stood in for: a book it can't read or doesn't know is said, the rest go on, and the
+    import fails at the end."""
+
+    def extract(self, pdf, out=None, tables=True):
+        pdf = Path(pdf)
+        if pdf.stem == "torn":
+            raise SoloError(f"can't open {pdf}: it isn't a PDF")
+        made = FakeBook(self.tmp / "sources" / pdf.stem, source=pdf.name)
+        if pdf.stem == "scan":
+            made.pages = {page: [] for page in (1, 2, 3)}
+        else:
+            made.line(1, 80, "LANTERNS", style=HEADING)
+            made.mark(1, "1. Lanterns")
+            made.line(2, 80, "Words on the second page of a book no importer knows.")
+        made.save()
+        return made.folder, {"pages": 3}
+
+    def test_a_book_that_cant_be_read_or_that_no_importer_knows_fails_the_import_after_the_others(self):
+        books_folder = self.tmp / "books"
+        books_folder.mkdir()
+        for name in ("lanterns.pdf", "scan.pdf", "torn.pdf"):
+            (books_folder / name).write_bytes(b"%PDF")
+        with unittest.mock.patch("solo.extract.extract", self.extract):
+            code, out, err = self.solo("import", "book", str(books_folder))
+        self.assertEqual(code, 1, out + err)
+        # The torn PDF comes between the other two, and they are read all the same.
+        self.assertIn("torn.pdf: can't open", out)
+        self.assertIn(f"lanterns.pdf: no importer knows this book, or this printing of it (it has 1 bookmark, fingerprint {Book(self.tmp / 'sources' / 'lanterns').fingerprint()[:16]})", out)
+        self.assertIn("scan.pdf: no importer knows this book, or this printing of it (it has 0 bookmarks, fingerprint e3b0c44298fc1c14). "
+                      "3 of its 3 pages have no text, so it looks scanned: run ocrmypdf on the PDF and import it again.", out)
+        self.assertIn("not every book became a pack: torn.pdf (it can't be read); lanterns (no importer knows it); scan (no importer knows it)", err)
 
 
 if __name__ == "__main__":

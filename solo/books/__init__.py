@@ -37,17 +37,21 @@ def recipe_for(book):
 
 
 def plan(folders):
-    """([(folder, recipe)], [folder]): the books some recipe knows, in the order their packs go on one another (the rules, then what goes over them, the solo
-    booklet, then the adventures, which are for the rules), and the ones none does."""
+    """([(folder, recipe)], [folder], [(folder, error)]): the books some recipe knows, in the order their packs go on one another (the rules, then what
+    goes over them, the solo booklet, then the adventures, which are for the rules), the ones none does, and the ones that can't be read."""
     order = {recipe: at for at, recipe in enumerate(recipes())}
-    known, unknown = [], []
+    known, strange, broken = [], [], []
     for folder in folders:
-        recipe = recipe_for(Book(folder))
+        try:
+            recipe = recipe_for(Book(folder))
+        except SoloError as error:
+            broken.append((folder, error))
+            continue
         if recipe:
             known.append((folder, recipe))
         else:
-            unknown.append(folder)
-    return sorted(known, key=lambda pair: order[pair[1]]), unknown
+            strange.append(folder)
+    return sorted(known, key=lambda pair: order[pair[1]]), strange, broken
 
 
 def build(folder, out=None, replace=False, systems=None, adventures=None):
@@ -96,6 +100,6 @@ def unknown(folder):
     pages = book.manifest.get("pages") or 0
     blank = sum(1 for page in range(1, pages + 1) if not any(line["text"].strip() for line in book.by_page.get(page, [])))
     scanned = f" {blank} of its {pages} pages have no text, so it looks scanned: run ocrmypdf on the PDF and import it again." if blank * 2 > pages else ""
-    return (f"{book.manifest.get('source', Path(folder).name)}: no importer knows this book, or this printing of it (it has {len(book.outline)} bookmarks, "
+    return (f"{book.manifest.get('source', Path(folder).name)}: no importer knows this book, or this printing of it (it has {len(book.outline)} bookmark{'' if len(book.outline) == 1 else 's'}, "
             f"fingerprint {book.fingerprint()[:16]}).{scanned} An agent with the solo-rules-import or solo-import skill can read it (make rules, make supplement, "
             "make adventure).")
