@@ -109,7 +109,7 @@ make campaign ID=salt-and-ash TONE=grim MISSIONS=4 \
   PREMISE="a smuggler's coast where the dead keep the lighthouses"
 ```
 
-What has to come out of it, in `~/Games/solo/adventures/<id>/`, in the formats [docs/PACK_FORMAT.md](docs/PACK_FORMAT.md) already has:
+What has to come out of it, in `~/Games/solo/adventures/<id>/`, in the formats [docs/PACK_FORMAT.md](PACK_FORMAT.md) already has:
 
 - `adventure.toml` with a `system` and a spoiler-free `summary`, so it shows on the New adventure screen.
 - A hub scene to come back to between missions (a safe scene: threats don't close in there), and each mission as a path of waypoints behind a gate that opens when the one before is done.

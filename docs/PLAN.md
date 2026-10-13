@@ -2,16 +2,18 @@
 
 How the engine, the plugin and the packs fit together, and why. The pack formats are in [PACK_FORMAT.md](PACK_FORMAT.md), importing books in [INGESTION.md](INGESTION.md), what comes next in [ROADMAP.md](../ROADMAP.md).
 
+Contents: [Goal](#goal) · [Product](#product) · [The Book](#the-book) · [Principles](#principles) · [Architecture](#architecture) · [Frontend: the plugin](#frontend-the-plugin) · [Backend: the engine](#backend-the-engine) · [Turn protocol](#turn-protocol) · [Layout](#layout) · [Formats](#formats) · [CLI](#cli) · [Verification](#verification) · [Risks and open questions](#risks-and-open-questions) · [Decisions](#decisions) · [Open](#open)
+
 ## Goal
 
 An AI game master for solo tabletop play that runs natively on Omarchy.
 
-- The player talks to Omarchy's default coding agent (`omarchy agent`), which runs the game as GM.
+- The player writes to the GM in the Book, a story window the plugin owns. Omarchy's default coding agent (Claude Code or Codex) runs headless behind it as the GM, one turn at a time; another agent opens in a terminal instead.
 - A local engine, `solo`, owns dice, rules resolution, character creation and campaign state.
 - An omarchy-shell plugin is the table: a bar button and a docked panel where the player starts games, makes characters, rolls, rests and watches the state.
-- Content comes from material the player owns (Foundry module exports, PDFs), compiled once into local packs.
+- Content comes from material the player owns (PDFs read by the importers or by an agent, Foundry module exports), compiled once into local packs, or from free rules that ship in the repository.
 
-Dragonbane comes first. Other games follow, so every design choice has to work for more than one system.
+Two games play today: Ironsworn, whose free rules ship here, so a fresh install plays with no book, and Dragonbane, built from the player's own books. Other games follow, so every design choice has to work for more than one system.
 
 ## Product
 
@@ -23,8 +25,8 @@ A second, rarer user is the author: the same person on another evening, importin
 
 ### What done feels like
 
-1. **First game in two minutes, clicks only.** From the bar icon: New adventure, pick the adventure, take the pre-made hero or roll one, Begin. The GM window opens and narrates the first scene.
-2. **Every pure mechanic is one click.** Skill and attribute rolls with boons and banes, pushes, rests, the oracle. Narration and decisions stay with the GM in the agent window.
+1. **First game in two minutes, clicks only.** From the bar icon: New adventure, pick the adventure, take the pre-made hero or roll one, Begin. The Book opens and the GM narrates the first scene.
+2. **Every pure mechanic is one click.** Skill and attribute rolls with boons and banes, pushes, rests, the oracle. Narration and decisions stay with the GM in the Book.
 3. **Resume is one click.** Campaigns are listed with the hero, the scene and when they were last played.
 4. **No developer output in front of the player.** An error is one plain sentence with the next step, shown where the click happened. Never a traceback or a usage string.
 
@@ -34,26 +36,26 @@ A second, rarer user is the author: the same person on another evening, importin
 |---|---|---|
 | First launch | Click the d20 in the bar. The panel opens on Home: "No campaigns yet" and a New adventure button. | bar, panel |
 | New adventure | Pick an adventure card (title, system, a spoiler-free summary). Pick a character: a pre-made hero, or Random with optional kin, profession and age, a name field and a Reroll button, with a live sheet preview. Begin. | panel |
-| Play a turn | Type to the GM. The GM rolls through `solo`, or the player clicks a skill on the sheet. Failed roll: push buttons appear. The log and meters update as it happens. | agent + panel |
+| Play a turn | Type to the GM. The GM rolls through `solo`, or the player clicks a skill on the sheet. Failed roll: push buttons appear. The log and meters update as it happens. | Book + panel |
 | Rest | Round, stretch or shift rest buttons. Time passes, so hidden clocks may tick. The GM sees it in the log. | panel |
 | Ask the oracle | Type a yes/no question, pick the odds, Ask. The answer shows under the question and in the log, with a random event when one comes up. Meaning gives two words for open questions. | panel |
-| Fight | The GM starts it. The table shows initiative, the foes' HP and the hero's weapons. Pick a foe, click a weapon to attack. A foe's hit shows in red with Evade, Parry and Take it. | agent + panel |
+| Fight | The GM starts it. The table shows initiative, the foes' HP and the hero's weapons. Pick a foe, click a weapon to attack. A foe's hit shows in red with Evade, Parry and Take it. | Book + panel |
 | Dying | At 0 HP the only roll left is Death roll, with the count toward rallying or dying. Death ends the campaign and the Home card says so. | panel |
-| End a session | The GM asks the end-of-session questions and marks skills; Roll advancement (or the GM) rolls them. | agent + panel |
+| End a session | The GM asks the end-of-session questions and marks skills; Roll advancement (or the GM) rolls them. | Book + panel |
 | Resume | Home lists campaigns with the first line of the GM's last message. Click one: the table shows that message in full under Where you left off. Open the GM, and its first message is the same text, word for word. If the GM window is already open, it gets focus instead of a second one. | panel |
 | Bring your own adventure | `solo import ...` plus the `solo-import` skill (terminal, agent). The adventure then appears on the New adventure screen. | terminal |
 
 ### Scope
 
-Now (the product pass, phase 7): the library, `solo new <adventure>` with defaults, character creation (pre-made, random and guided), rests, the panel's Home, New adventure and Table screens, a bar widget, and a GM button that focuses an open session.
+Built, the product: the library, `solo new <adventure>` with defaults, character creation (pre-made, random and guided), rests, the panel's Home, New adventure and Table screens, a bar widget, and a GM button that focuses an open session.
 
-Also now (the game-design pass, phase 7e): stakes (death rolls at 0 HP), a minimum of combat (initiative, attacks with damage through armor, foe attacks by skill or monster table, evade and parry), oracle surprises (random events, scene checks, a chaos factor, meaning words), advancement marks, and the player's table settings (tone, lines, veils).
+Built, the game: stakes (death rolls at 0 HP), combat (initiative, attacks with damage through armor, foe attacks by skill or monster table, evade and parry, ranged attacks and their ranges, weapon durability, monster traits, a Dragon's choices), spells and WP, heroic abilities, journeys and encumbrance, oracle surprises (random events, scene checks, a chaos factor, meaning words), advancement marks, and the player's table settings (tone, lines, veils).
 
-Also now (the Book, phase 7f): a story window the plugin owns, with the default agent run headless behind it (`solo gm`), so the player never sees a coding agent's tool calls. Dice moments, scene title cards, voices (passive skill checks that speak up), a text portrait that follows the hero's state, torches that burn down, fights drawn as a still scene, a codex with unknowns blanked out, omens, the Hall of the Fallen, and desktop effects (`solo desk`: borders, screen shaders, sound, candlelight, notifications, screensaver).
+Built, the Book: a story window the plugin owns, with the default agent run headless behind it (`solo gm`), so the player never sees a coding agent's tool calls. Dice moments, scene title cards, voices (passive skill checks that speak up), a text portrait that follows the hero's state, torches that burn down, fights drawn as a still scene, a codex with unknowns blanked out, omens, the Hall of the Fallen, and desktop effects (`solo desk`: borders, screen shaders, sound, candlelight, notifications, screensaver).
 
-Next: choosing trained skills by hand in the builder, a character roster, the rest of Dragonbane combat (ranged ranges, weapon durability on parry, monster traits, a Dragon's other choices), spells and WP spending, a settings entry for SOLO_HOME.
+Built, a game with no book: the `action-roll` family and Ironsworn with its starter adventure, The Bell Under the Hill, so first launch plays with clicks only.
 
-Also now (a game with no book, phase 8): the `action-roll` family and Ironsworn with its starter adventure, The Bell Under the Hill (above), so first launch plays with clicks only.
+Next: choosing trained skills by hand in the builder, a character roster, a settings entry for SOLO_HOME.
 
 Later: adapters for more agents in the Book (only Claude Code and Codex stream and resume today), the importer from the panel, other families' builders, publishing.
 
@@ -66,7 +68,7 @@ Later: adapters for more agents in the Book (only Claude Code and Codex stream a
 - GM-only information never reaches the panel: hidden clocks, the tables their ticks roll, scene secrets.
 - Words from the fiction, not the engine: "Begin adventure", "Open the GM", "Stretch rest". No ids, flags or JSON on screen.
 
-## The Book (phase 7f)
+## The Book
 
 A coding agent in a terminal shows its tool calls, permission prompts and JSON between the lines of the story. The Book takes the story out of the terminal.
 
@@ -107,13 +109,13 @@ The manifest sets `keepLoaded`, so the panel entry (the Table, the Book and the 
 ```
  player types here                      player clicks here
 +-----------------------------+        +-------------------------------------+
-| GM window: omarchy agent    |        | bar: d20 button (left: table,       |
-| (Claude Code on this box)   |        |      right: open the GM)            |
-| skills: solo-gm, solo-import|        | panel: Home | New adventure | Table |
-| cwd: campaign folder        |        | sheet, rolls, rests, oracle, clocks |
+| the Book: the story         |        | bar: d20 button (left: table,       |
+| solo gm turn runs the agent |        |      right: the Book)               |
+| headless: claude or codex,  |        | panel: Home | New adventure | Table |
+| skill solo-gm, cwd campaign |        | sheet, rolls, rests, oracle, clocks |
 +--------------+--------------+        +------+---------------+--------------+
                |                              ^               |
-          runs solo ...            watches state.json    runs solo ... (JSON out)
+   the agent runs solo ...         watches state.json    runs solo ... (JSON out)
                v                              |               v
 +----------------------------------------------------------------------+
 | solo (stdlib Python, no LLM, no network)                             |
@@ -124,10 +126,10 @@ The manifest sets `keepLoaded`, so the panel entry (the Table, the Book and the 
 |   campaign            events.jsonl -> state.json, lock, rests        |
 +----------------------------------------------------------------------+
                ^ one-time import
-   Foundry "Export Data" JSON / fvtt CLI unpack / PDFs via the agent
+   PDFs (solo import book, or the agent) / Foundry "Export Data" JSON / Datasworn
 ```
 
-Two surfaces: the agent window for the conversation, the plugin for everything clickable. The panel docks on the right with an exclusive zone, so the GM window tiles beside it.
+Two surfaces, both the plugin's: the Book for the conversation, the Table for everything clickable. The Table docks on the right with an exclusive zone, and the Book opens beside it. The agent has no window of its own: it runs headless for each turn. An agent the Book can't drive opens in a terminal instead (`solo play --terminal`), with the skills and the same campaign folder, and the Book shows what that agent records.
 
 ## Frontend: the plugin
 
@@ -290,7 +292,7 @@ The campaign keeps the conversation, not the agent. Every GM message and every p
 - Resume: `solo resume` prints the GM's last message under "Last said", the events after it ("Since then", hidden ones marked), anything the player said after it, and the four messages before it for context. The GM sends "Last said" back word for word as its first message: no greeting, no recap, no new description. With nothing said yet, it tells the GM to open the adventure.
 - The panel shows `last_said` directly, so the player sees the exact text before the agent has loaded.
 
-Resuming the agent's own conversation (`claude --continue` and the like) is not the mechanism: it works for some agents only, `omarchy-agent` hides which one runs, and long sessions get compacted. The transcript carries the exact words; the long memory (phase 8d) carries the story.
+Resuming the agent's own conversation (`claude --continue` and the like) is not the mechanism: it works for some agents only, `omarchy-agent` hides which one runs, and long sessions get compacted. The transcript carries the exact words; the long memory ([Long campaigns](#long-campaigns)) carries the story.
 
 Open questions ("does the orc leader show up?") go down a fixed ladder:
 
@@ -499,7 +501,7 @@ Commit, the only way the agent changes state (every key optional):
 
 A monster attack table's results may carry `damage`, `defend = false` (can't be dodged or parried), `parry = true` (Dragonbane monster attacks can't be parried otherwise: `[combat] monster_parry = false`) and `armor = false`.
 
-### Official content (phase 8a)
+### Official content
 
 What a published adventure needs beyond a hand-written one, added while importing a timed tournament adventure and meant for whole books:
 
@@ -531,7 +533,7 @@ clock = { other = "+1" }
 - Review: `source` on anything; `solo outline` (scenes, gates, stages, people, and every fact a condition reads, which the GM must commit somewhere); `solo validate` adds warnings for scenes nobody can reach, dead ends and NPCs no scene brings in.
 - `SOLO_TRACE=<file>` logs every command with its error; `SOLO_GM_MODEL` picks the GM's model and `SOLO_GM_EFFORT` its effort level, over the pace. All three are for play tests. `SOLO_GM_TIMEOUT` (seconds, default 180) ends a GM turn whose agent has printed nothing for that long, so a hung agent never leaves the Book thinking for good.
 
-### Solo rules (phase 8b)
+### Solo rules
 
 Dragonbane has its own solo rules (Alone in Deepfall Breach, the core set's solo adventure). The engine runs them from data in the pack the player builds from that book; nothing of it ships here. Without them, the engine's own likelihood oracle, random events and scene checks run solo play. The sections, with the book's values left out:
 
@@ -581,11 +583,11 @@ self_save = { skill = "...", recover = "..." }         # solo death-roll --heal
 
 A campaign written as one (missions from a hub) is one pack: a hub scene where missions are given and ended, gated exits that open each mission when the one before is done (a fact per mission), and a scene per waypoint. Its state (a prisoner freed, a relic taken) lives in one campaign folder from the first mission to the last.
 
-A book of separate adventures is imported one adventure per pack, each play-tested on its own, and the hero carries from one to the next (`solo new <next> --character <campaign>`). The hero's story carries too (phase 8d): each earlier adventure as a few lines (how it ended, the last chronicle entries, what was left open, the people who remember the hero) and the hero.* facts. What doesn't carry yet is the world as state: NPC fates, factions, promises and facts stay in the campaign that made them, and the next GM reads them as text. When a book needs it, the next step is a campaign manifest (an ordered list of packs sharing ids) whose `solo new` of a later pack seeds its state from the earlier campaign's facts and NPCs. Until then, each pack notes what an earlier adventure could have changed.
+A book of separate adventures is imported one adventure per pack, each play-tested on its own, and the hero carries from one to the next (`solo new <next> --character <campaign>`). The hero's story carries too ([Long campaigns](#long-campaigns)): each earlier adventure as a few lines (how it ended, the last chronicle entries, what was left open, the people who remember the hero) and the hero.* facts. What doesn't carry yet is the world as state: NPC fates, factions, promises and facts stay in the campaign that made them, and the next GM reads them as text. When a book needs it, the next step is a campaign manifest (an ordered list of packs sharing ids) whose `solo new` of a later pack seeds its state from the earlier campaign's facts and NPCs. Until then, each pack notes what an earlier adventure could have changed.
 
 Validation rules: ids must exist (a new NPC needs a `name`), attitude moves one step per commit unless `"override": "<reason>"` is given (logged), dead stays dead without an override, tracks and clocks are clamped, conditions and time units must be declared by the system pack.
 
-### Long campaigns (phase 8d)
+### Long campaigns
 
 For a model GM, time is harder than any rule. A campaign runs for months, the agent's session can be lost, compacted or replaced at any time (the Book keeps one until the agent loses it), and a fresh GM knows only what the engine puts in front of it. Play tests showed the fix every time: put the thing in front of the GM at the moment it matters. Phase 8d does that for the hero's past, so the small things the hero does keep mattering.
 
@@ -626,8 +628,8 @@ Every command is in the [README's Commands table](../README.md#commands) with it
 - Claude Code's hook input: `last_assistant_message` is used when present, the transcript file otherwise. If a Claude Code update changes the transcript format, capture falls back to nothing, silently; `solo log` shows whether `said` events are arriving.
 - Player clicks and GM commands interleave. The lock keeps the log consistent; the GM skill reads the log each turn so narration follows the dice. A GM that ignores the log would roll twice. Watch for it in play tests.
 - Rests are player-initiated, so a player can rest where the fiction forbids it. The GM can answer in the story (and commit a consequence); a "GM must allow" toggle is possible later.
-- Lines and veils reach the GM as instructions and nothing checks them, in play or in `tests/gm_eval`. Until the cut button and the safety scenarios land (ROADMAP items 4 and 5), a GM that ignores them is caught only by the player.
-- A GM turn ends when the agent stops or goes quiet for `SOLO_GM_TIMEOUT` seconds, and nothing else: no cap on its tool calls, its time or what it spends. ROADMAP item 4 adds the limits.
+- Lines and veils reach the GM as instructions, and in play nothing checks them. The player has the cut button (`solo strike`, the Book's "cut the GM's last message"), and `tests/gm_eval` has scenarios for them, which haven't met a real GM yet (ROADMAP items 4 and 5).
+- A GM turn has limits in code whatever the agent does: going quiet for `SOLO_GM_TIMEOUT` seconds, a wall-clock limit, a cap on Claude Code's model calls, and a spending limit per session, 10 dollars or 200 turns by default (`solo gm budget`). What they can't stop is a GM that spends its turns badly inside them.
 - Free League's Dragonbane license lets this project use the game's terms, not carry a copy of its rules: no numbers, tables or text from a book in the repository, tests included (their rules are made up). See [NOTICE.md](../NOTICE.md).
 - `~/Games/solo` as the default home: visible and easy to back up, but it is a new folder in the player's home. It is created only by `solo new`.
 
@@ -641,8 +643,8 @@ Every command is in the [README's Commands table](../README.md#commands) with it
 - Character creation as data (`creation.toml`), with pre-made heroes as the fallback for any system without it.
 - Seeds, not temporary files, carry a previewed character to `solo new`, so the preview and the created hero can't drift apart.
 - One plugin with two kinds (bar widget + panel) rather than two plugins: one install, one enable.
+- The story in a window of the plugin's own (the Book), with the agent headless behind it, rather than in the agent's terminal, which shows tool calls, permission prompts and JSON between the lines of the story. This settled the question of a single-window mode that was open before the Book.
 
 ## Open
 
 - Content source per adventure: Foundry module when available, PDF otherwise.
-- Single-window mode: revisit after v1 has been played.

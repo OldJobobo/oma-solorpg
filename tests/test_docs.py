@@ -79,6 +79,39 @@ class ReadmeTest(unittest.TestCase):
             self.assertIn(f"\n{section}\n", text)
 
 
+def anchors(text):
+    """The anchors GitHub gives a Markdown file's headings: lower case, punctuation dropped, spaces as hyphens."""
+    found = set()
+    for heading in re.findall(r"^#{1,6} (.+)$", re.sub(r"^```.*?^```", "", text, flags=re.M | re.S), re.M):
+        found.add(re.sub(r"[^\w\- ]", "", heading.replace("`", "").lower()).replace(" ", "-"))
+    return found
+
+
+class DesignDocsTest(unittest.TestCase):
+    DOCS = ["docs/PLAN.md", "docs/PACK_FORMAT.md", "docs/INGESTION.md"]
+
+    def test_each_design_doc_opens_with_a_contents_list_whose_links_land(self):
+        for doc in self.DOCS:
+            text = (ROOT / doc).read_text(encoding="utf-8")
+            contents = next(line for line in text.splitlines() if line.startswith("Contents: "))
+            links = re.findall(r"\]\(#([^)]+)\)", contents)
+            self.assertGreater(len(links), 5, doc)
+            self.assertEqual([link for link in links if link not in anchors(text)], [], doc)
+
+    def test_plan_says_what_is_true_now(self):
+        plan = (ROOT / "docs" / "PLAN.md").read_text(encoding="utf-8")
+        for stale in ("omarchy agent`", "the agent window", "GM window: omarchy agent", "Single-window mode: revisit",
+                      "Until the cut button", "no cap on its tool calls", "(phase "):
+            self.assertNotIn(stale, plan)
+
+    def test_the_commit_keys_are_a_table_with_every_key_the_engine_takes(self):
+        from solo import campaign
+        text = (ROOT / "docs" / "PACK_FORMAT.md").read_text(encoding="utf-8")
+        section = text[text.index("## Commits (what the GM writes)"):text.index("## Format versions")]
+        keys = set(re.findall(r"^\| `(\w+)` \|", section, re.M))
+        self.assertEqual(keys, set(campaign._COMMIT_KEYS))
+
+
 class RoadmapTest(unittest.TestCase):
     def test_the_roadmap_is_the_plan_ahead_and_the_logs_are_in_history(self):
         roadmap = (ROOT / "ROADMAP.md").read_text(encoding="utf-8")
