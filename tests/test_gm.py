@@ -31,22 +31,38 @@ CODEX_STREAM = [
 ]
 
 
-class GmTest(CampaignTest):
+class Agents(CampaignTest):
+    """A campaign with stand-in agents on PATH."""
+
+    # Whether a turn reads the stand-in claude's --help for the flags that keep the settings files out (Isolation
+    # does); otherwise it is taken to know --restricted, and a stand-in that only sleeps isn't asked for help.
+    detect = False
+
     def setUp(self):
         super().setUp()
         self.bin = self.tmp / "bin"
         self.bin.mkdir()
-        patch = unittest.mock.patch.dict(os.environ, {"PATH": f"{self.bin}:{os.environ['PATH']}", "SOLO_AGENT": "claude"})
+        patch = unittest.mock.patch.dict(os.environ, {"PATH": f"{self.bin}:{os.environ['PATH']}", "SOLO_AGENT": "claude",
+                                                      "XDG_CACHE_HOME": str(self.tmp / "cache")})
         patch.start()
         self.addCleanup(patch.stop)
+        if not self.detect:
+            patch = unittest.mock.patch.object(gm, "_settings_flags", return_value=["--restricted"])
+            patch.start()
+            self.addCleanup(patch.stop)
 
-    def agent(self, name, events, fail_resume=False, code=0):
+    def agent(self, name, events, fail_resume=False, code=0, help="  --restricted  Restricted mode"):
         """A stand-in agent: records its arguments and then its prompt (stdin), prints the events as JSON lines."""
         lines = "\n".join(json.dumps(e) for e in events)
         script = self.bin / name
         script.write_text(textwrap.dedent(f"""\
             #!/usr/bin/env python3
             import json, sys
+            if sys.argv[1:] == ["--help"]:
+                with open({str(self.tmp / (name + '.help'))!r}, "a") as f:
+                    f.write("asked\\n")
+                print({help!r})
+                sys.exit(0)
             with open({str(self.tmp / (name + '.calls'))!r}, "a") as f:
                 f.write(json.dumps(sys.argv[1:] + [sys.stdin.read()]) + "\\n")
             if {fail_resume!r} and ("--resume" in sys.argv or "resume" in sys.argv):
@@ -64,6 +80,8 @@ class GmTest(CampaignTest):
         with self.session() as c:
             return [(e["by"], e["text"]) for e in c.events if e["type"] == "said"]
 
+
+class GmTest(Agents):
     def test_a_claude_turn_records_both_sides_and_keeps_the_session(self):
         self.agent("claude", CLAUDE_STREAM)
         result = gm.turn(self.root, "I sneak past the gate.")
@@ -426,6 +444,41 @@ class GmTest(CampaignTest):
         self.assertEqual(self.said()[-2], ("player", "What do I see?"))
         gm.turn(self.root, "And then?")  # nothing happened at the table: just their words
         self.assertEqual(self.calls("claude")[2][-1], "And then?")
+
+
+class Isolation(Agents):
+    """`claude -p` skips the folder trust dialog: without a flag of its own, a GM turn would run with the player's
+    own Claude Code settings (allow rules, bypassPermissions) and whatever the campaign's .claude/settings.json holds."""
+
+    detect = True
+
+    def test_a_claude_that_knows_restricted_runs_the_gm_with_no_settings_files(self):
+        self.agent("claude", CLAUDE_STREAM, help="  --restricted  Restricted mode\n  --setting-sources <sources>")
+        gm.turn(self.root, "Hi")
+        gm.turn(self.root, "Again")
+        first = self.calls("claude")[0]
+        self.assertIn("--restricted", first)
+        self.assertNotIn("--setting-sources", first)
+        self.assertEqual(first[first.index("--tools") + 1], "Bash,Read")  # Bash named, so it stays
+        self.assertNotIn("note", gm.status(self.root))
+        self.assertEqual((self.tmp / "claude.help").read_text(), "asked\n")  # once, then from the cache
+        self.assertTrue((self.tmp / "cache" / "solo" / "claude-flags.json").exists())
+
+    def test_an_older_claude_gets_no_setting_sources_and_one_older_still_is_noted(self):
+        self.agent("claude", CLAUDE_STREAM, help="  --setting-sources <sources>  Comma-separated list")
+        gm.turn(self.root, "Hi")
+        first = self.calls("claude")[0]
+        self.assertEqual(first[first.index("--setting-sources") + 1], "")
+        self.assertNotIn("--restricted", first)
+        # Another claude (an update): its --help is read afresh.
+        self.agent("claude", CLAUDE_STREAM, help="  --verbose")
+        script = self.bin / "claude"
+        os.utime(script, ns=(script.stat().st_atime_ns, script.stat().st_mtime_ns + 10**9))
+        self.assertEqual(gm.turn(self.root, "Again")["status"], "done")
+        second = self.calls("claude")[1]
+        self.assertFalse({"--restricted", "--setting-sources"} & set(second))
+        self.assertIn("your own Claude Code settings", gm.status(self.root)["note"])
+        self.assertEqual((self.tmp / "claude.help").read_text(), "asked\nasked\n")
 
 
 class Notes(unittest.TestCase):

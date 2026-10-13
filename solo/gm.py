@@ -19,6 +19,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import signal
 import subprocess
 import sys
@@ -38,11 +39,10 @@ BOOK_PROMPT = (
     f"{PREAMBLE} Follow the solo-gm skill (or read AGENTS.md). The player reads you in the Book, "
     "a window that already shows everything said so far and every roll as it happens."
 )
-# Linux holds one argument to 128 KiB, and the prompt is one: past this, the GM reads the table with solo.
+# A new session's first prompt carries the table up to this many bytes; past it, the GM reads the table with solo.
 _PROMPT_BYTES = 100_000
-# What a Claude Code session may run without asking. The campaign's settings.json says the
-# same, but Claude ignores a project's permissions until its folder has been trusted in an
-# interactive session, so the headless GM carries its own list.
+# What marks a process as started from a Claude Code session. The GM's environment leaves them out, so the
+# agent runs as a session of its own.
 NESTING = ("CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_CHILD_SESSION", "CLAUDE_PID", "CLAUDE_CODE_ENTRYPOINT")
 _WRITE_EVERY = 0.08
 # Seconds an agent may go without a word (no line on its stream) before its turn is ended.
@@ -68,6 +68,15 @@ _DENIED = ("WebFetch", "WebSearch", "Edit", "Write", "NotebookEdit")
 # text nobody vetted. Of the built-in tools, Bash for solo and Read for the skill, whose folder is readable:
 # the others' descriptions were more than half of a turn's input.
 _CLAUDE_KIT = ("--strict-mcp-config", "--no-chrome", "--tools", "Bash,Read", "--add-dir", str(REPO / "skills" / "solo-gm"))
+# The headless GM carries its own list of what it may run, and reads none of the settings files: `claude -p`
+# skips the folder trust dialog, so it would take the player's own allow rules and permission mode (even
+# bypassPermissions) from ~/.claude, and the campaign's .claude/settings.json, hooks and all, as they stand.
+# A Codex GM may write that file (its sandbox is the whole campaign folder), and a Claude GM never runs what
+# it put there. A Claude Code the player opens on the campaign in a terminal still reads it. --restricted
+# keeps the settings files out and confines Read to the campaign and the skill; a Claude Code too old for it
+# is given no setting sources, and one too old for that runs with the player's settings, which the turn notes.
+_UNISOLATED = ("This Claude Code knows neither --restricted nor --setting-sources, so the GM's turn ran with your own "
+               "Claude Code settings. Update Claude Code.")
 # The GM's pace, which the player picks on the Table, and the effort level it asks of the
 # agent. A quick turn arrives sooner and spends fewer tokens. A careful one thinks longer
 # about the rules.
@@ -390,9 +399,15 @@ class Adapter:
 class Claude(Adapter):
     """Claude Code: `claude -p` with stream-json, partial messages for live typing."""
 
+    def run(self, root, prompt, session, live, left=None):
+        if _settings_flags() is None:
+            live.update(force=True, note=_UNISOLATED)
+        return super().run(root, prompt, session, live, left)
+
     def command(self, session, left=None):
         tools = [f"Bash(solo {name}:*)" for name in campaign_commands()]
         command = ["claude", "-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages", *_CLAUDE_KIT,
+                   *(_settings_flags() or []),
                    "--allowedTools", *tools, "--disallowedTools", *_DENIED, "--max-turns", str(_max_turns())]
         # What the session has left to spend is a ceiling on this turn too.
         if left and left.get("usd"):
@@ -580,6 +595,42 @@ def _end_group(process):
             return
         except subprocess.TimeoutExpired:
             continue
+
+
+def _settings_flags():
+    """The flags that keep the settings files out of a Claude Code turn, as far as the claude on PATH knows
+    them, or None when it knows neither. Its --help is read once for each claude, by path, modification time
+    and size (some installs give every file the same time), and the answer kept in ~/.cache/solo: an option it
+    doesn't know would fail every turn."""
+    found = shutil.which("claude")
+    if not found:
+        return []  # the turn says it couldn't start the GM
+    binary = Path(found).resolve()
+    try:
+        stamp = [binary.stat().st_mtime_ns, binary.stat().st_size]
+    except OSError:
+        return []
+    path = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "solo" / "claude-flags.json"
+    known = _load(path)
+    if known.get("claude") != str(binary) or known.get("stamp") != stamp:
+        env = {k: v for k, v in os.environ.items() if k not in NESTING}
+        try:
+            text = subprocess.run([found, "--help"], capture_output=True, text=True, timeout=30, env=env, stdin=subprocess.DEVNULL).stdout
+        except (OSError, subprocess.SubprocessError):
+            return []  # asked again next turn
+        known = {"claude": str(binary), "stamp": stamp, "restricted": "--restricted" in text, "setting_sources": "--setting-sources" in text}
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = path.with_name(f"{path.name}.{os.getpid()}")
+            temporary.write_text(json.dumps(known) + "\n", encoding="utf-8")
+            os.replace(temporary, path)
+        except OSError:  # a cache: asked again next turn
+            pass
+    if known.get("restricted"):
+        return ["--restricted"]
+    elif known.get("setting_sources"):
+        return ["--setting-sources", ""]
+    return None
 
 
 def _model():
