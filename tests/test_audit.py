@@ -418,6 +418,16 @@ class BookCheckTest(unittest.TestCase):
                             'text = "Runs away screaming into the night." },\n  { range = [2, 2], text = "Shakes and drops what they hold." }')
         self.assertIn('result 1 "Runs away screaming into the night." is row 2 on p. 1, not row 1', found)
 
+    def test_a_word_with_a_hyphen_of_its_own_is_on_its_row_where_the_page_has_it_joined(self):
+        # solo extract joins a word whose line breaks at a hyphen ("two-" "handed"), and the recipe keeps a hyphen the word has of its own.
+        write(self.book / "pages" / "0001.txt", self.PAGES[1].replace("drops what they hold.", "drops what they hold in a twohanded grip."))
+        table = self.pack / "tables" / "fear.toml"
+        write(table, table.read_text(encoding="utf-8").replace("drops what they hold.", "drops what they hold in a two-handed grip."))
+        report = audit.audit(self.pack, "system")
+        self.assertFalse(audit.failed(report), audit.render(report))
+        self.assertIn('rules: tables/fear result 1 "Shakes and drops what they hold in a two-handed bear grip." isn\'t on p. 1 (no bear)',
+                      self.change("tables/fear.toml", "two-handed grip", "two-handed bear grip"))
+
     def test_a_row_that_fits_several_results_proves_none_of_them_swapped(self):
         # Two results alike: the row they both fit can't say which one moved, and each is judged against its own row.
         found = self.change("tables/fear.toml", '"Shakes and drops what they hold."', '"Runs away screaming into the night."')

@@ -631,6 +631,12 @@ def _has(words, word):
     return word in words or word.rstrip("s") in words or f"{word}s" in words
 
 
+def _joined(text):
+    """{word: the whole it is part of}, for the words of a text that have a hyphen of their own ("two-handed": "handed" is
+    "twohanded"). solo extract joins a word whose line breaks at its hyphen, and a page then has it whole where the recipe kept it."""
+    return {part: "".join(parts) for parts in (word.split("-") for word in re.findall(r"[a-z]+(?:-[a-z]+)+", _norm(text))) for part in parts}
+
+
 def _missing_words(text, words):
     tokens = _tokens(text)
     missing = [w for w in tokens if not _has(words, w)]
@@ -738,7 +744,8 @@ def _row_problems(at, rows, page_words, where):
     if not row["words"] or any(found["own"] and not any(re.search(r"[a-z]", text) for text, _ in found["own"]) for found in rows):
         return []
     if any(_fits(words, row["words"]) for _, words in row["own"]):
-        missing = list(dict.fromkeys(w for said in row["said"] for w in _tokens(said) if not _has(page_words, w)))
+        missing = list(dict.fromkeys(w for said in row["said"] for joined in [_joined(said)] for w in _tokens(said)
+                                     if not _has(page_words, w) and not _has(page_words, joined.get(w, w))))
         return [f"isn't on {where} (no {', '.join(missing[:4])})"] if missing else []
     # Another range's row is this result's when it fits this result alone: a row that fits other results of the table as
     # well (results that share their words, or a row run on into the title of the table below it) proves nothing.
