@@ -213,6 +213,30 @@ class GmTest(CampaignTest):
         (self.root / ".solo" / "agent.json").unlink()  # the agent's session is gone: a fresh one starts
         self.assertEqual(gm.turn(self.root, "Two.")["status"], "done")
 
+    def test_what_a_session_spent_is_kept_where_the_gm_cant_write(self):
+        # A Codex GM may write anything in the campaign folder: a count kept there, it could set back to nothing.
+        self.agent("claude", self.spend(6.0))
+        gm.turn(self.root, "One.")
+        self.assertFalse((self.root / ".solo" / "spend.json").exists())
+        kept = gm._spend_path(self.root)
+        self.assertTrue(kept.is_relative_to(self.tmp / "state" / "solo"))
+        self.assertEqual(json.loads(kept.read_text())["campaign"], str(self.root.resolve()))
+        (self.root / ".solo" / "spend.json").write_text(json.dumps({"session": "sess-1", "turns": 0, "cost_usd": 0.0}))
+        self.assertEqual(gm.spent(self.root, "sess-1")["cost_usd"], 6.0)
+        gm.turn(self.root, "Two.")
+        self.assertEqual(gm.turn(self.root, "Three.")["status"], "error")  # 12 of 10 spent
+
+    def test_a_campaigns_count_from_before_is_read_once(self):
+        (self.root / ".solo" / "spend.json").write_text(json.dumps({"session": "sess-1", "turns": 4, "cost_usd": 3.5}))
+        self.assertEqual(gm.spent(self.root, "sess-1"), {"session": "sess-1", "turns": 4, "cost_usd": 3.5})
+        self.agent("claude", self.spend(1.0))
+        (self.root / ".solo" / "agent.json").write_text(json.dumps({"agent": "claude", "session": "sess-1"}))
+        gm.turn(self.root, "One.")
+        self.assertFalse((self.root / ".solo" / "spend.json").exists())
+        self.assertEqual(gm.spent(self.root, "sess-1"), {"session": "sess-1", "turns": 5, "cost_usd": 4.5})
+        gm.reset_spend(self.root)
+        self.assertEqual(gm.spent(self.root, "sess-1")["cost_usd"], 0.0)
+
     def test_an_agent_that_cant_say_what_a_turn_costs_is_held_to_turns(self):
         self.agent("codex", CODEX_STREAM)
         with unittest.mock.patch.dict(os.environ, {"SOLO_GM_BUDGET_TURNS": "2"}):

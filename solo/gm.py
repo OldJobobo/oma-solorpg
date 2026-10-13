@@ -15,6 +15,7 @@ This is the only part of solo that runs an agent. The engine still never calls a
 """
 
 import fcntl
+import hashlib
 import json
 import os
 import re
@@ -54,7 +55,9 @@ _MAX_SECONDS = 900
 _MAX_TURNS = 40
 # What one session of a campaign may spend, counted from the usage each turn records: dollars, where the
 # agent says what a turn cost (Claude Code), and turns, for the agent that doesn't (Codex). The player raises
-# either with `solo gm budget`; SOLO_GM_BUDGET_USD and SOLO_GM_BUDGET_TURNS override the setting.
+# either with `solo gm budget`; SOLO_GM_BUDGET_USD and SOLO_GM_BUDGET_TURNS override the setting. The count is
+# kept in the player's state folder, not the campaign's: a Codex GM may write anywhere in the campaign folder,
+# and could otherwise set its own count back to nothing.
 _BUDGET_USD = 10.0
 _BUDGET_TURNS = 200
 # Tools a GM turn is never given, on top of the short list of `solo` commands it is allowed: nothing on the web,
@@ -204,7 +207,7 @@ def _turn(root, folder, text, agent, live):
     live.update(usage=result.get("usage"))
     if result.get("session"):
         (folder / "agent.json").write_text(json.dumps({"agent": agent, "session": result["session"]}) + "\n", encoding="utf-8")
-        _record_spend(folder, used if result["session"] == session else spent(root, None), result)
+        _record_spend(root, used if result["session"] == session else spent(root, None), result)
     if result.get("stopped"):
         live.update(force=True, status="stopped", text="", agent_pid=None)
         return live.data
@@ -511,7 +514,9 @@ def set_budget(usd=None, turns=None):
 def spent(root, session):
     """What the agent session has used so far, from the turns' own usage: a session that has none
     (a new one) has spent nothing."""
-    saved = _load(Path(root) / ".solo" / "spend.json")
+    path = _spend_path(root)
+    # A campaign last played before the count moved out of it: its old count, until a turn writes the new one.
+    saved = _load(path if path.exists() else Path(root) / ".solo" / "spend.json")
     if session and saved.get("session") == session:
         return {"session": session, "turns": saved.get("turns", 0), "cost_usd": saved.get("cost_usd", 0.0)}
     return {"session": session, "turns": 0, "cost_usd": 0.0}
@@ -519,7 +524,14 @@ def spent(root, session):
 
 def reset_spend(root):
     """Start counting again, for a player who would rather not raise the limit."""
+    _spend_path(root).unlink(missing_ok=True)
     (Path(root) / ".solo" / "spend.json").unlink(missing_ok=True)
+
+
+def _spend_path(root):
+    """Where a campaign's count is kept: the player's state folder, by the campaign's own path."""
+    where = str(Path(root).resolve())
+    return state_home() / "spend" / f"{hashlib.sha1(where.encode()).hexdigest()[:16]}.json"
 
 
 def overspent(used):
@@ -538,10 +550,16 @@ def budget_left(used):
     return {"usd": max(round(budget()["usd"] - used["cost_usd"], 2), 0.01)}
 
 
-def _record_spend(folder, used, result):
+def _record_spend(root, used, result):
+    """Only `solo gm turn` writes the count, once its agent has gone: nothing the GM runs ever does."""
     cost = (result.get("usage") or {}).get("cost_usd") or 0.0
-    (folder / "spend.json").write_text(json.dumps({"session": result["session"], "turns": used["turns"] + 1,
-                                                   "cost_usd": round(used["cost_usd"] + cost, 6)}) + "\n", encoding="utf-8")
+    path = _spend_path(root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f"{path.name}.{os.getpid()}")
+    temporary.write_text(json.dumps({"campaign": str(Path(root).resolve()), "session": result["session"], "turns": used["turns"] + 1,
+                                     "cost_usd": round(used["cost_usd"] + cost, 6)}) + "\n", encoding="utf-8")
+    os.replace(temporary, path)
+    (Path(root) / ".solo" / "spend.json").unlink(missing_ok=True)
 
 
 def _quiet_limit():
