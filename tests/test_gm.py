@@ -9,8 +9,9 @@ import time
 import unittest.mock
 
 from helpers import CampaignTest, Dice
+from test_cli import CliCase
 
-from solo import SoloError, cli, gm
+from solo import SoloError, campaign, cli, gm
 
 CLAUDE_STREAM = [
     {"type": "system", "subtype": "init", "session_id": "sess-1"},
@@ -418,3 +419,27 @@ class Notes(unittest.TestCase):
                 "solo wound librarian 2d6.\n:::\n\nWhat do you do?")
         self.assertEqual(drop_notes(text), "He comes for you.\n\nWhat do you do?")
         self.assertEqual(drop_notes("It moves.\n\n::: gm\nunclosed secret"), "It moves.")
+
+
+class PlayersOwn(CliCase):
+    """What only the player may change. Claude Code's GM has a list of the commands it may run, and a Codex GM
+    has none, so a Book turn (SOLO_BOOK) is refused these by the commands themselves."""
+
+    def test_a_gm_turn_cant_strike_change_the_table_settings_or_raise_its_own_budget(self):
+        self.new_game()
+        self.solo("-C", self.game, "say", "A spider drops onto the road. What do you do?")
+        with unittest.mock.patch.dict(os.environ, {"SOLO_BOOK": "1"}):
+            for argv in (["strike"], ["prefs", "--line", "nothing"], ["prefs", "--clear"], ["gm", "budget", "500"],
+                         ["gm", "budget", "--turns", "9999"], ["gm", "budget", "--reset"], ["gm", "pace", "careful"]):
+                code, _, err = self.solo("-C", self.game, *argv)
+                self.assertEqual(code, 1, argv)
+                self.assertIn("the player's", err)
+            # Reading them is fine.
+            self.assertEqual(json.loads(self.solo("-C", self.game, "gm", "budget")[1])["limit"], {"usd": 10.0, "turns": 200})
+            self.assertEqual(json.loads(self.solo("gm", "pace")[1]), {"pace": "normal"})
+            self.assertEqual(json.loads(self.solo("-C", self.game, "prefs")[1])["lines"], [])
+        with campaign.session(self.game) as c:
+            self.assertEqual(c.state["struck"], [])
+        # The Panel runs them without SOLO_BOOK, as the player.
+        self.assertEqual(self.solo("-C", self.game, "strike")[0], 0)
+        self.assertEqual(json.loads(self.solo("gm", "pace", "careful")[1]), {"pace": "careful"})
