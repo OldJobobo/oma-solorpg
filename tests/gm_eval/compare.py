@@ -158,14 +158,14 @@ def main(argv=None):
         return 1
     only_a = sorted({r["scenario"] for r in a} - {r["scenario"] for r in b})
     only_b = sorted({r["scenario"] for r in b} - {r["scenario"] for r in a})
+    scenarios = sorted({r["scenario"] for r in a} & {r["scenario"] for r in b})
     if only_a or only_b:
         missing = "; ".join(filter(None, [f"only {args.a} played {', '.join(only_a)}" if only_a else "",
                                           f"only {args.b} played {', '.join(only_b)}" if only_b else ""]))
-        if args.pool:
+        if args.pool or not scenarios:
             print(f"the two commits didn't play the same scenarios ({missing}): play them, or compare one with --scenario", file=sys.stderr)
             return 1
         print(f"Left out, since only one commit played them: {missing}.\n")
-    scenarios = sorted({r["scenario"] for r in a} & {r["scenario"] for r in b})
     if args.pool:
         sections = [(f"{len(scenarios)} scenarios pooled", a, b)]
     else:

@@ -257,6 +257,11 @@ class Comparing(unittest.TestCase):
         code, _, err = self.run_compare("aaa", "bbb", "--results", path, "--pool")
         self.assertEqual(code, 1)
         self.assertIn("didn't play the same scenarios", err)
+        # Not one scenario in common: nothing is compared, and it says so rather than printing an empty report.
+        path = self.results(self.rows("aaa", [3, 4, 5]) + self.rows("bbb", [3, 4, 5], scenario="t"))
+        code, out, err = self.run_compare("aaa", "bbb", "--results", path)
+        self.assertEqual((code, out), (1, ""))
+        self.assertIn("didn't play the same scenarios (only aaa played s; only bbb played t)", err)
 
 
 class AtEnd(CampaignTest):
