@@ -20,7 +20,11 @@ TOP        := $(SYSTEMS)/dragonbane
 SOLO_TASK    = The solo rules are extracted in $(SOURCES)/dragonbane-solo and go into $(TOP) (it extends dragonbane-rulebook; a pack laid over the rulebook by make supplement is added to its extends list), whose inventory is started too.
 NO_SOLO_TASK = I have no solo rules book: leave $(TOP) as it is.
 # What a player types reaches the recipes as environment variables, read as "$$PREMISE": a
-# premise with backticks or $( ) in it is words, and the shell never runs them.
+# premise with backticks or $( ) in it is words, and the shell never runs them. Each is taken
+# as typed, or make would read a $( ) in it as its own, and run a $(shell ...).
+override PREMISE  := $(value PREMISE)
+override TONE     := $(value TONE)
+override CAMPAIGN := $(value CAMPAIGN)
 export PREMISE TONE CAMPAIGN
 
 .PHONY: help install uninstall deps dragonbane rules supplement check adventure check-adventure campaign campaign-next test qml-check site

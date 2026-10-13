@@ -36,6 +36,15 @@ class MakefileTest(unittest.TestCase):
         self.assertFalse(ran.exists())
         self.assertIn(f"`touch {ran}`", (self.tmp / "games" / "adventures" / "salt" / "premise.toml").read_text())
 
+    def test_a_premise_with_a_dollar_reaches_solo_as_typed_and_runs_nothing(self):
+        ran = self.tmp / "ran"
+        premise = f"a toll of $5 at the $(gate) where $(shell touch {ran}) the dead keep the lighthouses"
+        install_rules(self.tmp / "games")
+        result = self.make("campaign", "ID=salt", "SEED=1", f"PREMISE={premise}")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(ran.exists())
+        self.assertIn(premise, (self.tmp / "games" / "adventures" / "salt" / "premise.toml").read_text())
+
     def test_a_campaign_folder_with_backticks_runs_nothing(self):
         ran = self.tmp / "ran"
         self.make("campaign-next", f"CAMPAIGN={self.tmp}/`touch {ran}`")
