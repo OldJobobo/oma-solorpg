@@ -39,10 +39,11 @@ def read(pack, section):
     return dice.read(section.lines(own=True), pack.book.glue)
 
 
-def _write(pack, section, table_id, name, found, rows):
+def _write(pack, section, table_id, name, found, rows, pages=None):
+    """A table of the section, cited by its pages, or by `pages` when its words are read from more of the book than the table."""
     pack.toml(f"tables/{table_id}.toml", {"name": name, "formula": dice.formula(found["faces"]), "source": f"p. {section.page}", "results": rows})
     pack.facts.setdefault("tables", {})[section.number] = (table_id, dice.formula(found["faces"]))
-    pack.item(f"table_{table_id}", name, "table", section.pages, [f"tables/{table_id}"])
+    pack.item(f"table_{table_id}", name, "table", pages or section.pages, [f"tables/{table_id}"])
 
 
 def _simple(pack, section, table_id, name):
@@ -99,7 +100,8 @@ def _locations(pack, section):
     kinds = read(pack, section.find("Table: Subtables"))
     many = {"faces": dice.faces(steps.group(1)), "rows": [{"low": n, "high": n} for n in range(1, dice.faces(steps.group(1)) + 1)]}
     _write(pack, details, "location_detail_rolls", "Location details: how many", many,
-           [Inline({"range": [row["low"], row["high"]], "text": f"Roll on the location details table {row['low']} time{'s' * (row['low'] != 1)}", "then": ["location_details"] * row["low"]}) for row in many["rows"]])
+           [Inline({"range": [row["low"], row["high"]], "text": f"Roll on the location details table {row['low']} time{'s' * (row['low'] != 1)}", "then": ["location_details"] * row["low"]}) for row in many["rows"]],
+           section.pages)
     listed = read(pack, details)
     _write(pack, details, "location_details", "Location details", listed,
            [Inline({"range": [row["low"], row["high"]], "text": row["text"], "then": f"location_{packs.slug(row['text'])}"}) for row in listed["rows"]])

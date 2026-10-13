@@ -110,7 +110,7 @@ class BookletTest(unittest.TestCase):
         table(4, "Table: Search Table", ["D4", "SEARCH"], [["1", "Trap – roll again, ignoring this result."], ["2", "Secret path – diverts to D4 new waypoints."], ["3–4", "Hidden treasure – one treasure card."]], [72, 110])
         section(3, "Traps", "Traps abound.")
         table(4, "Table: Traps", ["D4 TRAP"], [["1", "Acid spray"], ["2", "Rolling boulder"], ["3+", "Roll twice, ignoring this result"]], [72, 110])
-        made.save()
+        made.save(pages=True)
         self.book = Book(self.tmp / "extract")
         self.pack = Pack(self.book, self.tmp / "out", dragonbane_solo.NAME, ["dragonbane-rulebook"])
         dragonbane_solo.build(self.pack)
@@ -170,6 +170,8 @@ class BookletTest(unittest.TestCase):
         report = audit.audit(self.tmp / "out", "system")
         self.assertEqual(report["unclaimed"], [])
         self.assertEqual(report["problems"], [])
+        # Read back against the made-up book's own pages, every table, number and word is on them.
+        self.assertEqual(report["unverified"], [])
 
 
 class NoTemplatesTest(unittest.TestCase):
