@@ -3058,9 +3058,9 @@ def recall(entries, state, query, limit=8):
     found = []
     for entry in entries:
         for label, text in _recallable(entry["event"], state):
-            folded = _fold(text)
+            folded, folded_label = _fold(text), _fold(label)
             # The label counts too: "Bram remembers" is about Bram, whatever he remembers.
-            hits = sum(1 for w in words if w in folded or w in _fold(label))
+            hits = sum(1 for w in words if w in folded or w in folded_label)
             if hits:
                 found.append({"hits": hits, "seq": entry["seq"], "time": entry["time"], "title": entry["title"],
                               "label": label, "text": _snippet(text, folded, words)})
@@ -3119,8 +3119,23 @@ def _recallable(event, state):
 
 def _fold(text):
     """Lowercase, accents gone, one character for one, so a match found in the folded text
-    points at the same place in the original: Kjölvik is kjolvik."""
-    return "".join((unicodedata.normalize("NFKD", ch)[:1] or ch).lower()[:1] for ch in str(text))
+    points at the same place in the original: Kjölvik is kjolvik. Most of what a campaign holds
+    is plain ASCII, which lower() alone folds; the rest goes a character at a time, each worked
+    out once (recall folds every word ever said, and that was most of its time)."""
+    text = str(text)
+    return text.lower() if text.isascii() else text.translate(_FOLDED)
+
+
+class _Folded(dict):
+    """A character's code point to the character it folds to, worked out when first asked for."""
+
+    def __missing__(self, point):
+        ch = chr(point)
+        self[point] = folded = (unicodedata.normalize("NFKD", ch)[:1] or ch).lower()[:1]
+        return folded
+
+
+_FOLDED = _Folded()
 
 
 def _snippet(text, folded, words, before=90, after=170):
