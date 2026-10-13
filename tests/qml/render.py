@@ -16,9 +16,10 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
-from PySide6.QtCore import QMetaObject, QObject, Q_ARG, Q_RETURN_ARG, QTimer, QUrl, SIGNAL  # noqa: E402
+from PySide6.QtCore import QMetaObject, QObject, QPoint, Q_ARG, Q_RETURN_ARG, Qt, QTimer, QUrl, SIGNAL  # noqa: E402
 from PySide6.QtGui import QGuiApplication  # noqa: E402
 from PySide6.QtQuick import QQuickItem, QQuickView  # noqa: E402
+from PySide6.QtTest import QTest  # noqa: E402
 
 import scenario  # noqa: E402
 
@@ -120,7 +121,14 @@ def main(out):
     QMetaObject.invokeMethod(title, "show", Q_ARG("QVariant", "Chieftain's Hall"), Q_ARG("QVariant", "The Red Tusk Hall"))
     shot("title-decrypting", 250)
     shot("title", 1400)
-    wait(7000)
+    QTest.mouseClick(view, Qt.LeftButton, Qt.NoModifier, QPoint(640, 430))  # a click puts it away at once
+    wait(50)
+    if title.property("visible"):
+        errors.append("a click on the scene's name didn't put it away at once")
+    QMetaObject.invokeMethod(title, "show", Q_ARG("QVariant", ""), Q_ARG("QVariant", "The Red Tusk Hall"))
+    wait(300)
+    if title.property("visible"):
+        errors.append("a scene with no name got an empty card")
 
     root.setProperty("turn", {"status": "writing", "doing": "rolling the dice", "player": "I shove the cultist into the fire pit.",
                               "text": "You drive your shoulder into the robed man and he stumbles back, arms wheeling, into the embers. "

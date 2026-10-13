@@ -21,8 +21,10 @@ Item {
   visible: opacity > 0
   opacity: 0
 
+  // A scene with no name gets no card: an empty one would only cover the page.
   function show(name, under) {
-    title = name || ""
+    if (!name) return
+    title = name
     subtitle = under || ""
     revealed = 0
     shown = scramble()
@@ -72,7 +74,7 @@ Item {
 
   MouseArea {
     anchors.fill: parent
-    onClicked: { decrypt.stop(); hold.stop(); fadeOut.restart() }
+    onClicked: card.dismiss()
   }
 
   Rectangle {
