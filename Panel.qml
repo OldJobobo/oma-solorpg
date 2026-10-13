@@ -522,7 +522,6 @@ Item {
     root.split(root.veils).forEach(veil => args.push("--veil=" + veil))
     root.run(args, "begin", () => {
       root.heroName = ""
-      nameField.text = ""
       root.show("table")
     })
   }

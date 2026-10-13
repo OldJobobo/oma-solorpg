@@ -353,6 +353,12 @@ def begin_and_ask(item, panel, out, work, wait):
     state = json.loads((game / "state.json").read_text())
     if (state["pc"]["name"], state["prefs"]["tone"]) != ("-Brokk", "-grim, and quiet"):
         problems.append(f"Begin passed {state['pc']['name']!r} and {state['prefs']['tone']!r}")
+    # The name field still follows the hero's name after Begin emptied both (the next adventure's name shows in it).
+    item.setProperty("heroName", "Brokk the Second")
+    field = next((f for f in panel.contentItem().findChildren(QQuickItem) if str(f.property("placeholderText") or "").startswith("Name")), None)
+    if field is None or field.property("text") != "Brokk the Second":
+        problems.append(f"after Begin the name field no longer follows the hero's name: {field and field.property('text')!r}")
+    item.setProperty("heroName", "")
     item.open(json.dumps({"view": "table"}))
     wait(1500)
     item.findChild(QObject, "question").setProperty("text", "-is anyone watching?")
