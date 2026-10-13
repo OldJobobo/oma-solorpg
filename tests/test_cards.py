@@ -79,6 +79,13 @@ class TreasureTest(unittest.TestCase):
         self.assertEqual(report["problems"], [])
 
 
+class FrameTest(unittest.TestCase):
+    def test_the_frames_words_come_out_in_one_order_whatever_order_they_were_found_in(self):
+        # Two frame lines as long as each other overlap in a card's line: which goes first decides what is left.
+        for frame in (["AB CD", "CD EF"], ["CD EF", "AB CD"]):
+            self.assertEqual(cards.without("AB CD EF", frame), "EF", frame)
+
+
 class OtherDecksTest(unittest.TestCase):
     def setUp(self):
         folder = tempfile.TemporaryDirectory()

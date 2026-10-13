@@ -17,14 +17,17 @@ def faces(book):
     pages = {number: [line["text"].replace("\t", " ").strip() for line in lines if line["text"].strip()] for number, lines in sorted(book.by_page.items())}
     seen = Counter(text for lines in pages.values() for text in set(lines))
     frame = {text for text, count in seen.items() if count >= _FRAME * sum(1 for lines in pages.values() if lines)}
-
-    def own(text):
-        for words in sorted(frame, key=len, reverse=True):
-            text = text.replace(words, "")
-        return " ".join(text.split())
-
     # A back has a word of art on it ("TAVERN", say) and nothing else; a face has a title and what the card says.
-    return [(number, found) for number, found in ((number, [own(text) for text in lines if own(text)]) for number, lines in pages.items()) if len(found) >= 2]
+    return [(number, found) for number, found in ((number, [without(text, frame) for text in lines if without(text, frame)]) for number, lines in pages.items())
+            if len(found) >= 2]
+
+
+def without(text, frame):
+    """A line without the frame's words in it: the longest first, and of two as long, the first in alphabetical order, so that
+    the same card reads the same on every run (a set of words has no order of its own)."""
+    for words in sorted(frame, key=lambda words: (-len(words), words)):
+        text = text.replace(words, "")
+    return " ".join(text.split())
 
 
 def split(lines):
