@@ -38,7 +38,7 @@ def build(pack):
         worn = "armor rating" in columns
         refs = ["system.toml:armor"] if worn else []
         for row in rows:
-            cells = {name: row["cells"][at] for name, at in columns.items()}
+            cells = grid.Cells(section, header, row)
             name = row["cells"][0]
             weapon = "grip" in columns and cells["grip"] in ("1H", "2H")
             if name == "Unarmed":

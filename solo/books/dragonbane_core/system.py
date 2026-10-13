@@ -7,9 +7,9 @@ that is a printing the recipe wasn't written for.
 
 import re
 
-from ... import SoloError, packs
+from ... import packs
 from .. import grid
-from ..read import count, find, roll, says
+from ..read import changed, count, find, roll, says
 from . import ids
 
 _SECONDS = {"second": 1, "minute": 60, "hour": 3600, "day": 86400}
@@ -100,7 +100,7 @@ def _torch(book, gear):
     row = next((r["cells"] for r in grid.read(gear.find("Table: Light Sources").lines(own=True), book.glue)[1] if r["cells"][0] == "Torch"), None)
     found = re.search(r"burn(?:s)? for up to (?:a|one) (shift|stretch)", row[-1] if row else "", re.I)
     if not found:
-        raise SoloError("the torch in the light sources table: can't find how long it burns; this may be another printing than the importer was written for")
+        raise changed(gear.find("Table: Light Sources"), "can't find how long the torch burns")
     return {"label": "Torch", "item": "torch", "lasts": {found.group(1).lower(): 1}}
 
 
@@ -110,7 +110,7 @@ def _dying(book, section):
     rally = re.search(r"(?:after )?(\w+) successful death rolls you recover (\d*D\d+) HP", death, re.I)
     fail = re.search(r"(?:after )?(\w+) failed death rolls", death, re.I)
     if not (rally and fail):
-        raise SoloError("the death roll: can't find the successes and failures it counts; this may be another printing than the importer was written for")
+        raise changed(section.find("Death Roll"), "can't find the successes and failures a death roll counts")
     return {"track": "hp", "roll": found.group(1).lower(), "rally": count(rally.group(1)), "die": count(fail.group(1)), "recover": roll(rally.group(2))}
 
 

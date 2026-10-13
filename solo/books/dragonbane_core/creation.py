@@ -10,9 +10,9 @@ import math
 import re
 from itertools import product
 
-from ... import SoloError, packs
+from ... import packs
 from .. import dice, grid
-from ..read import count, find, says
+from ..read import changed, count, find, says
 from . import arms, ids
 
 
@@ -88,7 +88,7 @@ def _kin(book, section, movement):
         kin, kin_id = section.find(row["text"]), packs.slug(row["text"])
         names = dice.read(kin.span(), book.glue)["rows"]
         if len(names) != 6 or kin_id not in movement:
-            raise SoloError(f"{book.manifest.get('source', 'the book')}, {kin.title!r} (p. {kin.page}): can't find its six first names and its movement; this may be another printing than the importer was written for")
+            raise changed(kin, "can't find its six first names and its movement")
         options[kin_id] = {"range": [row["low"], row["high"]], "abilities": [s.title.removeprefix("Ability:").strip() for s in kin.children if s.title.startswith("Ability:")],
                            "ratings": {"movement": movement[kin_id]}, "names": [name["text"] for name in names]}
     return {"label": "Kin", "roll": dice.formula(table["faces"]), "options": options}

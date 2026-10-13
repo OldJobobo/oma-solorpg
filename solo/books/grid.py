@@ -9,6 +9,7 @@ only carries the rest of a wrapped cell and is added to the row above.
 """
 
 from ..sections import paragraphs
+from .read import changed
 
 # Words this close are one cell; a gap wider than this starts the next.
 _GAP = 5.0
@@ -51,6 +52,26 @@ def read(lines, glue=None, header=None):
                     rows[-1]["parts"][at].append(text)
         last = top
     return [c["name"] for c in columns], rows
+
+
+class Cells(dict):
+    """A row's cells by the name of their column, in lower case. A column the table doesn't have is an error that says
+    which table of which book (another printing than the recipe was written for), not a KeyError."""
+
+    def __init__(self, section, header, row):
+        super().__init__((name.lower(), text) for name, text in zip(header, row["cells"]))
+        self.section, self.page = section, row["page"]
+
+    def __missing__(self, name):
+        raise changed(self.section, f"the table on p. {self.page} has no {name.upper()} column")
+
+
+def cells(section, row, count):
+    """A row's cells, for a recipe that reads them in order: an error that says which table of which book when it
+    doesn't have the `count` columns the recipe reads."""
+    if len(row["cells"]) != count:
+        raise changed(section, f"the table on p. {row['page']} has {len(row['cells'])} columns, and the importer reads {count}")
+    return row["cells"]
 
 
 def _is_header(line):

@@ -311,6 +311,44 @@ class GearRecipeTest(unittest.TestCase):
         self.assertEqual(report["unverified"], [])
 
 
+class ChangedGearTableTest(unittest.TestCase):
+    """A weapons table set otherwise than the printing the recipe knows: the import says where, and how."""
+
+    def build(self, names, row):
+        with tempfile.TemporaryDirectory() as folder:
+            tmp = Path(folder)
+            made = FakeBook(tmp / "extract")
+            made.line(1, 80, "YOUR HERO", style=HEADING)
+            made.mark(1, "2. Your Player Character")
+            made.line(1, 100, "GEAR", style=HEADING)
+            made.mark(2, "Gear")
+            made.line(1, 120, "COINS", x=150, style=BANNER)
+            made.mark(3, "Sidebar: Coins")
+            made.lines(1, 140, "Ten copper coins equal one silver, and ten silver coins equal one gold.", style=CELL)
+            made.line(2, 80, "SKILLS", style=HEADING)
+            made.mark(1, "3. Skills")
+            made.line(2, 100, "THE CORE SKILLS", style=HEADING)
+            made.mark(2, "The Core Skills")
+            made.line(2, 120, "WEAPON SKILLS", style=HEADING)
+            made.mark(3, "Weapon Skills")
+            made.line(2, 140, "Swords (STR): Used for swords.")
+            made.mark(4, "Swords")
+            made.line(3, 80, "GEAR", style=HEADING)
+            made.mark(1, "6. Gear")
+            made.line(3, 100, "MELEE WEAPONS", x=250, style=BANNER)
+            made.mark(2, "Table: Melee Weapons")
+            made.table(3, 120, names, [row], [68, 150, 185, 215, 260, 310, 375, 430, 490][:len(names)])
+            made.save()
+            pack = Pack(Book(tmp / "extract"), tmp / "out", dragonbane_core.NAME, dragonbane_core.extends(None))
+            dragonbane_core.gear.build(pack)
+            return pack
+
+    def test_a_column_the_table_lost_is_named_with_the_table_and_its_page(self):
+        with self.assertRaisesRegex(SoloError, r"Test Book.pdf, 'Table: Melee Weapons' \(p. 3\): the table on p. 3 has no DURABILITY column; "
+                                               r"this may be another printing than the importer was written for"):
+            self.build(["WEAPON", "GRIP", "STR", "RANGE", "DAMAGE", "COST", "SUPPLY", "FEATURES"], ["Sword, Long", "1H", "9", "2", "2D6", "11 gold", "Common", "Slashing"])
+
+
 class BuildTest(unittest.TestCase):
     """books.build with a made-up recipe in place of the real ones: what it writes, and what it keeps when a build goes wrong."""
 

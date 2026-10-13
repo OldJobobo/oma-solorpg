@@ -8,11 +8,11 @@ damage, is immune to all but some kinds); everything the book says stays in `des
 
 import re
 
-from ... import SoloError, packs
+from ... import packs
 from ...sections import paragraphs
 from ...tomlwrite import Inline
 from .. import dice, grid
-from ..read import roll
+from ..read import changed, roll
 from . import arms, ids
 
 _STAT = re.compile(r"^(?:Ferocity|Movement|Mov\.|Armor|HP)\b")
@@ -44,7 +44,7 @@ def _monster(pack, section, known):
     flat = re.sub(r"\s+", " ", re.sub("\u00ad", "", " ".join(line["text"] for line in lines)))
     found = {key: re.search(pattern, flat) for key, pattern in _NUMBERS.items()}
     if not (found["hp"] and found["ferocity"] and found["movement"] and found["armor"] and found["size"]):
-        raise SoloError(f"{book.manifest.get('source', 'the book')}, {section.title!r} (p. {section.page}): can't read its stat block; this may be another printing than the importer was written for")
+        raise changed(section, "can't read its stat block")
     entries = _entries(book, [line for line in lines if not _STAT.match(line["text"].strip())])
     gear = [arms.find(known, item) for entry in entries if entry.startswith("Typical Gear:") for item in entry.partition(":")[2].split(",")]
     weapon = next((system["weapons"][name]["damage"] for name in gear if name in system["weapons"]), None)
@@ -188,8 +188,11 @@ def _animals(pack, section):
     _, rows = grid.read(section.lines(), book.glue)
     made = []
     for row in rows:
-        name, movement, hp, attack, skills = row["cells"]
-        label, skill, damage = _WEAPON.match(attack).groups()
+        name, movement, hp, attack, skills = grid.cells(section, row, 5)
+        weapon = _WEAPON.match(attack)
+        if weapon is None:
+            raise changed(section, f"can't read the attack of {name} on p. {row['page']} ({attack!r})")
+        label, skill, damage = weapon.groups()
         animal = packs.slug(name)
         pack.toml(f"bestiary/{animal}.toml", {"name": ids.sentence(name), "role": "A common animal", "description": "Common animal.",
                                               "attack": Inline({"label": label, "value": int(skill), "damage": roll(damage)}), "source": f"p. {row['page']}",
@@ -204,7 +207,7 @@ def _typical(pack, section, known):
     _, rows = grid.read(section.lines(own=True), book.glue)
     made = []
     for row in rows:
-        kind, skills, abilities, bonus, hp, wp, gear = row["cells"]
+        kind, skills, abilities, bonus, hp, wp, gear = grid.cells(section, row, 7)
         boss = "(Boss)" in kind
         name = re.sub(r"\s*\(Boss\)", "", kind).strip()
         skills = {packs.slug(found.group(1)): int(found.group(2)) for part in row["parts"][1] for found in [re.match(r"(.+?)\s+(\d+)$", part.strip())] if found}

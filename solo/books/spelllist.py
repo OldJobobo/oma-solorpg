@@ -8,8 +8,8 @@ spell" is no prerequisite the engine can check, and the page keeps the words.
 
 import re
 
-from .. import SoloError, packs
-from .read import roll
+from .. import packs
+from .read import changed, roll
 
 _DICE = r"(\d*D\d+)"
 
@@ -25,7 +25,7 @@ def spell(book, school, section, skill=None):
     """The spell on a section's page. `school` is the skill it is cast with (or "general"); `skill` the one the prerequisite names, when that isn't the school's own."""
     found, text = facts(section)
     if "Rank" not in found:
-        raise SoloError(f"{book.manifest.get('source', 'the book')}, {section.title!r} (p. {section.page}): can't read its rank; this may be another printing than the importer was written for")
+        raise changed(section, "can't read its rank")
     entry = {"name": section.title, "school": school, "rank": int(found["Rank"])}
     prerequisite = _prerequisite(found.get("Prerequisite", ""))
     if prerequisite:
