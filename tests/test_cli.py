@@ -1,6 +1,8 @@
 import io
 import json
 import os
+import subprocess
+import sys
 import tempfile
 import unittest
 import unittest.mock
@@ -248,6 +250,31 @@ class CliTest(CliCase):
         self.assertEqual(err.count("\n"), 1)
         self.assertIn("something went wrong (KeyError: 'hp')", err)
         self.assertNotIn("Traceback", err)
+
+    def test_log_shows_the_last_n_events_and_none_for_zero(self):
+        self.new_game()
+        self.solo("-C", self.game, "commit", '{"note": "the gate creaks"}')
+        code, out, _ = self.solo("-C", self.game, "log", "-n", "0")
+        self.assertEqual((code, out), (0, ""))  # -0 was the whole log
+        code, out, _ = self.solo("-C", self.game, "log", "-n", "1")
+        self.assertEqual(out.splitlines(), ["#2 the gate creaks"])
+        code, out, err = self.solo("-C", self.game, "log", "-n", "-3")  # all but three, it was
+        self.assertEqual((code, out), (1, ""))
+        self.assertIn("-n is how many of the last events to show, from 0 up; not -3", err)
+
+    def test_a_reader_that_stops_early_ends_the_log_quietly(self):
+        # solo log | head: the pipe closes under the output, and that was "something went wrong (BrokenPipeError)".
+        self.new_game()
+        with campaign.session(self.game) as c:
+            for number in range(20):
+                c.commit({"note": f"{number}: " + "the gate creaks " * 500})
+        solo = subprocess.Popen([sys.executable, str(ROOT / "bin" / "solo"), "-C", self.game, "log", "-n", "30"],
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        solo.stdout.readline()
+        solo.stdout.close()
+        err = solo.stderr.read().decode()
+        solo.stderr.close()
+        self.assertEqual((solo.wait(), err), (1, ""))
 
     def test_a_usage_mistake_is_one_line_too(self):
         with self.assertRaises(SystemExit) as exit:
