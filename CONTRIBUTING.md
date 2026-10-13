@@ -78,5 +78,5 @@ unless = "visited.final_battle"      # ...until this holds
 ## Sending a pull request
 
 - One change to a pull request, with the reason in its description. Say what you ran (`make test`, `make qml-check`) and anything you couldn't.
-- A bug in an import, or a GM that did something wrong, belongs in an issue first, with the details the [issue templates](.github/ISSUE_TEMPLATE) ask for. Those are public: don't paste a book's text or numbers into one.
+- A bug in an import, or a GM that did something wrong, belongs in an issue first, with the details the [issue templates](.github/ISSUE_TEMPLATE) ask for. Those are public: don't paste a book's text or numbers into one. A security problem is reported privately instead ([SECURITY.md](SECURITY.md)).
 - The project's own words (The Red Tusk Hall, the hero names, the text portraits) and code are under the [MIT License](LICENSE); your contribution is too.

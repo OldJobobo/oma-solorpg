@@ -1,0 +1,63 @@
+name: Something else went wrong
+description: Installing, the Table or the Book, a desktop effect left behind, or anything that isn't the GM or an import
+title: "Bug: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This issue is public. If it involves an adventure or rules built from a book you own, **describe what happened instead of quoting it**: no scene text, no rules text, no numbers from the book.
+
+        The GM getting a rule or the story wrong has [its own form](?template=gm-did-something-wrong.yml), and so does [an import](?template=import-went-wrong.yml).
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where did it go wrong?
+      options:
+        - Installing or uninstalling (make install, make uninstall, solo setup)
+        - The d20 in the bar
+        - The Table
+        - The Book
+        - A desktop effect stayed after the game (border colours, the screen shader, candlelight, the screensaver)
+        - A solo command in a terminal
+        - Something else
+    validations:
+      required: true
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened
+      description: What you did, step by step, and what it did. A screenshot helps for the Table and the Book.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+  - type: textarea
+    id: setup
+    attributes:
+      label: The output of solo setup
+      description: |
+        Run `solo setup` (or `bin/solo setup` in the plugin folder) and paste what it prints: it checks Python, the shell, hyprctl, your agent and PyMuPDF, a line each. For an install problem, paste the end of `make install` too.
+      render: text
+  - type: textarea
+    id: report
+    attributes:
+      label: The record, if a game was on
+      description: |
+        The bundle from `solo report -n 40` in the campaign's folder: what happened by ids, numbers and dice, the engine version and the packs' format, with rules pages and pack text left out. It ends with the last messages of the story: read them and cut anything quoted from a book before you post, or run it with `--no-messages`. For a desktop effect left behind, run `solo desk restore` and paste what it prints: it puts back what it can, and says what it did.
+      render: text
+  - type: textarea
+    id: environment
+    attributes:
+      label: Your setup
+      description: "`git -C <the plugin folder> rev-parse --short HEAD`, and the version of Omarchy you run."
+      render: text
+  - type: checkboxes
+    id: book-content
+    attributes:
+      label: Nothing from a book
+      options:
+        - label: This issue holds no text, tables or numbers from a book.
+          required: true

@@ -61,6 +61,15 @@ class RepositoryTest(unittest.TestCase):
         self.assertIn("make qml-check", workflow)
         self.assertIn("package-ecosystem: github-actions", (ROOT / ".github" / "dependabot.yml").read_text(encoding="utf-8"))
 
+    def test_the_issue_forms_know_the_main_import_and_point_security_reports_away_from_issues(self):
+        forms = ROOT / ".github" / "ISSUE_TEMPLATE"
+        self.assertIn("make dragonbane", (forms / "import-went-wrong.yml").read_text(encoding="utf-8"))
+        self.assertIn("solo report", (forms / "something-went-wrong.yml").read_text(encoding="utf-8"))
+        self.assertIn("/security/policy", (forms / "config.yml").read_text(encoding="utf-8"))
+        self.assertIn("Report a vulnerability", (ROOT / "SECURITY.md").read_text(encoding="utf-8"))
+        # A relative link 404s from a pull request's page.
+        self.assertNotIn("](../", (ROOT / ".github" / "pull_request_template.md").read_text(encoding="utf-8"))
+
 
 class LicenseTest(unittest.TestCase):
     def test_license_is_the_mit_text_alone_so_github_can_tell_which_it_is(self):
