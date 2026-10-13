@@ -122,7 +122,7 @@ Item {
   readonly property var momentum: labels.momentum || null
   readonly property var progressSpec: labels.progress || null
   readonly property var lastCheck: game && game.last_check ? game.last_check : null
-  readonly property bool canPush: !dead && lastCheck !== null && lastCheck.type === "check" && lastCheck.outcome.pushable === true
+  readonly property bool canPush: !dead && !dying && lastCheck !== null && lastCheck.type === "check" && lastCheck.outcome.pushable === true
   // Bindings update in no fixed order when state.json reloads, so pc is checked
   // here even though canPush already implies a game.
   readonly property var pushChoices: canPush && pc && labels.push === "condition"
@@ -2001,7 +2001,7 @@ Item {
             Flow {
               Layout.fillWidth: true
               spacing: Commons.Style.space(4)
-              visible: root.moves !== null && root.pc !== null && !root.dead
+              visible: root.moves !== null && root.pc !== null && !root.dying && !root.dead
 
               Repeater {
                 model: root.pc && root.moves ? Object.keys(root.pc.attributes) : []
@@ -2013,14 +2013,14 @@ Item {
             }
 
             Stepper {
-              visible: root.moves !== null && root.pc !== null && !root.dead
+              visible: root.moves !== null && root.pc !== null && !root.dying && !root.dead
               label: "Adds"
               value: root.adds
               onStepped: function(value) { root.adds = value }
             }
 
             Repeater {
-              model: root.moves !== null && root.pc !== null && !root.dead ? root.moveGroups() : []
+              model: root.moves !== null && root.pc !== null && !root.dying && !root.dead ? root.moveGroups() : []
               delegate: ColumnLayout {
                 id: group
                 required property var modelData
@@ -2200,7 +2200,7 @@ Item {
 
             // Momentum can be burned on the roll just made, when that would change it.
             Act {
-              visible: !!(root.game && root.game.burn) && !root.dead
+              visible: !!(root.game && root.game.burn) && !root.dying && !root.dead
               Layout.fillWidth: true
               selected: true
               text: root.game && root.game.burn ? "Burn momentum " + root.signed(root.game.burn.momentum) : ""
@@ -2504,7 +2504,7 @@ Item {
 
             RowLayout {
               Layout.fillWidth: true
-              visible: root.pc !== null && (root.pc.marks || []).length > 0 && !root.dead
+              visible: root.pc !== null && (root.pc.marks || []).length > 0 && !root.dying && !root.dead
 
               Line {
                 size: Commons.Style.font.bodySmall
@@ -2646,12 +2646,12 @@ Item {
 
             // Rest
 
-            Heading { text: "Rest"; visible: root.pc !== null && !root.dead && Object.keys(root.labels.rests).length > 0 }
+            Heading { text: "Rest"; visible: root.pc !== null && !root.dying && !root.dead && Object.keys(root.labels.rests).length > 0 }
 
             Flow {
               Layout.fillWidth: true
               spacing: Commons.Style.space(4)
-              visible: root.pc !== null && !root.dead
+              visible: root.pc !== null && !root.dying && !root.dead
 
               Repeater {
                 model: root.pc ? Object.keys(root.labels.rests) : []
@@ -2688,7 +2688,7 @@ Item {
 
             RowLayout {
               Layout.fillWidth: true
-              visible: root.pc !== null && !root.dead && (!!(root.game && root.game.light) || root.carriesTorch())
+              visible: root.pc !== null && !root.dying && !root.dead && (!!(root.game && root.game.light) || root.carriesTorch())
 
               Line {
                 size: Commons.Style.font.bodySmall
@@ -2708,12 +2708,12 @@ Item {
 
             // Oracle
 
-            Heading { text: "Oracle"; visible: root.pc !== null && !root.dead }
+            Heading { text: "Oracle"; visible: root.pc !== null && !root.dying && !root.dead }
 
             TextField {
               id: question
               objectName: "question"
-              visible: root.pc !== null && !root.dead
+              visible: root.pc !== null && !root.dying && !root.dead
               Layout.fillWidth: true
               placeholderText: "Ask a question"
               onAccepted: root.askOracle()
@@ -2722,7 +2722,7 @@ Item {
             Flow {
               Layout.fillWidth: true
               spacing: Commons.Style.space(4)
-              visible: root.pc !== null && !root.dead && !!root.labels.fortune
+              visible: root.pc !== null && !root.dying && !root.dead && !!root.labels.fortune
 
               Repeater {
                 model: root.labels.fortune || []
@@ -2740,7 +2740,7 @@ Item {
             Flow {
               Layout.fillWidth: true
               spacing: Commons.Style.space(4)
-              visible: root.pc !== null && !root.dead
+              visible: root.pc !== null && !root.dying && !root.dead
 
               Repeater {
                 model: root.labels.likelihood
@@ -2755,7 +2755,7 @@ Item {
 
             RowLayout {
               Layout.fillWidth: true
-              visible: root.pc !== null && !root.dead
+              visible: root.pc !== null && !root.dying && !root.dead
 
               Act {
                 Layout.fillWidth: true
@@ -2773,7 +2773,7 @@ Item {
             }
 
             Line {
-              visible: root.lastOracle() !== "" && !root.dead
+              visible: root.lastOracle() !== "" && !root.dying && !root.dead
               size: Commons.Style.font.bodySmall
               text: root.lastOracle()
             }
@@ -2862,7 +2862,7 @@ Item {
             }
 
             Repeater {
-              model: root.pc && !root.dead ? root.worn() : []
+              model: root.pc && !root.dying && !root.dead ? root.worn() : []
               delegate: RowLayout {
                 id: mending
                 required property var modelData

@@ -496,6 +496,14 @@ def desk_moments(item, panel, out, work, wait):
            ["pw-play " + str(work / "cache"), "/dice-", "desk --after 1.94 flash dragon", "sleep \"$0\"; exec \"$@\" 1.94 pw-play", "/dragon-"], shot="table-dragon")
     expect("a blow to dying", lambda c: c.wound("hero", "40", "a rockfall", armor=False, rng=Dice()),
            ["desk flash hit", "/hit-", "desk dying on 0", "/heartbeat-"], shot="table-dying")
+    # Dying, the Table offers the death roll (and the solo rules' Rally and Save yourself), not what the hero can't do.
+    if button(panel.contentItem(), "Death roll") is None:
+        problems.append("a dying hero isn't offered the death roll")
+    offered = [text for text in ("Light a torch", "Put it out", "Ask", "Meaning", "Roll advancement", "Tend my wounds",
+                                 "Round rest", "Stretch rest", "Shift rest", "Mend", "Artisan", "push", "STR")
+               if button(panel.contentItem(), text) is not None]
+    if offered:
+        problems.append(f"a dying hero is still offered {offered}")
     # Dying, the Book's page beats and breathes; shut, it runs nothing (the plugin stays loaded with the Book shut).
     from render import running
     book = item.findChild(QObject, "book")
