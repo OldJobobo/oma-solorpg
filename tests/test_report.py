@@ -54,12 +54,15 @@ class ReportTest(CampaignTest):
             long_arg = "x" * 200
             lines = [{"at": "2026-09-30T10:00:00", "argv": ["check", "sneaking", "--boons", "1"], "error": None},
                      {"at": "2026-09-30T10:00:05", "argv": ["setup", "--plugin"], "error": "the GM can't run that"},
-                     {"at": "2026-09-30T10:00:09", "argv": ["commit", long_arg], "error": None}]
+                     {"at": "2026-09-30T10:00:09", "argv": ["commit", long_arg], "error": None},
+                     {"at": "2026-09-30T10:00:12", "argv": [], "error": "Claude Code's permissions refused Write: /etc/x"}]
             (folder / "trace.jsonl").write_text("\n".join(json.dumps(line) for line in lines) + "\n")
             text = report.report(c)
         self.assertIn("- 2026-09-30T10:00:00 solo check sneaking --boons 1\n", text)
         self.assertIn("solo setup --plugin  -> refused: the GM can't run that", text)
         self.assertNotIn("x" * 100, text)
+        # What Claude Code's permissions refused isn't a solo command, and isn't shown as one.
+        self.assertIn("- 2026-09-30T10:00:12 (not a solo command)  -> refused: Claude Code's permissions refused Write", text)
 
     def test_only_ids_numbers_and_flags_survive_the_leaving_out(self):
         self.assertEqual(report.bare({"a": "yes_no", "b": ["Extreme yes", 3, True], "c": {"d": "Some words here"}}),

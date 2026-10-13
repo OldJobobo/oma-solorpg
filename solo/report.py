@@ -62,7 +62,9 @@ def trace_lines(root, limit):
         for raw in path.read_text(encoding="utf-8").splitlines()[-limit:]:
             item = json.loads(raw)
             argv = [a if len(a) <= 80 else a[:79] + _LEFT_OUT for a in item.get("argv", [])]
-            lines.append(f"- {item.get('at', '')} solo {' '.join(argv)}" + (f"  -> refused: {item['error']}" if item.get("error") else ""))
+            # A command Claude Code's own permissions refused isn't a solo command, and has no argv.
+            command = f"solo {' '.join(argv)}" if argv else "(not a solo command)"
+            lines.append(f"- {item.get('at', '')} {command}" + (f"  -> refused: {item['error']}" if item.get("error") else ""))
     except (OSError, ValueError):
         pass
     return lines
