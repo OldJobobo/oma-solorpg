@@ -40,6 +40,8 @@ Item {
 
   readonly property string solo: decodeURIComponent(Qt.resolvedUrl("bin/solo").toString().replace(/^file:\/\//, ""))
   readonly property string campaign: currentFile.campaign
+  // The current campaign, when its state.json can't be read: its folder was moved or deleted.
+  property string lost: ""
   property var game: null
   property var library: null
   // The campaign whose card is asking "delete for good?", by folder.
@@ -159,7 +161,7 @@ Item {
     }
     currentFile.reload()
     root.opened = true
-    root.show(payload.view || (root.campaign !== "" ? "table" : "home"))
+    root.show(payload.view || (root.campaign !== "" && root.lost === "" ? "table" : "home"))
     if (payload.book) root.openBook()
   }
 
@@ -289,6 +291,7 @@ Item {
   onCampaignChanged: {
     if (root.fxDying) root.desk(["dying", "off"])
     root.game = null
+    root.lost = ""
     root.fxDying = false
     root.fxFailures = 0
     root.fxDead = false
@@ -903,13 +906,20 @@ Item {
     printErrors: false
     onFileChanged: reload()
     onLoaded: {
+      root.lost = ""
       try {
         root.game = JSON.parse(text())
       } catch (e) {
         console.warn("solo-play", "Ignoring unreadable state.json", e)
       }
     }
-    onLoadFailed: root.game = null
+    // solo writes state.json before it makes a campaign current, so one that can't be read is gone:
+    // Home says so, rather than the table loading for good.
+    onLoadFailed: {
+      root.game = null
+      root.lost = root.campaign
+      if (root.view === "table") root.show("home")
+    }
   }
 
   // The GM's turn in progress, written by `solo gm turn` as it streams.
@@ -1413,6 +1423,14 @@ Item {
             visible: root.view === "home"
             Layout.fillWidth: true
             spacing: Commons.Style.space(6)
+
+            Line {
+              objectName: "lost"
+              visible: root.lost !== ""
+              color: Commons.Color.urgent
+              size: Commons.Style.font.bodySmall
+              text: "The campaign in " + root.lost + " can't be read: its folder was moved or deleted. Pick another, or begin a new one."
+            }
 
             Line {
               visible: root.library !== null && root.library.campaigns.length === 0

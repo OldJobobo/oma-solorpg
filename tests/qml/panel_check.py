@@ -335,6 +335,7 @@ def main(out):
     errors += the_first_game(load, work, wait)
     errors += quiet_text_reads(engine, item, panel, out, wait)
     errors += adventures_not_ready(item, panel, out, wait)
+    errors += a_campaign_gone(item, panel, out, work, wait)
     print("bar tooltip:", bar.rootObject().tooltip())
     print("launched:")
     for command in LAUNCHED:
@@ -885,6 +886,33 @@ def adventures_not_ready(item, panel, out, wait):
     name = next((s["name"] for s in library["systems"] if s["id"] == known["system"]), None)
     if known.get("system_name") is None and name and labelled(panel.contentItem(), name) is None:
         problems.append(f"an adventure without a system_name no longer shows its system's name ({name!r})")
+    return problems
+
+
+def a_campaign_gone(item, panel, out, work, wait):
+    """`current` names a campaign whose folder is gone (moved, or deleted by hand): the Table goes Home and says so,
+    instead of "Loading the table" for good, whether it was open on the table or opens afterwards."""
+    pointer = work / "state" / "solo" / "current"
+    kept = pointer.read_text()
+    gone = work / "games" / "campaigns" / "gone"
+    problems = []
+    item.open(json.dumps({"view": "table"}))
+    wait(1000)
+    try:
+        pointer.write_text(f"{gone}\n")
+        wait(1500)
+        said = item.findChild(QObject, "lost")
+        if item.property("view") != "home" or said is None or not said.property("visible") or str(gone) not in said.property("text"):
+            problems.append(f"the Table open on a campaign that went is on {item.property('view')!r}, saying {said and said.property('text')!r}")
+        panel.grabWindow().save(str(out / "home-lost.png"))
+        item.close()
+        item.open("{}")
+        wait(1000)
+        if item.property("view") != "home":
+            problems.append(f"opened on a campaign that is gone, the Table shows {item.property('view')!r}")
+    finally:
+        pointer.write_text(kept)
+        wait(1500)
     return problems
 
 
