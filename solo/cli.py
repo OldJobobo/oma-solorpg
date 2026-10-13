@@ -108,10 +108,15 @@ def cmd_new(args):
     if not system_name:
         raise SoloError(f"{adventure['title']} doesn't name its system: add system = \"...\" to adventure.toml or pass --system")
     system_path = library.find_system(system_name)
+    system = packs.load_system(system_path)
+    gaps = packs.missing(system)
+    if gaps:
+        # Before a hero is made: a pack of names only has no creation tables, and its pre-made heroes can't be played on it either.
+        raise SoloError(f"{adventure['title']} can't begin until the rules it plays on are built. " + packs.missing_text(system, gaps))
     if args.character and (Path(args.character).expanduser() / "campaign.toml").exists():
         sheet = campaign.hero(Path(args.character).expanduser(), name=args.name)
     else:
-        sheet = creation.character(packs.load_system(system_path), args.character, name=args.name, seed=args.seed, adventure=adventure)
+        sheet = creation.character(system, args.character, name=args.name, seed=args.seed, adventure=adventure)
     root = Path(args.dir).expanduser() if args.dir else library.new_campaign_dir(adventure_path.name, sheet.get("name", "hero"))
     prefs = {"tone": args.tone, "lines": args.line, "veils": args.veil}
     root = campaign.create(root, system_path, adventure_path, sheet, args.title, prefs=prefs)
