@@ -178,10 +178,14 @@ Item {
       .concat(root.sounds.play).concat([path]))
   }
 
-  // The player's words to the GM (none: the GM carries on from what is recorded).
+  // The player's words to the GM (none: the GM carries on from what is recorded). They go
+  // in on stdin, by way of the environment, never as an argument: the process list is
+  // anyone's to read, a process's environment only its owner's.
   function speak(text) {
     root.turn = { status: "thinking", player: text, text: "", doing: "reading the table" }
-    Quickshell.execDetached([root.solo, "-C", root.campaign, "gm", "turn"].concat(text !== "" ? ["--", text] : []))
+    speaker.command = ["sh", "-c", 'printf %s "$SOLO_SAY" | exec "$@"', "speak", root.solo, "-C", root.campaign, "gm", "turn", "--", "-"]
+    speaker.environment = { SOLO_SAY: text }
+    speaker.startDetached()
   }
 
   // New beats in the story set off the desktop. The dice rattle and land with the Book's
@@ -888,6 +892,10 @@ Item {
       }
       onOpenTerminal: root.run(["play", root.campaign, "--terminal"], "gm")
     }
+  }
+
+  Process {
+    id: speaker
   }
 
   Process {

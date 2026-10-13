@@ -40,14 +40,14 @@ class GmTest(CampaignTest):
         self.addCleanup(patch.stop)
 
     def agent(self, name, events, fail_resume=False, code=0):
-        """A stand-in agent: records its arguments, prints the events as JSON lines."""
+        """A stand-in agent: records its arguments and then its prompt (stdin), prints the events as JSON lines."""
         lines = "\n".join(json.dumps(e) for e in events)
         script = self.bin / name
         script.write_text(textwrap.dedent(f"""\
             #!/usr/bin/env python3
             import json, sys
             with open({str(self.tmp / (name + '.calls'))!r}, "a") as f:
-                f.write(json.dumps(sys.argv[1:]) + "\\n")
+                f.write(json.dumps(sys.argv[1:] + [sys.stdin.read()]) + "\\n")
             if {fail_resume!r} and ("--resume" in sys.argv or "resume" in sys.argv):
                 print("No conversation found with session ID", file=sys.stderr)
                 sys.exit(1)
@@ -69,7 +69,7 @@ class GmTest(CampaignTest):
         self.assertEqual(result["status"], "done")
         self.assertEqual(self.said(), [("player", "I sneak past the gate."), ("gm", "The guards never look down. What now?")])
         first = self.calls("claude")[0]
-        self.assertEqual(first[-2], "--")
+        self.assertNotIn("--", first)  # the prompt comes on stdin, out of the process list
         self.assertTrue(first[-1].startswith(gm.BOOK_PROMPT))  # no session yet: catch up from the campaign
         self.assertIn("Bash(solo check:*)", first)
         self.assertNotIn("--resume", first)
@@ -79,16 +79,19 @@ class GmTest(CampaignTest):
         self.assertEqual(second[-1], "I climb the palisade.")
         self.assertEqual(second[second.index("--resume") + 1], "sess-1")
 
-    def test_words_that_start_with_a_dash_stay_the_players_words(self):
-        # `claude -p "-x ..."` would read them as an option and fail the turn.
+    def test_the_players_words_go_on_stdin_never_in_the_process_list(self):
+        # Arguments are any local user's to read in /proc; and `claude -p "-x ..."` would take them for an option.
         self.agent("claude", CLAUDE_STREAM)
         gm.turn(self.root, "Hi")
         gm.turn(self.root, "--help me, I'm falling")
-        self.assertEqual(self.calls("claude")[1][-2:], ["--", "--help me, I'm falling"])
+        *argv, prompt = self.calls("claude")[1]
+        self.assertEqual(prompt, "--help me, I'm falling")
+        self.assertFalse(any("falling" in a for a in argv))
         self.agent("codex", CODEX_STREAM)
         gm.turn(self.root, None, agent="codex")
         gm.turn(self.root, "-- then I run", agent="codex")
-        self.assertEqual(self.calls("codex")[1][-2:], ["--", "-- then I run"])
+        *argv, prompt = self.calls("codex")[1]
+        self.assertEqual((argv[-1], prompt), ("-", "-- then I run"))
 
     def test_a_new_campaign_waits_idle_for_its_first_turn(self):
         # The Book watches turn.json, and a watch set on a missing file never fires.
@@ -132,7 +135,7 @@ class GmTest(CampaignTest):
         gm.turn(self.root, "I wait.", agent="codex")
         first, second = self.calls("codex")
         self.assertTrue(first[-1].startswith(gm.BOOK_PROMPT))
-        self.assertEqual(second[-4:], ["resume", "thread-9", "--", "I wait."])
+        self.assertEqual(second[-4:], ["resume", "thread-9", "-", "I wait."])
         self.assertEqual(self.said()[-1], ("gm", "Mud and drums. What do you do?"))
         self.assertEqual(gm.status(self.root)["doing"], "")
 

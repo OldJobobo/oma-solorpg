@@ -66,6 +66,7 @@ class Process(QObject):
     runningChanged = Signal()
     commandChanged = Signal()
     command = prop("QVariantList", "command", [], notify=commandChanged)
+    environment = prop("QVariantMap", "environment", {})
     stdout = prop(QObject, "stdout", None)
     stderr = prop(QObject, "stderr", None)
 
@@ -79,6 +80,10 @@ class Process(QObject):
             QTimer.singleShot(0, self._run)
 
     running = Property(bool, _get_running, _set_running, notify=runningChanged)
+
+    @Slot()
+    def startDetached(self):
+        LAUNCHED.append(list(self.command))
 
     def _run(self):
         done = subprocess.run([str(c) for c in self.command], capture_output=True, text=True)

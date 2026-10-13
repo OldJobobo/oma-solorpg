@@ -309,7 +309,7 @@ class Adapter:
     """Runs one agent turn and reads its JSON lines. Subclasses build the command and
     read the events; `run` returns {session, text, error, stale}."""
 
-    def command(self, prompt, session, left=None):
+    def command(self, session, left=None):
         raise NotImplementedError
 
     def read(self, event, result, live):
@@ -323,10 +323,14 @@ class Adapter:
         # Every `solo` command the GM runs, refused ones too, for `solo report` (a play test's own trace file wins).
         env.setdefault("SOLO_TRACE", str(Path(root) / ".solo" / "trace.jsonl"))
         # stderr goes to a file: a pipe nobody reads while stdout streams can fill and stall the agent.
-        with tempfile.TemporaryFile("w+") as errors:
+        # The prompt goes in on stdin, from a file only the player can read: the player's words and
+        # the table's events never show in the process list, where other users could read them.
+        with tempfile.TemporaryFile("w+") as errors, tempfile.TemporaryFile("w+") as asked:
+            asked.write(prompt)
+            asked.seek(0)
             try:
                 process = subprocess.Popen(
-                    self.command(prompt, session, left), cwd=root, env=env, stdin=subprocess.DEVNULL,
+                    self.command(session, left), cwd=root, env=env, stdin=asked,
                     stdout=subprocess.PIPE, stderr=errors, text=True, start_new_session=True,
                     preexec_fn=_die_with_parent,
                 )
@@ -383,15 +387,15 @@ class Adapter:
 class Claude(Adapter):
     """Claude Code: `claude -p` with stream-json, partial messages for live typing."""
 
-    def command(self, prompt, session, left=None):
+    def command(self, session, left=None):
         tools = [f"Bash(solo {name}:*)" for name in campaign_commands()]
         command = ["claude", "-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages", *_CLAUDE_KIT,
                    "--allowedTools", *tools, "--disallowedTools", *_DENIED, "--max-turns", str(_max_turns())]
         # What the session has left to spend is a ceiling on this turn too.
         if left and left.get("usd"):
             command += ["--max-budget-usd", f"{left['usd']:.2f}"]
-        # The prompt goes last, after --: the player's words can start with a dash.
-        return command + _model() + ["--effort", effort()] + (["--resume", session] if session else []) + ["--", prompt]
+        # No prompt in the arguments: `claude -p` reads it from stdin.
+        return command + _model() + ["--effort", effort()] + (["--resume", session] if session else [])
 
     def read(self, event, result, live):
         kind = event.get("type")
@@ -429,13 +433,14 @@ class Claude(Adapter):
 class Codex(Adapter):
     """Codex: `codex exec --json`, resumed by thread id. Its messages come whole."""
 
-    def command(self, prompt, session, left=None):
+    def command(self, session, left=None):
         # Codex has no list of allowed commands: its sandbox lets the GM write in the campaign
         # folder (which `solo` needs) and nowhere else. (`--full-auto` said the same, until
         # Codex dropped it.)
         command = ["codex", "exec", "--json", "--skip-git-repo-check", "--sandbox", "workspace-write",
                    "-c", f'model_reasoning_effort="{effort()}"'] + _model()
-        return command + (["resume", session] if session else []) + ["--", prompt]
+        # `-`: the prompt comes on stdin.
+        return command + (["resume", session] if session else []) + ["-"]
 
     def read(self, event, result, live):
         kind = event.get("type")
