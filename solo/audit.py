@@ -529,6 +529,17 @@ def _labelled(text, labels):
     return found
 
 
+def _paired(text, labels):
+    """The values the pages give a stat by one of its labels: after it and a colon ("hp: 18"), or just
+    before it ("with 20 hp"). None when the label is also followed by something other than a number
+    ("armor: same as armor", "willpower points: -"): such a stat isn't always printed as a number
+    there, a recipe works it out, and the page's other values of it are no measure of this one."""
+    if any(re.search(rf"(?<![a-z]){re.escape(label)}\s*:(?!\s*\d)", text) for label in labels):
+        return None
+    before = {int(at.group(1)) for label in labels for at in re.finditer(rf"(?<![\w.])(\d+)\s+{re.escape(label)}(?![a-z]|\s*:)", text)}
+    return {value for value, _, _ in _labelled(text, labels)} | before
+
+
 def _entry_problems(ref, data, text, words, where, tracks):
     """What an entry's numbers say that its pages don't (see above)."""
     problems = []
@@ -539,12 +550,12 @@ def _entry_problems(ref, data, text, words, where, tracks):
         claims = {key: _labelled(text, names) for key, names in labels.items()}
         for path, key, number in numbers:
             said = f"gives {name}{path} {number}, and {where}"
-            printed = {value for value, _, _ in claims.get(key, [])}
+            printed = _paired(text, labels[key]) if key in labels else set()
             if not _says_number(number, text, words):
                 problems.append(f"{said} never says it")
             elif printed and number not in printed:
                 problems.append(f"{said} says {labels[key][0]}: {', '.join(map(str, sorted(printed)))}")
-            elif str(number) in words and not printed:
+            elif str(number) in words and printed is not None and not printed:
                 spots = [(at.start(), at.end()) for at in re.finditer(rf"(?<![\w]){number}(?![\w])", text)]
                 theirs = {(start, end): other for other, found in claims.items() if other != key for _, start, end in found}
                 if spots and all(spot in theirs for spot in spots) and not any(word in words for word in _NUMBER_WORDS.get(number, ())):

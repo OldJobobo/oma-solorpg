@@ -438,6 +438,13 @@ class BookCheckTest(unittest.TestCase):
         self.assertIn("ghoul: bestiary/ghoul gives stats.hp 12, and p. 3 says hp: 18", self.change("bestiary/ghoul.toml", "hp = 18", "hp = 12"))
         self.assertIn("ghoul: bestiary/ghoul gives stats.armor 2, and p. 3 says armor: 4", self.change("bestiary/ghoul.toml", "armor = 4", "armor = 2"))
 
+    def test_a_stat_the_page_gives_another_way_is_not_judged_by_the_label_alone(self):
+        # Armor a recipe adds up from the gear ("Same as armor") beside another monster's "Armor: 2", and HP given in words.
+        write(self.book / "pages" / "0003.txt", self.PAGES[3].replace("Armor: 4", "Armor: Same as armor") + "WIGHT. Armor: 2 HP: 30. A ghoul of the deep has more, with 20 HP.\n")
+        write(self.pack / "bestiary" / "ghoul.toml", (self.pack / "bestiary" / "ghoul.toml").read_text(encoding="utf-8").replace("hp = 18", "hp = 20"))
+        report = audit.audit(self.pack, "system")
+        self.assertFalse(audit.failed(report), audit.render(report))
+
     def test_a_monsters_movement_and_attack_skill_are_on_its_page(self):
         self.assertIn("ghoul: bestiary/ghoul gives stats.movement 99, and p. 3 never says it", self.change("bestiary/ghoul.toml", "movement = 10", "movement = 99"))
 
