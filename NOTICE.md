@@ -4,7 +4,7 @@
 
 This game is not affiliated with, sponsored, or endorsed by Fria Ligan AB. This Supplement was created under Fria Ligan AB's Dragonbane Third Party Supplement License.
 
-oma-solorpg is a third-party supplement for Dragonbane (first edition, Fria Ligan AB, 2023), published as a virtual tabletop module under the [Dragonbane Third-Party Tabletop Module License, version 1.1](https://freeleaguepublishing.com/wp-content/uploads/2026/03/Dragonbane-License-Agreement-version-1.1.pdf). To play Dragonbane it requires the Dragonbane core game; Ironsworn (below) needs no book. It is not a video game.
+oma-solorpg is a third-party supplement for Dragonbane (first edition, Fria Ligan AB, 2023), published as a virtual tabletop module under the [Dragonbane Third-Party Tabletop Module License, version 1.1](https://freeleaguepublishing.com/wp-content/uploads/2026/03/Dragonbane-License-Agreement-version-1.1.pdf). The notice above is the one that license recommends in its section 9, word for word: the supplement license it names is this one. To play Dragonbane it requires the Dragonbane core game; Ironsworn (below) needs no book. It is not a video game.
 
 ## What is Free League's
 

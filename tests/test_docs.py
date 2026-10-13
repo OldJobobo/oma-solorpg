@@ -73,6 +73,17 @@ class LicenseTest(unittest.TestCase):
         self.assertIn("A link to a table that wasn't imported is removed", notice)
         self.assertIn("Datasworn", notice)
 
+    def test_the_dragonbane_license_has_one_name_outside_the_notice_it_recommends(self):
+        # Free League's license is the Dragonbane Third-Party Tabletop Module License. The notice it
+        # recommends (section 9) calls it the Third Party Supplement License, and is kept word for word.
+        notice = "This Supplement was created under Fria Ligan AB's Dragonbane Third Party Supplement License."
+        files = [ROOT / "README.md", ROOT / "NOTICE.md", ROOT / "docs" / "INGESTION.md", ROOT / "site" / "index.html"]
+        for path in files:
+            text = path.read_text(encoding="utf-8").replace(notice, "")
+            names = set(re.findall(r"Dragonbane Third[- ]Party[\w -]*?License", text))
+            self.assertLessEqual(names, {"Dragonbane Third-Party Tabletop Module License"}, path.name)
+        self.assertIn(notice, (ROOT / "NOTICE.md").read_text(encoding="utf-8"))
+
 
 if __name__ == "__main__":
     unittest.main()
