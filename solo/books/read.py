@@ -29,7 +29,10 @@ def says(section, pattern):
 
 
 def count(word):
-    return int(word) if word.isdigit() else _COUNTS[word.lower()]
+    if word.isdigit() or word.lower() in _COUNTS:
+        return int(word) if word.isdigit() else _COUNTS[word.lower()]
+    raise SoloError(f"the importer reads {word!r} where it expects a number, and doesn't know it as one (it knows the digits and {', '.join(_COUNTS)}); "
+                    "this may be another printing than the importer was written for")
 
 
 def roll(text):

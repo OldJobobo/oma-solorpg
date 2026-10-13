@@ -13,7 +13,7 @@ from fake_book import BANNER, BODY, BOX, CELL, HEADER, HEADING, FakeBook
 from test_cli import CliCase
 
 from solo import SoloError, audit, booktables, books, foundry, library
-from solo.books import dice, grid
+from solo.books import dice, grid, read
 from solo.books.pack import Pack
 from solo.books import dragonbane_core
 from solo.books.dragonbane_core import tables
@@ -125,6 +125,13 @@ class DiceTest(unittest.TestCase):
     def test_the_die_of_a_label(self):
         self.assertEqual([dice.faces(label) for label in ("D6", "d20 FEAR", "D66", "D%")], [6, 20, 66, 100])
         self.assertEqual([dice.formula(sides) for sides in (6, 66, 100)], ["1d6", "d66", "1d100"])
+
+
+class CountTest(unittest.TestCase):
+    def test_a_count_in_words_the_importer_doesnt_know_is_said_not_a_key_error(self):
+        self.assertEqual((read.count("Three"), read.count("12")), (3, 12))
+        with self.assertRaisesRegex(SoloError, r"the importer reads 'eleven' where it expects a number, and doesn't know it as one"):
+            read.count("eleven")
 
 
 class TablesRecipeTest(unittest.TestCase):
