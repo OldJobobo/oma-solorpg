@@ -277,6 +277,109 @@ class SystemAuditTest(unittest.TestCase):
         self.assertEqual(report["unclaimed"], ["system.toml:untrained", "system.toml:weapons.sword"])
 
 
+class BookCheckTest(unittest.TestCase):
+    """A small rules pack true to its three pages, and the ways a copy can go wrong that the audit has to see:
+    each test changes one thing in the pack (or the book) and the audit must fail on it, naming it."""
+
+    PAGES = {
+        1: "FEAR TABLE\nD6 EFFECT\n1 Shakes and drops what they hold.\n2 Runs away screaming into the night.\n3-6 Freezes on the spot for a round.\n"
+           "A long sword has durability 12, STR 10, range 2, damage 2D8. Resting heals D6 HP. A dagger does D4.\n",
+        2: "FIREBOLT. Rank 1. The spell inflicts 2D6 damage to one target. It can be dodged.\n",
+        3: "GHOUL. Ferocity: 2 Movement: 10 Armor: 4 HP: 18. Its claws do 2D6 damage. It has 4 friends and 12 teeth.\n",
+    }
+
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.tmp = Path(folder.name)
+        self.book, self.pack = self.tmp / "extract", self.tmp / "pack"
+        for number, text in self.PAGES.items():
+            write(self.book / "pages" / f"{number:04d}.txt", text)
+        write(self.book / "manifest.json", json.dumps({"source": "made.pdf", "pages": 3}))
+        write(self.book / "toc.json", json.dumps([{"level": 1, "title": "Rules", "start": 1, "end": 3}]))
+        write(self.pack / "system.toml", """
+            format = 1
+            extends = "bundled:dragonbane"
+
+            [weapons.long_sword]
+            skill = "swords"
+            damage = "2d8"
+            str = 10
+            range = 2
+            durability = 12
+
+            [rest.stretch]
+            label = "Stretch rest"
+            recover = { hp = "1d6" }
+            time = { stretch = 1 }
+            """)
+        write(self.pack / "tables" / "fear.toml", """
+            name = "Fear"
+            formula = "1d6"
+            results = [
+              { range = [1, 1], text = "Shakes and drops what they hold." },
+              { range = [2, 2], text = "Runs away screaming into the night." },
+              { range = [3, 6], text = "Freezes on the spot for a round." },
+            ]
+            """)
+        write(self.pack / "bestiary" / "ghoul.toml", """
+            name = "Ghoul"
+            role = "A monster"
+            description = "Claws."
+            attack = { label = "Claws", value = 12, damage = "2d6" }
+            stats = { hp = 18, armor = 4, ferocity = 2, movement = 10 }
+            """)
+        write(self.pack / "spells" / "firebolt.toml", """
+            name = "Firebolt"
+            school = "elementalism"
+            rank = 1
+            damage = "2d6"
+            avoid = ["dodge"]
+            source = "p. 2"
+            """)
+        write(self.pack / "inventory.toml", f"""
+            source = "Made"
+            extract = "{self.book}"
+
+            [items.rules]
+            kind = "mechanic"
+            pages = [1]
+            status = "mapped"
+            to = ["system.toml:weapons", "system.toml:rest", "tables/fear"]
+
+            [items.spells]
+            kind = "spell"
+            pages = [2]
+            status = "mapped"
+            to = ["spells/firebolt"]
+
+            [items.ghoul]
+            kind = "creature"
+            pages = [3]
+            status = "mapped"
+            to = ["bestiary/ghoul"]
+            """)
+
+    def change(self, name, old, new):
+        """The audit's findings once `old` is `new` in the pack's file `name` (the book's, for pages/)."""
+        path = (self.book if name.startswith("pages/") else self.pack) / name
+        text = path.read_text(encoding="utf-8")
+        self.assertIn(old, text)
+        path.write_text(text.replace(old, new), encoding="utf-8")
+        report = audit.audit(self.pack, "system")
+        self.assertTrue(audit.failed(report), f"{name}: {old!r} -> {new!r} passed the audit")
+        return "\n".join(report["problems"] + report["unclaimed"] + report["unverified"])
+
+    def test_the_pack_true_to_its_pages_passes(self):
+        report = audit.audit(self.pack, "system")
+        self.assertFalse(audit.failed(report), audit.render(report))
+
+    def test_a_spell_no_item_claims_is_unclaimed(self):
+        write(self.pack / "spells" / "doom.toml", 'name = "Doom"\nschool = "elementalism"\nrank = 2\n')
+        report = audit.audit(self.pack, "system")
+        self.assertEqual(report["unclaimed"], ["spells/doom"])
+
+
 class PriceAuditTest(unittest.TestCase):
     """A price is read back beside its item's name, not only found somewhere on the page."""
 

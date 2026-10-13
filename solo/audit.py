@@ -37,6 +37,8 @@ STATUSES = ("mapped", "house", "engine", "skipped", "todo")
 # system.toml keys that describe the pack or an import, not the game.
 _SYSTEM_META = ("name", "family", "source", "foundry", "extends", "format")
 _RANGE = re.compile(r"^(\d+)\s*-\s*(\d+)$")
+# The folders of a pack that hold an entry a file (tables/fear.toml), as the engine loads them.
+_FOLDERS = ("tables", "characters", "bestiary", "spells", "moves", "assets")
 
 
 def load_inventory(pack):
@@ -219,9 +221,8 @@ def pack_units(pack, kind, loaded):
             for section in ("factions", "clocks", "weapons"):
                 units += [f"{name}:{section}.{key}" for key in data.get(section, {})]
     # This pack's own files: a pack laid over another claims only what it adds.
-    units += [f"tables/{tid}" for tid in packs._load_folder(pack / "tables")]
-    units += [f"characters/{cid}" for cid in packs._load_folder(pack / "characters")]
-    units += [f"bestiary/{mid}" for mid in packs._load_folder(pack / "bestiary")]
+    for folder in _FOLDERS:
+        units += [f"{folder}/{stem}" for stem in packs._load_folder(pack / folder)]
     units += [f"rules/{p.name}" for p in sorted((pack / "rules").glob("*.md"))]
     return units
 
@@ -243,7 +244,7 @@ def _covers(ref, unit):
     every weapon (the book's weapons table), system.toml:weapons.dagger only the dagger, and
     a reference deeper than a unit (weapons.dagger.damage) still claims its unit.
     tables/fear.toml claims tables/fear."""
-    ref = re.sub(r"^(tables|npcs|characters|scenes|bestiary)/([^:/]+)\.(toml|json|md)$", r"\1/\2", ref)
+    ref = re.sub(r"^(tables|npcs|characters|scenes|bestiary|spells|moves|assets)/([^:/]+)\.(toml|json|md)$", r"\1/\2", ref)
     return ref == unit or ref.startswith(unit + ".") or unit.startswith(ref + ".")
 
 
@@ -357,12 +358,9 @@ def _data_for(ref, loaded):
     """What a reference points at, as the engine loaded it (every layer of a pack)."""
     path, _, key = ref.partition(":")
     stem = Path(path).stem
-    if path.startswith("tables/"):
-        return loaded.get("tables", {}).get(stem)
-    elif path.startswith("bestiary/"):
-        return loaded.get("bestiary", {}).get(stem)
-    elif path.startswith("npcs/"):
-        return loaded.get("npcs", {}).get(stem)
+    folder = path.partition("/")[0]
+    if "/" in path and folder in (*_FOLDERS, "npcs"):
+        return loaded.get(folder, {}).get(stem)
     roots = {"system.toml": loaded, "adventure.toml": loaded, "creation.toml": loaded.get("creation"),
              "gear.toml": {"gear": loaded.get("gear"), "money": loaded.get("money")}}
     if not key or path not in roots:
