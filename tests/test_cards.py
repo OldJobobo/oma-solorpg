@@ -25,7 +25,7 @@ def deck(folder, faces):
         for at, text in enumerate(lines):
             made.line(2 * number + 2, 40 + 12 * at, text, 60, CELL)
         made.line(2 * number + 2, 200, "DRAGONBANE CORE SET", 60, CELL)
-    made.save()
+    made.save(pages=True)
     return Book(folder)
 
 
@@ -77,6 +77,8 @@ class TreasureTest(unittest.TestCase):
         report = audit.audit(self.tmp / "out", "system")
         self.assertEqual(report["unclaimed"], [])
         self.assertEqual(report["problems"], [])
+        # Read back against the made-up deck's own pages, every card's words and numbers are on its page.
+        self.assertEqual(report["unverified"], [])
 
 
 class FrameTest(unittest.TestCase):

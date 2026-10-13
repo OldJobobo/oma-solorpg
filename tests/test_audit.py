@@ -414,7 +414,14 @@ class BookCheckTest(unittest.TestCase):
               .replace("3-6 Freezes on the spot for a round.\nA", "A"))
         report = audit.audit(self.pack, "system")
         self.assertFalse(audit.failed(report), audit.render(report))
-        self.assertIn("is row 2", self.change("tables/fear.toml", '"Shakes and drops what they hold."', '"Runs away screaming into the night."'))
+        found = self.change("tables/fear.toml", 'text = "Shakes and drops what they hold." },\n  { range = [2, 2], text = "Runs away screaming into the night." }',
+                            'text = "Runs away screaming into the night." },\n  { range = [2, 2], text = "Shakes and drops what they hold." }')
+        self.assertIn('result 1 "Runs away screaming into the night." is row 2 on p. 1, not row 1', found)
+
+    def test_a_row_that_fits_several_results_proves_none_of_them_swapped(self):
+        # Two results alike: the row they both fit can't say which one moved, and each is judged against its own row.
+        found = self.change("tables/fear.toml", '"Shakes and drops what they hold."', '"Runs away screaming into the night."')
+        self.assertEqual(found, 'rules: tables/fear result 1 "Runs away screaming into the night." isn\'t what row 1 on p. 1 says ("shakes and drops what they hold")')
 
     def test_a_weapons_numbers_are_each_on_its_page(self):
         self.assertIn("rules: system.toml:weapons gives long_sword.durability 4, and p. 1 never says it",

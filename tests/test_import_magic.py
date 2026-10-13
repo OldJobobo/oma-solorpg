@@ -53,7 +53,7 @@ class MagicRecipeTest(unittest.TestCase):
                      "✦Duration: Shift", "It heals a living creature for 2D6 HP. Each level beyond the first heals an additional D6 HP.")
         flow.section(4, "Flare", "✦Rank: 3", "✦Prerequisite: ZAP and SOOTHE", "✦Requirement: Word", "✦Casting Time: Action", "✦Range: 1 kilometer", "✦Duration: Concentration",
                      "A flare inflicts 2D8 damage on a demon. Each extra level increases the damage by D8, nothing more. Armor and natural armor have no effect here; nothing dodges it.")
-        flow.made.save()
+        flow.made.save(pages=True)
         self.book = Book(self.tmp / "extract")
         self.pack = Pack(self.book, self.tmp / "out", dragonbane_core.NAME, dragonbane_core.extends(None))
         abilities.build(self.pack)
@@ -107,6 +107,8 @@ class MagicRecipeTest(unittest.TestCase):
         report = audit.audit(self.tmp / "out", "system")
         self.assertEqual(report["unclaimed"], [])
         self.assertEqual(report["problems"], [])
+        # Read back against the made-up book's own pages, every table, number and word is on them.
+        self.assertEqual(report["unverified"], [])
 
 
 if __name__ == "__main__":

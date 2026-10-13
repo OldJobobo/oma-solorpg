@@ -66,7 +66,7 @@ class BookOfMagicTest(unittest.TestCase):
         flow.section(2, "Spells", "The spells.")
         flow.section(3, "Astral Form", "✦Rank: 6", "✦Prerequisite: Any rank 5 spell", "✦Requirement: Word", "✦Casting Time: Action", "✦Range: Personal", "✦Duration: Shift", "You leave your body.")
         flow.section(1, "Index of Spells, Recipies, and Magic Tricks", "Zap 22.")
-        flow.made.save()
+        flow.made.save(pages=True)
         self.book = Book(self.tmp / "extract")
         self.pack = Pack(self.book, self.tmp / "out", dragonbane_magic.NAME, ["dragonbane-rulebook"])
         dragonbane_magic.build(self.pack)
@@ -112,6 +112,8 @@ class BookOfMagicTest(unittest.TestCase):
         report = audit.audit(self.tmp / "out", "system")
         self.assertEqual(report["unclaimed"], [])
         self.assertEqual(report["problems"], [])
+        # Read back against the made-up book's own pages, every table, number and word is on them.
+        self.assertEqual(report["unverified"], [])
 
 
 class LeftOutTest(unittest.TestCase):

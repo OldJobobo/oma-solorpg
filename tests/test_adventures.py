@@ -92,7 +92,7 @@ class AdventureTest(unittest.TestCase):
         made.mark(4, "NPCs: Specters")
         made.line(4, 96, "The specters have the stats of a wraith as per page 9 in the Rulebook.", 85, SAID)
         place(made, 4, 140, "4. Cellar", ["Damp steps lead down."], "✦Barrels: Rotten barrels line the wall.")
-        made.save()
+        made.save(pages=True)
         self.book = Book(self.tmp / "extract")
         self.system = packs.load_system(BEASTS)
         self.pack = AdventurePack(self.book, self.tmp / "pack", "A Barrow", self.system)
@@ -219,6 +219,8 @@ class AdventureTest(unittest.TestCase):
         self.assertEqual(packs.validate(self.system, loaded), [])
         report = audit.audit(self.tmp / "pack", "adventure")
         self.assertEqual((report["unclaimed"], report["problems"]), ([], []))
+        # Read back against the made-up book's own pages, every table, number and word is on them.
+        self.assertEqual(report["unverified"], [])
 
 
 class RecipesTest(unittest.TestCase):

@@ -735,14 +735,19 @@ def _row_problems(at, rows, page_words, where):
     if any(_fits(words, row["words"]) for _, words in row["own"]):
         missing = list(dict.fromkeys(w for said in row["said"] for w in _tokens(said) if not _has(page_words, w)))
         return [f"isn't on {where} (no {', '.join(missing[:4])})"] if missing else []
-    theirs = [span for span, _, words in row["other"] if _fits(words, row["words"])]
+    # Another range's row is this result's when it fits this result alone: a row that fits other results of the table as
+    # well (results that share their words, or a row run on into the title of the table below it) proves nothing.
+    theirs = [span for span, _, words in row["other"] if _fits(words, row["words"])
+              and not any(_fits(words, found["words"]) for other, found in enumerate(rows) if other != at)]
     if theirs:
         return [f"is row {'-'.join(dict.fromkeys(map(str, theirs[0])))} on {where}, not row {row['label']}"]
     fitting = sum(1 for found in rows if any(_fits(words, found["words"]) for _, words in found["own"]))
     if fitting < 2 or fitting * 2 <= sum(1 for found in rows if found["words"]):
         return []
     if row["own"]:
-        return [f"isn't what row {row['label']} on {where} says (\"{_short(row['own'][0][0], 40)}\")"]
+        # A row of short words only ("you run from the", the rest wrapped elsewhere) says too little to say it says something else.
+        said = [text for text, _ in row["own"] if _tokens(text)]
+        return [f"isn't what row {row['label']} on {where} says (\"{_short(said[0], 40)}\")"] if said else []
     return [f"has no row {row['label']} on {where}: the page doesn't print that range"]
 
 

@@ -194,7 +194,7 @@ class TablesRecipeTest(unittest.TestCase):
             made.line(5, 120 + 17 * row, str(row + 1), 70, CELL)
             for cell, x in zip(cells, [100, 180, 260, 340, 420, 500]):
                 made.line(5, 120 + 17 * row, cell, x, CELL)
-        made.save()
+        made.save(pages=True)
         self.book = Book(self.tmp / "extract")
         self.pack = Pack(self.book, self.tmp / "out", dragonbane_core.NAME, dragonbane_core.extends(None))
         tables.build(self.pack)
@@ -234,6 +234,8 @@ class TablesRecipeTest(unittest.TestCase):
         report = audit.audit(self.tmp / "out", "system")
         self.assertEqual(report["unclaimed"], [])
         self.assertEqual(report["problems"], [])
+        # Read back against the made-up book's own pages, every table, number and word is on them.
+        self.assertEqual(report["unverified"], [])
 
 
 class SentenceColumnsTest(unittest.TestCase):
