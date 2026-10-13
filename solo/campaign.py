@@ -4160,7 +4160,10 @@ def _shift(value, old, names=None):
     elif isinstance(value, int) or (isinstance(value, float) and math.isfinite(value)):
         return int(value)
     elif text and re.fullmatch(r"[+-]\d+", text):
-        return old + int(text)
+        try:
+            return old + int(text)
+        except ValueError:  # more digits than Python reads as a number (4300): no step is that long
+            raise SoloError(f"can't use a step of {len(text) - 1} digits: write \"+1\", \"-1\" or a number") from None
     elif text and names and text in names:
         return names[text]
     else:
@@ -4213,7 +4216,8 @@ def _time_words(text):
     spent = {}
     for number, _, unit in found:
         spent[unit] = spent.get(unit, 0) + (float(number) if number else 1)
-    return {unit: int(amount) if amount == int(amount) else amount for unit, amount in spent.items()}
+    # A number too long for a float is infinity, left as it is for _seconds to refuse.
+    return {unit: int(amount) if math.isfinite(amount) and amount == int(amount) else amount for unit, amount in spent.items()}
 
 
 def _memory(value):

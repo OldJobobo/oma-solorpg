@@ -25,7 +25,8 @@ SCHEMA = {
     "npcs": None, "fact": None, "clues": None,
 }
 FIELDS = {"npc": sorted(campaign._NPC_FIELDS), "faction": ["name", "standing", "memory"]}
-WORDS = ["", "two", "+1", "-1", "friendly", "dead", "open", "kept", "2 shifts", "a stretch", "1", "-2", " 4 ", "1e400", "nan", "inf"]
+WORDS = ["", "two", "+1", "-1", "friendly", "dead", "open", "kept", "2 shifts", "a stretch", "1", "-2", " 4 ", "1e400", "nan", "inf",
+         "9" * 400 + " hours", "+" + "9" * 5000]
 
 
 class CommitFuzzTest(CampaignTest):

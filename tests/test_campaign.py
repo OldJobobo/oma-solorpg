@@ -174,6 +174,21 @@ class CommitTest(CampaignTest):
             c.commit({"facts": {"gate.guards": 2.5}})
         json.loads((self.root / "state.json").read_text(), parse_constant=self.fail)
 
+    def test_a_number_too_long_to_read_is_refused_with_a_sentence(self):
+        # 400 digits are no float, and Python reads an int of 4300 digits at most: both ended in "something went wrong".
+        with self.session() as c:
+            count = len(c.events)
+            for payload, message in (
+                ({"time": "9" * 400 + " hours"}, "time: hours is a number from zero up"),
+                ({"consequence": {"text": "the guard remembers", "after": "9" * 400 + " hours"}}, "after: hours is a number from zero up"),
+                ({"chaos": "+" + "9" * 5000}, "can't use a step of 5000 digits"),
+                ({"pc": {"hp": "-" + "9" * 5000}}, "can't use a step of 5000 digits"),
+                ({"clock": {"dark_ritual": "+" + "9" * 5000}}, "can't use a step of 5000 digits"),
+            ):
+                with self.subTest(payload=repr(payload)[:80]), self.assertRaisesRegex(SoloError, message):
+                    c.commit(payload)
+            self.assertEqual(len(c.events), count)
+
     def test_removing_what_the_hero_lacks_warns_about_the_right_list(self):
         with self.session() as c:
             event = c.commit({"pc": {"abilities": {"remove": ["Veteran", "Berserker"]}, "items": {"remove": ["rope", "lantern"]}}})
