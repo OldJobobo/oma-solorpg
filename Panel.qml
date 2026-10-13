@@ -830,7 +830,8 @@ Item {
   function rollHead() {
     var check = root.lastCheck
     if (!check) return ""
-    var what = check.stat ? " +" + check.stat : check.track_name ? " (" + check.track_name + ")" : ""
+    // A move says the stat it added; a skill roll's label is the skill already.
+    var what = check.stat && check.outcome.hit !== undefined ? " +" + check.stat : check.track_name ? " (" + check.track_name + ")" : ""
     return (check.type === "push" ? "Pushed " : check.type === "burn" ? "Burned: " : "") + check.label + what
   }
 

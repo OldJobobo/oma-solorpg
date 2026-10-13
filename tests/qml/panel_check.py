@@ -506,6 +506,8 @@ def desk_moments(item, panel, out, work, wait):
 
     expect("a Dragon", lambda c: c.check("awareness", rng=Dice(1, 3, 3, 3, 3)),
            ["pw-play " + str(work / "cache"), "/dice-", "desk --after 1.94 flash dragon", "sleep \"$0\"; exec \"$@\" 1.94 pw-play", "/dragon-"], shot="table-dragon")
+    if labelled(panel.contentItem(), "Awareness") is None:  # the skill once, not "Awareness +awareness"
+        problems.append("the roll's heading doesn't read just Awareness")
     expect("a blow to dying", lambda c: c.wound("hero", "40", "a rockfall", armor=False, rng=Dice()),
            ["desk flash hit", "/hit-", "desk dying on 0", "/heartbeat-"], shot="table-dying")
     # Dying, the Table offers the death roll (and the solo rules' Rally and Save yourself), not what the hero can't do.
@@ -569,6 +571,8 @@ def a_game_of_moves(item, panel, out, work, wait):
     wait(1500)
     if state()["last_check"]["type"] != "act" or state()["last_check"]["stat"] != "edge":
         problems.append(f"the Table's move wasn't rolled: {trouble(item) or state()['last_check']}")
+    if labelled(panel.contentItem(), "Face Danger +edge") is None:
+        problems.append("a move's heading doesn't say the stat it added")
     item.setProperty("adds", 1)
     item.pickMove("gather_information")  # one stat: it rolls at once, with the add
     wait(1500)
