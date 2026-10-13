@@ -7,6 +7,7 @@ import Quickshell.Wayland
 import qs.Commons as Commons
 import qs.Ui
 import "book"
+import "book/Common.js" as Common
 
 // oma-solorpg on the desktop: two windows and a watcher.
 //
@@ -145,7 +146,8 @@ Item {
   readonly property var system: adventure ? library.systems.filter(s => s.id === adventure.system)[0] || null : null
 
   readonly property color textColor: Commons.Color.popups.text
-  readonly property color dim: Qt.darker(Commons.Color.popups.text, 1.6)
+  // Captions and asides: as quiet as WCAG AA lets small text be (4.5:1), on light themes as on dark.
+  readonly property color dim: Common.fade(Commons.Color.popups.text, Commons.Color.popups.background, 4.6, 0.5)
   readonly property color faint: Qt.rgba(textColor.r, textColor.g, textColor.b, 0.15)
 
   function open(payloadJson) {
@@ -937,7 +939,8 @@ Item {
     id: theme
     readonly property color text: Commons.Color.popups.text
     readonly property color dim: root.dim
-    readonly property color faint: Qt.rgba(text.r, text.g, text.b, 0.22)
+    // Rules, borders, blanks and what can't be clicked: quieter still, at 3:1, what WCAG asks of lines and controls.
+    readonly property color faint: Common.fade(text, background, 3, 0.65)
     readonly property color background: Commons.Color.popups.background
     readonly property color surface: Qt.tint(Commons.Color.popups.background, Qt.rgba(text.r, text.g, text.b, 0.05))
     readonly property color accent: Commons.Color.accent

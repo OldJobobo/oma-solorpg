@@ -564,7 +564,7 @@ Item {
                 visible: cutInput.text === ""
                 textFormat: Text.PlainText
                 font: cutInput.font
-                color: book.theme.faint
+                color: book.theme.dim
                 text: "what to avoid (optional)"
               }
             }
@@ -637,7 +637,7 @@ Item {
                   visible: input.text === "" && !input.activeFocus || input.text === "" && book.busy
                   textFormat: Text.PlainText
                   font: input.font
-                  color: book.theme.faint
+                  color: book.theme.dim
                   text: book.dead ? "An epilogue, if you want one…" : book.busy ? "The GM is writing…" : "What do you do?"
                 }
               }

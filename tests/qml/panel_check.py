@@ -312,6 +312,7 @@ def main(out):
     errors += errors_by_source(item, work, wait)
     errors += commands_wait_their_turn(item, panel, work, wait)
     errors += the_first_game(load, work, wait)
+    errors += quiet_text_reads(engine, item, panel, out, wait)
     print("bar tooltip:", bar.rootObject().tooltip())
     print("launched:")
     for command in LAUNCHED:
@@ -775,6 +776,44 @@ def commands_wait_their_turn(item, panel, work, wait):
         problems.append(f"what was asked while the roll ran didn't run after it, in order: {asked[-2:]} ({trouble(item)})")
     if item.property("busy") or not strength.property("enabled"):
         problems.append("the Table stayed busy after the commands ended")
+    return problems
+
+
+def contrast(a, b):
+    """WCAG's contrast between a QColor and the background `b` it is drawn on (a translucent one as it shows there)."""
+    alpha = a.alphaF()
+    a = QColor.fromRgbF(*(x * alpha + y * (1 - alpha) for x, y in zip((a.redF(), a.greenF(), a.blueF()), (b.redF(), b.greenF(), b.blueF()))))
+
+    def luminance(c):
+        def channel(v):
+            return v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4
+        return 0.2126 * channel(c.redF()) + 0.7152 * channel(c.greenF()) + 0.0722 * channel(c.blueF())
+    la, lb = luminance(a), luminance(b)
+    return (max(la, lb) + 0.05) / (min(la, lb) + 0.05)
+
+
+def quiet_text_reads(engine, item, panel, out, wait):
+    """Dim text (the Table's captions, the Book's asides) keeps WCAG AA's 4.5:1 and stays quieter than the body, and
+    faint (rules, borders, blanks) 3:1 and quieter than dim, on a dark theme (Tokyo Night) and a light one (Catppuccin
+    Latte), where darkening the text had made dim louder than the body."""
+    from PySide6.QtQml import QQmlComponent
+    holder = QQmlComponent(engine)
+    holder.setData(b"import QtQuick\nimport qs.Commons as Commons\nQtObject { property QtObject colors: Commons.Color }", QUrl())
+    popups = holder.create().property("colors").property("popups")
+    theme = item.findChild(QObject, "book").property("theme")
+    problems = []
+    dark = (popups.property("text"), popups.property("background"))
+    for name, text, background in (("Tokyo Night", *dark), ("Catppuccin Latte", QColor("#4c4f69"), QColor("#eff1f5"))):
+        popups.setProperty("text", text)
+        popups.setProperty("background", background)
+        wait(100)
+        body, dim, faint = (contrast(c, background) for c in (text, item.property("dim"), theme.property("faint")))
+        if not (4.5 <= dim < body and 3 <= faint < dim):
+            problems.append(f"on {name} the body reads {body:.2f}:1, dim {dim:.2f}:1 and faint {faint:.2f}:1")
+        if name != "Tokyo Night":
+            panel.grabWindow().save(str(out / "table-light.png"))
+    popups.setProperty("text", dark[0])
+    popups.setProperty("background", dark[1])
     return problems
 
 
