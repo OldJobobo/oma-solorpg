@@ -43,6 +43,17 @@ def button(item, text):
     return None
 
 
+def labelled(item, text):
+    """The visible item under `item` whose text is `text` (a heading, a line)."""
+    for child in item.childItems():
+        if child.property("text") == text and child.isVisible():
+            return child
+        found = labelled(child, text)
+        if found is not None:
+            return found
+    return None
+
+
 def trouble(item):
     """What the Table says went wrong, from its commands and from its reads ("" when nothing did)."""
     return "\n".join(t for t in (item.property(name).toVariant()["text"] for name in ("error", "queryError")) if t)
@@ -621,6 +632,10 @@ def magic_and_dragons(item, panel, out, work, wait):
     if sorted(a["use"] for a in sheet_view["abilities"] if a["use"]) != ["alone", "attack", "rest", "round"]:
         problems.append(f"the abilities aren't sorted into where they are asked for: {sheet_view['abilities']}")
     panel.grabWindow().save(str(out / "table-magic.png"))
+    # In a fight the weapons come right under the last roll, above the spells and abilities.
+    axe, magic = button(panel.contentItem(), "Long axe"), labelled(panel.contentItem(), "Magic")
+    if axe is None or magic is None or axe.mapToScene(QPointF(0, 0)).y() > magic.mapToScene(QPointF(0, 0)).y():
+        problems.append("in a fight the weapons are below the spells")
 
     item.setProperty("power", 2)
     item.cast(next(s for s in item.ready().toVariant() if s["name"] == "Ember"), False)

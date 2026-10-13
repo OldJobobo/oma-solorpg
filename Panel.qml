@@ -2246,6 +2246,132 @@ Item {
 
             ErrorLine { place: "roll" }
 
+            // Fight: the GM starts and ends it; the clicks here are the pure mechanics. Right under
+            // the last roll, so a fight's weapons aren't below the spells and the abilities.
+
+            Heading { text: root.fight ? "Fight · round " + root.fight.round : ""; visible: root.fight !== null }
+
+            Line {
+              visible: root.fight !== null
+              size: Commons.Style.font.caption
+              color: root.dim
+              text: "Initiative: " + root.orderText()
+            }
+
+            Repeater {
+              model: root.foeIds.length
+              delegate: Card {
+                id: foeCard
+                required property int index
+                readonly property string modelData: root.foeIds[index] || ""
+                readonly property var foe: root.fight && root.fight.foes[modelData] ? root.fight.foes[modelData] : ({ name: "", hp: 0, max: 1, armor: 0, down: true })
+                clickable: !foe.down
+                selected: !foe.down && root.aimedAt() === modelData
+                opacity: foe.down ? 0.5 : 1
+                onClicked: root.target = modelData
+
+                Meter {
+                  label: foeCard.foe.name + (foeCard.foe.down ? " (down)" : foeCard.foe.armor ? " · armor " + foeCard.foe.armor : "")
+                  value: foeCard.foe.hp
+                  maximum: foeCard.foe.max
+                }
+
+                Act {
+                  visible: !foeCard.foe.down && !root.dead && !(root.fight && root.fight.incoming)
+                  text: "Attacks you"
+                  tooltipText: "Roll this foe's attack"
+                  onClicked: root.act(["enemy", foeCard.modelData], "fight")
+                }
+              }
+            }
+
+            Line {
+              visible: root.fight !== null && !root.dying && !root.dead && root.standing().length > 0 && !root.fight.incoming
+              size: Commons.Style.font.caption
+              color: root.dim
+              text: "Attack the selected foe (boons and banes above apply):"
+            }
+
+            Flow {
+              Layout.fillWidth: true
+              spacing: Commons.Style.space(4)
+              visible: root.fight !== null && !root.dying && !root.dead && root.standing().length > 0 && !root.fight.incoming
+
+              Repeater {
+                model: root.kit.weapons.filter(w => w.attack)
+                delegate: Choice {
+                  required property var modelData
+                  text: modelData.label + " " + modelData.damage + root.weaponNote(modelData)
+                  tooltipText: modelData.condition === "broken" ? "Broken: mend it first" : modelData.condition === "damaged" ? "Damaged: a bane on every use until it is mended" : ""
+                  enabled: modelData.condition !== "broken" && root.waiting === null && !root.busy
+                  opacity: enabled ? 1 : 0.4
+                  onClicked: root.attack(modelData.id)
+                }
+              }
+            }
+
+            Riders {
+              visible: root.fight !== null && !root.dying && !root.dead && root.standing().length > 0 && !root.fight.incoming && choices.length > 0
+              scope: "attack"
+            }
+
+            Line {
+              visible: root.fight !== null && !!root.fight.incoming
+              color: Commons.Color.urgent
+              font.bold: true
+              text: root.fight && root.fight.incoming ? root.fight.incoming.name + " hits: " + root.fight.incoming.damage
+                + " damage" + (root.kit.armor ? ", armor " + root.kit.armor : "") : ""
+            }
+
+            Flow {
+              Layout.fillWidth: true
+              spacing: Commons.Style.space(4)
+              visible: root.fight !== null && !!root.fight.incoming
+
+              Act {
+                visible: !root.dying && root.fight !== null && !!root.fight.incoming && root.fight.incoming.can_defend !== false
+                text: "Evade"
+                onClicked: root.act(["defend", "evade"].concat(root.useArgs("defend", "dodge")), "fight", () => root.spent("defend", "dodge"))
+              }
+
+              Repeater {
+                model: !root.dying && root.fight && root.fight.incoming && root.fight.incoming.can_defend !== false
+                  && root.fight.incoming.can_parry !== false ? root.kit.weapons.filter(w => w.parry) : []
+                delegate: Choice {
+                  required property var modelData
+                  text: "Parry: " + modelData.label + root.weaponNote(modelData)
+                  tooltipText: modelData.condition === "broken" ? "Broken: mend it first" : ""
+                  enabled: modelData.condition !== "broken" && !root.busy
+                  opacity: enabled ? 1 : 0.4
+                  onClicked: root.act(["defend", "parry", "--with", modelData.id].concat(root.useArgs("defend", "parry")), "fight", () => root.spent("defend", "parry"))
+                }
+              }
+
+              Act {
+                text: "Take it"
+                onClicked: root.act(["defend", "take"], "fight")
+              }
+            }
+
+            Riders {
+              visible: root.fight !== null && !root.dying && !root.dead && choices.length > 0
+              scope: "defend"
+            }
+
+            Riders {
+              visible: root.fight !== null && !root.dying && !root.dead && choices.length > 0
+              scope: "round"
+            }
+
+            Act {
+              visible: root.fight !== null && !root.dead
+              text: "Next round"
+              tooltipText: "Deal new initiative cards"
+              onClicked: root.act(["fight", "--round"].concat(root.useArgs("round", "")), "fight", () => root.spent("round", ""))
+            }
+
+            ErrorLine { place: "fight" }
+
             // Magic: what the hero can cast, with the power, boons and banes above, and what is ready to cast.
 
             Heading { text: "Magic"; visible: root.magic !== null && !root.dying && !root.dead }
@@ -2518,131 +2644,6 @@ Item {
                 onClicked: root.act(["advance"], "roll")
               }
             }
-
-            // Fight: the GM starts and ends it; the clicks here are the pure mechanics.
-
-            Heading { text: root.fight ? "Fight · round " + root.fight.round : ""; visible: root.fight !== null }
-
-            Line {
-              visible: root.fight !== null
-              size: Commons.Style.font.caption
-              color: root.dim
-              text: "Initiative: " + root.orderText()
-            }
-
-            Repeater {
-              model: root.foeIds.length
-              delegate: Card {
-                id: foeCard
-                required property int index
-                readonly property string modelData: root.foeIds[index] || ""
-                readonly property var foe: root.fight && root.fight.foes[modelData] ? root.fight.foes[modelData] : ({ name: "", hp: 0, max: 1, armor: 0, down: true })
-                clickable: !foe.down
-                selected: !foe.down && root.aimedAt() === modelData
-                opacity: foe.down ? 0.5 : 1
-                onClicked: root.target = modelData
-
-                Meter {
-                  label: foeCard.foe.name + (foeCard.foe.down ? " (down)" : foeCard.foe.armor ? " · armor " + foeCard.foe.armor : "")
-                  value: foeCard.foe.hp
-                  maximum: foeCard.foe.max
-                }
-
-                Act {
-                  visible: !foeCard.foe.down && !root.dead && !(root.fight && root.fight.incoming)
-                  text: "Attacks you"
-                  tooltipText: "Roll this foe's attack"
-                  onClicked: root.act(["enemy", foeCard.modelData], "fight")
-                }
-              }
-            }
-
-            Line {
-              visible: root.fight !== null && !root.dying && !root.dead && root.standing().length > 0 && !root.fight.incoming
-              size: Commons.Style.font.caption
-              color: root.dim
-              text: "Attack the selected foe (boons and banes above apply):"
-            }
-
-            Flow {
-              Layout.fillWidth: true
-              spacing: Commons.Style.space(4)
-              visible: root.fight !== null && !root.dying && !root.dead && root.standing().length > 0 && !root.fight.incoming
-
-              Repeater {
-                model: root.kit.weapons.filter(w => w.attack)
-                delegate: Choice {
-                  required property var modelData
-                  text: modelData.label + " " + modelData.damage + root.weaponNote(modelData)
-                  tooltipText: modelData.condition === "broken" ? "Broken: mend it first" : modelData.condition === "damaged" ? "Damaged: a bane on every use until it is mended" : ""
-                  enabled: modelData.condition !== "broken" && root.waiting === null && !root.busy
-                  opacity: enabled ? 1 : 0.4
-                  onClicked: root.attack(modelData.id)
-                }
-              }
-            }
-
-            Riders {
-              visible: root.fight !== null && !root.dying && !root.dead && root.standing().length > 0 && !root.fight.incoming && choices.length > 0
-              scope: "attack"
-            }
-
-            Line {
-              visible: root.fight !== null && !!root.fight.incoming
-              color: Commons.Color.urgent
-              font.bold: true
-              text: root.fight && root.fight.incoming ? root.fight.incoming.name + " hits: " + root.fight.incoming.damage
-                + " damage" + (root.kit.armor ? ", armor " + root.kit.armor : "") : ""
-            }
-
-            Flow {
-              Layout.fillWidth: true
-              spacing: Commons.Style.space(4)
-              visible: root.fight !== null && !!root.fight.incoming
-
-              Act {
-                visible: !root.dying && root.fight !== null && !!root.fight.incoming && root.fight.incoming.can_defend !== false
-                text: "Evade"
-                onClicked: root.act(["defend", "evade"].concat(root.useArgs("defend", "dodge")), "fight", () => root.spent("defend", "dodge"))
-              }
-
-              Repeater {
-                model: !root.dying && root.fight && root.fight.incoming && root.fight.incoming.can_defend !== false
-                  && root.fight.incoming.can_parry !== false ? root.kit.weapons.filter(w => w.parry) : []
-                delegate: Choice {
-                  required property var modelData
-                  text: "Parry: " + modelData.label + root.weaponNote(modelData)
-                  tooltipText: modelData.condition === "broken" ? "Broken: mend it first" : ""
-                  enabled: modelData.condition !== "broken" && !root.busy
-                  opacity: enabled ? 1 : 0.4
-                  onClicked: root.act(["defend", "parry", "--with", modelData.id].concat(root.useArgs("defend", "parry")), "fight", () => root.spent("defend", "parry"))
-                }
-              }
-
-              Act {
-                text: "Take it"
-                onClicked: root.act(["defend", "take"], "fight")
-              }
-            }
-
-            Riders {
-              visible: root.fight !== null && !root.dying && !root.dead && choices.length > 0
-              scope: "defend"
-            }
-
-            Riders {
-              visible: root.fight !== null && !root.dying && !root.dead && choices.length > 0
-              scope: "round"
-            }
-
-            Act {
-              visible: root.fight !== null && !root.dead
-              text: "Next round"
-              tooltipText: "Deal new initiative cards"
-              onClicked: root.act(["fight", "--round"].concat(root.useArgs("round", "")), "fight", () => root.spent("round", ""))
-            }
-
-            ErrorLine { place: "fight" }
 
             // Rest
 
