@@ -603,6 +603,9 @@ def magic_and_dragons(item, panel, out, work, wait):
     cast = [e for e in state()["log"] if e["type"] == "spell"]
     if trouble(item) or not cast or wp() != 7:
         problems.append(f"the Table's cast didn't cost two levels of Ember: {trouble(item) or wp()}")
+    with campaign.session(game) as c:
+        if c.state["choice"]:  # the cast's own dice came up a Dragon (1 in 20): its choice would hold up the fight below
+            c.dragon(next((o for o in c.state["choice"]["options"] if o != "free"), c.state["choice"]["options"][0]))
     if item.property("power") != 1:
         problems.append("the power level didn't go back to 1 after the cast")
 
