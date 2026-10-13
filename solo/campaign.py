@@ -73,6 +73,9 @@ _STORY_SIZE = 150
 # those events are the same bytes (their crc32) and the packs and the engine are the ones it was made from,
 # and it is kept again once the log has grown this many events past it.
 _KEEP_EVERY = 50
+# The campaigns open in this process, the innermost last (see session): a command's dice fixed by
+# SOLO_SEED are seeded by the event it writes first (next_seq).
+_OPEN = []
 
 
 def find(start=None):
@@ -89,6 +92,11 @@ def find(start=None):
         raise SoloError(f"{here} isn't a campaign folder (no campaign.toml): pick one with `solo use <dir>`, or start one with `solo new <adventure>`")
     else:
         raise SoloError("no campaign here: start one with `solo new <adventure>` or pick one with `solo use <dir>`")
+
+
+def next_seq():
+    """The seq the next event of the campaign open now will have (1 when none is)."""
+    return len(_OPEN[-1].events) + 1 if _OPEN else 1
 
 
 def set_current(root):
@@ -257,6 +265,7 @@ def session(root, new=False):
         # A crash between an event's write and state.json's leaves state.json behind the log:
         # any command brings it up to date, one that only reads too.
         behind = _saved_seq(root / "state.json") != campaign.state["seq"]
+        _OPEN.append(campaign)
         try:
             yield campaign
         except BaseException:
@@ -266,6 +275,7 @@ def session(root, new=False):
                 campaign.state, campaign.entries = replay(campaign.system, campaign.adventure, campaign.events)
             raise
         finally:
+            _OPEN.remove(campaign)
             if len(campaign.events) != count and not campaign.unwritten:
                 # Whatever changed (a move, time passing, a click on the panel) may be the
                 # moment a consequence was waiting for. Not after a write that failed: the

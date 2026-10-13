@@ -1721,9 +1721,11 @@ def _open(args):
 
 def _rng():
     """SOLO_SEED makes rolls repeatable (tests, demos); otherwise dice use the system RNG.
+    A command's dice are seeded by SOLO_SEED and the seq of the event it writes first, so a
+    seeded run repeats roll for roll and one command doesn't roll what the last one did.
     Events written under it carry the seed, so the log and the Book show it."""
     seed = dice.fixed_seed()
-    return random.Random(seed) if seed is not None else None
+    return random.Random(f"{seed}:{campaign.next_seq()}") if seed is not None else None
 
 
 def _prefs_arguments(sub):

@@ -158,10 +158,11 @@ class CliTest(CliCase):
         self.assertIn("already taken a stretch rest this shift", err)
 
     def test_play_through_the_cli(self):
+        os.environ["SOLO_SEED"] = "164"
         self.new_game()
         code, out, _ = self.solo("-C", self.game, "check", "sneaking")
         report = json.loads(out)
-        # SOLO_SEED=5 rolls a 20: a Demon, which rolls its effect, ticks the ritual clock and rolls an omen
+        # SOLO_SEED=164 rolls a 20 here: a Demon, which rolls its effect, ticks the ritual clock and rolls an omen
         self.assertEqual((code, report["summary"]), (0, "Sneaking: 20 vs 4, Demon!"))
         self.assertEqual(report["then"][:2], ["Demon effect (3): Someone noticed", "The ritual below 1/6"])
         self.assertNotIn("push", report)
@@ -197,6 +198,15 @@ class CliTest(CliCase):
             code, _, err = self.solo("-C", self.game, "check", "sneaking")
         self.assertEqual(code, 1)
         self.assertIn("SOLO_SEED must be a whole number", err)
+
+    def test_a_seeded_run_repeats_and_its_rolls_differ(self):
+        # Every command's dice were seeded alike: under SOLO_SEED every 1d20 was the same number.
+        totals = []
+        for game in (self.game, str(self.tmp / "again")):
+            self.solo("new", str(RED_TUSK), "--dir", game, "--character", str(RAGNA))
+            totals.append([json.loads(self.solo("-C", game, "roll", "1d100")[1])["event"]["result"]["total"] for _ in range(6)])
+        self.assertEqual(totals[0], totals[1])  # the same seed, the same run
+        self.assertGreater(len(set(totals[0])), 1)
 
     def test_fights_and_the_oracle_through_the_cli(self):
         code, _, err = self.solo("new", str(RED_TUSK), "--dir", self.game, "--character", str(RAGNA), "--line", "spiders")
@@ -509,6 +519,7 @@ class TranscriptCliTest(CliCase):
         self.assertNotIn("Last said", out)
 
     def test_resume_gives_back_the_last_words_and_what_came_after(self):
+        os.environ["SOLO_SEED"] = "16"  # the check below rolls a Demon, which sets off what the player doesn't see
         self.new_game()
         self.solo("-C", self.game, "say", "The road forks.")
         self.solo("-C", self.game, "say", "--player", "I go left.")
