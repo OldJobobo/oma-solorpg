@@ -112,7 +112,7 @@ def cmd_new(args):
     gaps = packs.missing(system)
     if gaps:
         # Before a hero is made: a pack of names only has no creation tables, and its pre-made heroes can't be played on it either.
-        raise SoloError(f"{adventure['title']} can't begin until the rules it plays on are built. " + packs.missing_text(system, gaps))
+        raise SoloError(f"{adventure['title']} can't begin until the rules it plays on are built. " + packs.missing_text(system, gaps) + ".")
     if args.character and (Path(args.character).expanduser() / "campaign.toml").exists():
         sheet = campaign.hero(Path(args.character).expanduser(), name=args.name)
     else:

@@ -20,6 +20,7 @@ class RulesNotBuiltTest(CliCase):
             self.assertEqual(code, 1, err)
             self.assertIn("The Red Tusk Hall can't begin until the rules it plays on are built. Dragonbane has only its names so far. "
                           "Its rules come from your own book: build them with `make dragonbane", err)
+            self.assertTrue(err.rstrip().endswith("."), err)
             self.assertNotIn("pre-made hero", err)
 
     def test_a_hero_rolled_on_its_own_says_the_rules_come_first_too(self):
