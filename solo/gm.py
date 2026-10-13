@@ -497,6 +497,9 @@ class Claude(Adapter):
         kind = event.get("type")
         if kind == "system" and event.get("subtype") == "init":
             result["session"] = event.get("session_id") or result["session"]
+            # The model it runs on, which the agent's own default leaves unnamed anywhere else (play tests record it).
+            if event.get("model"):
+                live.update(model=event["model"])
         elif kind == "stream_event":
             inner = event.get("event", {})
             block = inner.get("content_block", {})

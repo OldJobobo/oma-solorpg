@@ -3,6 +3,7 @@ turns, so the checks, the player's view and the report are tested for what they 
 
 import json
 import os
+import subprocess
 import sys
 import unittest.mock
 from pathlib import Path
@@ -118,6 +119,37 @@ class Run(CampaignTest):
         self.assertIn("## Expectations", (out / "report.md").read_text())
         self.assertIn("4 model calls, $0.02", (out / "report.md").read_text())
         self.assertTrue(Path(out / "campaign" / "events.jsonl").exists())
+
+    def test_a_run_names_the_model_the_agent_ran_on_and_outlives_a_judge_that_cant_start(self):
+        def stand_in(root, text=None, agent=None):
+            with campaign.session(root) as c:
+                c.say("Rain on the road. Do you go on?", "gm")
+            return {"status": "done", "text": "Rain on the road. Do you go on?", "model": "claude-stand-in-1"}
+
+        def judge(*_):
+            raise OSError(7, "Argument list too long")
+
+        scenario = {"name": "stand-in", "adventure": "red-tusk", "character": "ragna", "max_turns": 0, "player": {"mode": "scripted", "lines": []}}
+        own = self.tmp / "own"
+        (own / "systems").mkdir(parents=True)
+        (own / "systems" / "dragonbane").symlink_to(DRAGONBANE, target_is_directory=True)
+        with unittest.mock.patch.dict(os.environ, {"SOLO_HOME": str(own)}), unittest.mock.patch.object(harness.gm, "turn", stand_in), \
+                unittest.mock.patch.object(harness, "judge_run", judge):
+            os.environ.pop("SOLO_GM_MODEL", None)
+            report = harness.run(scenario, self.tmp / "run", log=lambda *_: None)
+        self.assertEqual(report["model"], "claude-stand-in-1")  # not "default": what the stream's init event named
+        self.assertIn("Argument list too long", report["judge"]["error"])
+        self.assertIn("The judge failed", (self.tmp / "run" / "report.md").read_text())
+
+    def test_the_judges_prompt_goes_in_on_stdin(self):
+        # The judge reads the whole transcript: as an argument it could pass the 128 KiB Linux holds one to.
+        prompt = "x" * 200_000
+        done = subprocess.CompletedProcess([], 0, stdout=json.dumps({"result": "{}"}), stderr="")
+        with unittest.mock.patch.object(harness.subprocess, "run", return_value=done) as ran:
+            self.assertEqual(harness.ask_agent(prompt), "{}")
+        command, given = ran.call_args.args[0], ran.call_args.kwargs
+        self.assertNotIn(prompt, command)
+        self.assertEqual(given["input"], prompt)
 
 
 class Voice(CampaignTest):

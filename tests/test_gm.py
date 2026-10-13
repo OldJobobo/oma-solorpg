@@ -130,6 +130,11 @@ class GmTest(Agents):
         self.agent("claude", CLAUDE_STREAM)
         self.assertEqual(gm.turn(self.root, "Hello again?")["status"], "done")
 
+    def test_the_model_claude_names_at_the_start_is_kept_with_the_turn(self):
+        self.agent("claude", [{**CLAUDE_STREAM[0], "model": "claude-stand-in-1"}, *CLAUDE_STREAM[1:]])
+        gm.turn(self.root, "Hi")
+        self.assertEqual(gm.status(self.root)["model"], "claude-stand-in-1")
+
     def test_what_a_turn_cost_is_kept_with_it(self):
         usage = {"input_tokens": 12, "cache_creation_input_tokens": 100, "cache_read_input_tokens": 3000, "output_tokens": 80}
         self.agent("claude", [*CLAUDE_STREAM[:-1], {**CLAUDE_STREAM[-1], "num_turns": 3, "total_cost_usd": 0.04, "usage": usage}])
