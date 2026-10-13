@@ -40,7 +40,7 @@ For Dragonbane, see [Dragonbane](#dragonbane). If something didn't work, `make i
 
 ## Install
 
-`make install` runs `solo setup --plugin`, which links three things into your home, then enables the plugin with `omarchy plugin enable`:
+`make install` runs `solo setup --plugin`, then `omarchy plugin enable` to switch the plugin on. Setup links three things into your home:
 
 - `~/.local/bin/solo`, the engine's command;
 - the GM skills, into the skill folder of each agent you have (Claude Code's, Codex's and pi's; an agent counts as there when its command is on PATH or its own folder is in your home);
