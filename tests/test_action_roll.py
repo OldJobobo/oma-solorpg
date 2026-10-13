@@ -240,6 +240,16 @@ class OpenRollTest(IronswornCampaignTest):
             c.commit({"note": "it stands"})
             self.stands(c)
 
+    def test_a_roll_that_stands_is_no_longer_burned_or_offered(self):
+        with self.session() as c:
+            self.missed(c)
+            self.assertIsNotNone(campaign.burn_option(c.state))
+            c.commit({"note": "it stands"})  # and the clock listening for a miss ticks
+            self.assertIsNone(campaign.burn_option(c.state))
+            with self.assertRaisesRegex(SoloError, "that roll stands: the story went on after it"):
+                c.burn()
+            self.stands(c)
+
     def test_or_at_the_next_move_made(self):
         with self.session() as c:
             self.missed(c)
@@ -374,8 +384,8 @@ class ProgressTest(IronswornCampaignTest):
         with self.session() as c:
             c.track_add("A vow", "vow", "formidable")
             c.track_mark("a_vow", times=2)
-            c.act("face_danger", stat="edge", rng=Dice(1, 5, 8))
             c.commit({"pc": {"momentum": "+4"}})
+            c.act("face_danger", stat="edge", rng=Dice(1, 5, 8))
             c.burn()
             c.track_mark("bonds")
             c.track_end("a_vow", "fulfilled")

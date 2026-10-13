@@ -1,6 +1,7 @@
 """Stakes, fights, the oracle's surprises, advancement and the player's table settings."""
 
 import copy
+import shutil
 
 from helpers import CampaignTest, Dice, LikelihoodTest
 
@@ -96,6 +97,20 @@ class FightTest(CampaignTest):
         self.assertEqual([f["id"] for f in event["order"]], ["priest", "pc", "cultist_2", "cultist"])
         self.assertEqual([f["card"] for f in event["order"]], [1, 3, 4, 10])
         self.assertEqual(foes["cultist_2"]["name"], "Cultist 2")
+
+    def test_a_second_foe_of_a_kind_never_takes_another_npcs_id(self):
+        # The second cultist was cultist_2, and an adventure's own cultist_2 fighting too took its place.
+        adventure = self.tmp / "red-tusk"
+        shutil.copytree(self.adventure, adventure)
+        (adventure / "npcs" / "cultist_2.toml").write_text('name = "Brother Vey"\n[stats]\nhp = 12\n', encoding="utf-8")
+        with campaign.session(campaign.create(self.tmp / "vey", self.system, adventure, self.character)) as c:
+            c.fight(["cultist", "cultist", "cultist_2"], rng=Dice(3, 1, 8, 2))
+            foes = {fid: (f["npc"], f["name"]) for fid, f in c.state["combat"]["foes"].items()}
+            self.assertEqual(foes, {"cultist": ("cultist", "Cultist"), "cultist_3": ("cultist", "Cultist 3"), "cultist_2": ("cultist_2", "Brother Vey")})
+            c.end_fight()
+            c.fight(["cultist", "cultist"], rng=Dice(3, 1, 8))
+            c.join(["cultist_2"], rng=Dice(1))
+            self.assertEqual(sorted(c.state["combat"]["foes"]), ["cultist", "cultist_2", "cultist_3"])
 
     def test_an_attack_deals_weapon_damage_and_bonus_through_armor(self):
         with self.session() as c:

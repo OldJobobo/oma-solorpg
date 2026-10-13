@@ -1,6 +1,8 @@
 import io
 import json
 import os
+import subprocess
+import sys
 import tempfile
 import unittest
 import unittest.mock
@@ -156,10 +158,11 @@ class CliTest(CliCase):
         self.assertIn("already taken a stretch rest this shift", err)
 
     def test_play_through_the_cli(self):
+        os.environ["SOLO_SEED"] = "164"
         self.new_game()
         code, out, _ = self.solo("-C", self.game, "check", "sneaking")
         report = json.loads(out)
-        # SOLO_SEED=5 rolls a 20: a Demon, which rolls its effect, ticks the ritual clock and rolls an omen
+        # SOLO_SEED=164 rolls a 20 here: a Demon, which rolls its effect, ticks the ritual clock and rolls an omen
         self.assertEqual((code, report["summary"]), (0, "Sneaking: 20 vs 4, Demon!"))
         self.assertEqual(report["then"][:2], ["Demon effect (3): Someone noticed", "The ritual below 1/6"])
         self.assertNotIn("push", report)
@@ -195,6 +198,15 @@ class CliTest(CliCase):
             code, _, err = self.solo("-C", self.game, "check", "sneaking")
         self.assertEqual(code, 1)
         self.assertIn("SOLO_SEED must be a whole number", err)
+
+    def test_a_seeded_run_repeats_and_its_rolls_differ(self):
+        # Every command's dice were seeded alike: under SOLO_SEED every 1d20 was the same number.
+        totals = []
+        for game in (self.game, str(self.tmp / "again")):
+            self.solo("new", str(RED_TUSK), "--dir", game, "--character", str(RAGNA))
+            totals.append([json.loads(self.solo("-C", game, "roll", "1d100")[1])["event"]["result"]["total"] for _ in range(6)])
+        self.assertEqual(totals[0], totals[1])  # the same seed, the same run
+        self.assertGreater(len(set(totals[0])), 1)
 
     def test_fights_and_the_oracle_through_the_cli(self):
         code, _, err = self.solo("new", str(RED_TUSK), "--dir", self.game, "--character", str(RAGNA), "--line", "spiders")
@@ -248,6 +260,31 @@ class CliTest(CliCase):
         self.assertEqual(err.count("\n"), 1)
         self.assertIn("something went wrong (KeyError: 'hp')", err)
         self.assertNotIn("Traceback", err)
+
+    def test_log_shows_the_last_n_events_and_none_for_zero(self):
+        self.new_game()
+        self.solo("-C", self.game, "commit", '{"note": "the gate creaks"}')
+        code, out, _ = self.solo("-C", self.game, "log", "-n", "0")
+        self.assertEqual((code, out), (0, ""))  # -0 was the whole log
+        code, out, _ = self.solo("-C", self.game, "log", "-n", "1")
+        self.assertEqual(out.splitlines(), ["#2 the gate creaks"])
+        code, out, err = self.solo("-C", self.game, "log", "-n", "-3")  # all but three, it was
+        self.assertEqual((code, out), (1, ""))
+        self.assertIn("-n is how many of the last events to show, from 0 up; not -3", err)
+
+    def test_a_reader_that_stops_early_ends_the_log_quietly(self):
+        # solo log | head: the pipe closes under the output, and that was "something went wrong (BrokenPipeError)".
+        self.new_game()
+        with campaign.session(self.game) as c:
+            for number in range(20):
+                c.commit({"note": f"{number}: " + "the gate creaks " * 500})
+        solo = subprocess.Popen([sys.executable, str(ROOT / "bin" / "solo"), "-C", self.game, "log", "-n", "30"],
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        solo.stdout.readline()
+        solo.stdout.close()
+        err = solo.stderr.read().decode()
+        solo.stderr.close()
+        self.assertEqual((solo.wait(), err), (1, ""))
 
     def test_a_usage_mistake_is_one_line_too(self):
         with self.assertRaises(SystemExit) as exit:
@@ -482,6 +519,7 @@ class TranscriptCliTest(CliCase):
         self.assertNotIn("Last said", out)
 
     def test_resume_gives_back_the_last_words_and_what_came_after(self):
+        os.environ["SOLO_SEED"] = "16"  # the check below rolls a Demon, which sets off what the player doesn't see
         self.new_game()
         self.solo("-C", self.game, "say", "The road forks.")
         self.solo("-C", self.game, "say", "--player", "I go left.")

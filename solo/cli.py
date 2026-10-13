@@ -44,12 +44,20 @@ def main(argv=None):
     args = _parser(_command(sys.argv[1:] if argv is None else argv)).parse_args(argv)
     try:
         args.run(args)
+        # Output still buffered goes now, so a reader that has gone (solo log | head) is met here.
+        sys.stdout.flush()
     except SoloError as error:
         print(f"solo: {error}", file=sys.stderr)
         _trace(argv, str(error))
         return 1
     except KeyboardInterrupt:
         return 130
+    except BrokenPipeError:
+        # The reader stopped reading, and that is all: what is left of the output goes nowhere, so
+        # Python's own flush on the way out doesn't meet the closed pipe again (as its docs advise).
+        os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        _trace(argv, None)
+        return 1
     except Exception as error:
         # A bug, or a pack the checks let through. The panel shows stderr to the player as
         # it is, so it gets one line; SOLO_DEBUG=1 gives the traceback instead.
@@ -400,8 +408,10 @@ def cmd_state(args):
 
 
 def cmd_log(args):
+    if args.n < 0:
+        raise SoloError(f"-n is how many of the last events to show, from 0 up; not {args.n}")
     with _open(args) as c:
-        for event in c.events[-args.n:]:
+        for event in c.events[-args.n:] if args.n else []:
             print(f"#{event['seq']} {campaign.gm_line(event)}")
 
 
@@ -1711,9 +1721,11 @@ def _open(args):
 
 def _rng():
     """SOLO_SEED makes rolls repeatable (tests, demos); otherwise dice use the system RNG.
+    A command's dice are seeded by SOLO_SEED and the seq of the event it writes first, so a
+    seeded run repeats roll for roll and one command doesn't roll what the last one did.
     Events written under it carry the seed, so the log and the Book show it."""
     seed = dice.fixed_seed()
-    return random.Random(seed) if seed is not None else None
+    return random.Random(f"{seed}:{campaign.next_seq()}") if seed is not None else None
 
 
 def _prefs_arguments(sub):

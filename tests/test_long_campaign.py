@@ -226,6 +226,16 @@ class Recall(CampaignTest):
             self.assertEqual(hit["label"], "you said")
             self.assertIn("Kjölvik", hit["text"])
 
+    def test_folding_is_one_character_for_one_ascii_or_not(self):
+        # A match found in the folded text points at the same place in the original, so the snippet lands on it.
+        for text, folded in (("Smith Bram", "smith bram"), ("İ ﬁ ß Ǆ ½ Kjölvik", "i f ß d 1 kjolvik"), (12, "12")):
+            with self.subTest(text=text):
+                self.assertEqual(campaign._fold(text), folded)
+        with self.session() as c:
+            c.say("Æ" * 200 + " Then the bell of Kjölvik rings. " + "Ø" * 200, "gm")
+            [hit] = campaign.recall(c.chronology(), c.state, "KJOLVIK")
+        self.assertIn("the bell of Kjölvik rings.", hit["text"])
+
     def test_it_says_so_when_nothing_mentions_it(self):
         with self.session() as c:
             text = cli.recall_text(c, "dragon")

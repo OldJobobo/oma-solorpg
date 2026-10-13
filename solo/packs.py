@@ -195,6 +195,8 @@ def _system_layers(root, above=()):
     list of them, laid down in that order (a later one wins); a pack that two of them share
     (the rulebook under each supplement) is laid down once, at its first place."""
     root = root.resolve()
+    if (root / "system.toml").is_symlink() and not _inside(root, root / "system.toml"):
+        raise SoloError(f"{root / 'system.toml'} is a link to somewhere outside the pack: put the file itself in the pack")
     named = load_data(root / "system.toml").get("extends") or []
     layers = []
     for name in [named] if isinstance(named, str) else named:
@@ -281,6 +283,9 @@ def load_adventure(path, drafts=True):
     A chapter marked `draft = true` is still being written: its author sees it (the default),
     a campaign plays on without it (drafts=False) until the mark comes off."""
     root = Path(path)
+    # Left out like any file that leaves the pack, it would only be "no scenes": validate never gets to say why.
+    if (root / "adventure.toml").is_symlink() and not _inside(root, root / "adventure.toml"):
+        raise SoloError(f"{root / 'adventure.toml'} is a link to somewhere outside the pack: put the file itself in the pack")
     spec = _optional(root / "adventure.toml")
     scenes = {sid: dict(scene) for sid, scene in _optional(root / "scenes.json").items()}
     sections = {key: dict(spec.get(key, {})) for key in CHAPTER_KEYS if key != "scenes"}
@@ -345,7 +350,7 @@ def load_adventure(path, drafts=True):
 def _chapters(root):
     """chapters/*.toml as (data, name), in natural order: chapter_2 before chapter_10."""
     order = lambda p: [int(part) if part.isdigit() else part for part in re.split(r"(\d+)", p.stem)]  # noqa: E731
-    return [(load_data(p), f"chapters/{p.name}") for p in sorted((root / "chapters").glob("*.toml"), key=order)]
+    return [(load_data(p), f"chapters/{p.name}") for p in sorted(_own(root / "chapters", ".toml"), key=order)]
 
 
 def flat_facts(facts, prefix=""):
@@ -840,7 +845,7 @@ def rule_pages(folders, extra=()):
     A page is Markdown with its title on the first line (`# Prices`) and, optionally, the
     words a GM would look it up by on a line of their own after it: `Search: cost, buying,
     inn, lodging`."""
-    pages = [_rule_page(path.read_text(encoding="utf-8"), path.stem) for folder in folders for path in sorted(Path(folder).glob("*.md"))]
+    pages = [_rule_page(path.read_text(encoding="utf-8"), path.stem) for folder in folders for path in _own(folder, ".md")]
     seen = {page["title"].lower() for page in pages}
     return pages + [p for p in extra if p["title"].lower() not in seen]
 
@@ -923,7 +928,24 @@ def compile_condition(text):
     for path in _paths(tree):
         if path[0] not in _ROOTS and not (len(path) == 1 and path[0] in ATTITUDES):
             raise SoloError(f"condition {text!r}: unknown name {'.'.join(path)}")
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Compare):
+            sides = [node.left, *node.comparators]
+            for op, a, b in zip(node.ops, sides, sides[1:]):
+                attitude = next((side for side in (a, b) if _is_attitude(side)), None)
+                words = next((side.value for side in (a, b) if isinstance(side, ast.Constant) and isinstance(side.value, str)), None)
+                if isinstance(op, (ast.Lt, ast.LtE, ast.Gt, ast.GtE)) and attitude is not None and words is not None:
+                    raise SoloError(f"condition {text!r}: can't compare {'.'.join(_path(attitude))} with {words!r} "
+                                    "(attitudes compare with bare names: friendly)")
     return tree
+
+
+def _is_attitude(node):
+    """Whether a name in a condition reads an attitude or a standing: a number, compared with bare names."""
+    if not isinstance(node, (ast.Name, ast.Attribute)):
+        return False
+    path = _path(node)
+    return path[0] == "faction" or (path[0] == "npc" and len(path) > 2 and path[2] == "attitude")
 
 
 def evaluate(condition, state):
@@ -952,6 +974,9 @@ def _eval(node, state):
 
 
 def _compare(op, a, b):
+    """One comparison. Values of kinds that don't compare (a fact the GM wrote as "two", held against 2)
+    compare false, the way a value not set yet does: a condition is read on every command, and one
+    that raised would fail them all."""
     try:
         match op:
             case ast.Eq():
@@ -973,7 +998,7 @@ def _compare(op, a, b):
             case _:
                 return a >= b
     except TypeError:
-        raise SoloError(f"can't compare {a!r} with {b!r} (attitudes compare with bare names: friendly)") from None
+        return isinstance(op, ast.NotIn)
 
 
 def _lookup(path, state):
@@ -1037,7 +1062,8 @@ def validate(system, adventure=None):
     problems = format_problems(declared_formats(system, adventure)) + _validate_system(system)
     if adventure is not None:
         problems += _validate_adventure(system, adventure)
-    return problems
+    roots = [*system.get("dirs", []), *([adventure["dir"]] if (adventure or {}).get("dir") else [])]
+    return problems + [problem for root in roots for problem in _links_out(root)]
 
 
 def _validate_system(system):
@@ -1534,15 +1560,60 @@ def _validate_table(label, table):
 
 
 def _optional(path):
-    return load_data(path) if Path(path).exists() else {}
+    """A pack's file at its top (creation.toml, art.toml ...), or nothing when it has none of its own."""
+    return load_data(path) if Path(path).exists() and (not Path(path).is_symlink() or _inside(Path(path).parent, path)) else {}
 
 
 def _load_folder(folder):
     merged = {}
     for suffix in (".json", ".toml"):
-        for path in sorted(Path(folder).glob(f"*{suffix}")):
+        for path in _own(folder, suffix):
             merged.setdefault(path.stem, {}).update(load_data(path))
     return merged
+
+
+def _inside(root, path):
+    """Whether a pack's file is its own: inside the pack once links are followed. Packs get shared, and
+    a file that links elsewhere (rules/house.md -> ../../secret) would have the engine read, and the GM
+    print, whatever it points at. The engine leaves such a file out, and `solo validate` says so."""
+    return Path(path).resolve().is_relative_to(Path(root).resolve())
+
+
+def _own(folder, suffix):
+    """The files of one of a pack's folders whose names end in `suffix`, in order, that are its own (see
+    _inside). Only a link has to be followed: anything else is where its folder is."""
+    folder = Path(folder)
+    if folder.is_symlink() and not _inside(folder.parent, folder):
+        return []
+    return sorted(Path(entry.path) for entry in _entries(folder)
+                  if entry.name.endswith(suffix) and (not entry.is_symlink() or _inside(folder.parent, entry.path)))
+
+
+def _entries(folder):
+    try:
+        with os.scandir(folder) as entries:
+            return list(entries)
+    except OSError:  # no such folder: nothing in it
+        return []
+
+
+# What the engine reads of a pack: the files at its top and the folders under it.
+_PACK_FILES = ("system.toml", "adventure.toml", "scenes.json", "creation.toml", "art.toml", "gear.toml", "skills.json")
+_PACK_FOLDERS = ("rules", "scenes", "npcs", "tables", "characters", "chapters", "bestiary", "moves", "assets", "spells")
+
+
+def _links_out(root):
+    """Links in a pack to somewhere outside it, as problems: the engine leaves them out."""
+    root, found = Path(root), []
+    for entry in _entries(root):
+        if entry.name not in (*_PACK_FILES, *_PACK_FOLDERS):
+            continue
+        elif entry.is_symlink() and not _inside(root, entry.path):
+            found.append(entry)
+        elif entry.name in _PACK_FOLDERS and entry.is_dir():
+            found += [inner for inner in _entries(entry.path) if inner.is_symlink() and not _inside(root, inner.path)]
+    return [f"{root.name}: {Path(entry.path).relative_to(root)} is a link to {os.readlink(entry.path)}, outside the pack, "
+            "so the engine leaves it out: put the file itself in the pack" for entry in found]
 
 
 # Review ---------------------------------------------------------------------------
@@ -1619,7 +1690,7 @@ def _story_strings(adventure):
             found.append((f"scene {sid}", scene_text(adventure, sid)))
         except (OSError, SoloError):
             continue
-    for page in sorted((Path(adventure["dir"]) / "rules").glob("*.md")) if adventure.get("dir") else []:
+    for page in _own(Path(adventure["dir"]) / "rules", ".md") if adventure.get("dir") else []:
         found.append((f"rules {page.stem}", page.read_text(encoding="utf-8")))
     return found
 
