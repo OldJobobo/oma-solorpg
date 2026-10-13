@@ -117,8 +117,9 @@ def _starts(cells, sides):
     for line in cells:
         match = _NUMBER.match(line["text"].strip().replace("\u00ad", ""))
         if match:
-            low = int(match.group(1))
-            found.append({"range": (low, sides if match.group(2) else int(match.group(3) or low)), "rest": (match.group(4) or "").strip(), "line": line})
+            # "00" on a D% is a hundred.
+            low, high = (100 if number == "00" else int(number) for number in (match.group(1), match.group(3) or match.group(1)))
+            found.append({"range": (low, sides if match.group(2) else high), "rest": (match.group(4) or "").strip(), "line": line})
     return found
 
 

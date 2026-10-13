@@ -113,6 +113,10 @@ class DiceTest(unittest.TestCase):
         # A table that goes on from another page has no die of its own here: it is read as far as it goes.
         self.assertEqual([row["low"] for row in dice.read(lines[1:5], lambda text, part: text + part, 6)["rows"]], [1, 2])
 
+    def test_a_hundred_is_written_00(self):
+        lines = [cell_line(1, 100, "D% OMEN", 67, HEADER), cell_line(1, 120, "01-50", 70), cell_line(1, 120, "Rain", 100), cell_line(1, 137, "51-00", 70), cell_line(1, 137, "Sun", 100)]
+        self.assertEqual([(row["low"], row["high"], row["text"]) for row in self.read(lines)["rows"]], [(1, 50, "Rain"), (51, 100, "Sun")])
+
     def test_a_table_without_its_die_is_no_table(self):
         with self.assertRaisesRegex(Exception, "no roll table"):
             self.read([cell_line(1, 120, "1", 72), cell_line(1, 120, "Hare", 88)])
