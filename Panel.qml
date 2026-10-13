@@ -672,7 +672,7 @@ Item {
   }
 
   function putAside(spell) {
-    root.act(["prepare", "--drop", spell.name, "--", root.preparing], "magic", () => root.preparing = "")
+    root.act(["prepare", "--drop=" + spell.name, "--", root.preparing], "magic", () => root.preparing = "")
   }
 
   function weaponNote(weapon) {
@@ -884,8 +884,9 @@ Item {
       onStop: Quickshell.execDetached([root.solo, "-C", root.campaign, "gm", "stop"])
       onRetry: root.speak("")
       // The X-card: cut the GM's last message (a line or a veil too, if the player made it one), then the GM carries on without it.
-      onCut: (note, line, veil) => root.act(["strike"].concat(note !== "" ? ["--note", note] : []).concat(line !== "" ? ["--line", line] : [])
-                                              .concat(veil !== "" ? ["--veil", veil] : []), "book", () => root.speak(""))
+      // What the player typed goes as --flag=value, so words that start with a dash stay words.
+      onCut: (note, line, veil) => root.act(["strike"].concat(note !== "" ? ["--note=" + note] : []).concat(line !== "" ? ["--line=" + line] : [])
+                                              .concat(veil !== "" ? ["--veil=" + veil] : []), "book", () => root.speak(""))
       onAct: args => root.act(args, "book")
       onOpenTable: {
         root.opened = true

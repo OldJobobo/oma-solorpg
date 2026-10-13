@@ -304,7 +304,7 @@ def begin_and_ask(item, panel, out, work, wait):
 
 def an_x_card(item, panel, out, work, wait):
     """The Book's cut: with the GM's last message on the page, the panel's words become a note and a line, `solo strike`
-    runs, and the GM is asked to carry on without it."""
+    runs, and the GM is asked to carry on without it. The words start with a dash, and still reach the engine as words."""
     from solo import campaign
     game = Path((work / "state" / "solo" / "current").read_text().strip())
     with campaign.session(game) as c:
@@ -320,12 +320,12 @@ def an_x_card(item, panel, out, work, wait):
         return [f"the Book doesn't offer the cut with the GM's message on the page (found: {book is not None}"
                 + (f", agent {book.property('agent').toVariant()}, busy {book.property('busy')}, dead {book.property('dead')})" if book is not None else ")")]
     book.setProperty("cutting", True)
-    item.findChild(QObject, "cutInput").setProperty("text", "no spiders")
+    item.findChild(QObject, "cutInput").setProperty("text", "-spiders")
     LAUNCHED.clear()
     QMetaObject.invokeMethod(book, "cutIt", Q_ARG("QVariant", "line"))
     wait(2500)
     state = json.loads((game / "state.json").read_text())
-    if len(state["struck"]) != 1 or state["prefs"]["lines"] != ["no spiders"]:
+    if len(state["struck"]) != 1 or state["prefs"]["lines"] != ["-spiders"]:
         problems.append(f"the cut didn't reach the engine: {item.property('error') or state['struck']}, {state['prefs']}")
     said = [" ".join(str(a) for a in command) for command in LAUNCHED]
     if not any("gm turn" in line for line in said):
