@@ -99,6 +99,24 @@ class CommitTest(CampaignTest):
             with self.assertRaisesRegex(SoloError, "unknown time unit fortnights; the system has round, stretch, shift, and seconds, minutes, hours and days will do"):
                 c.commit({"time": {"fortnights": 1}})
 
+    def test_a_commits_time_is_a_number_from_zero_up_and_at_most_a_year(self):
+        # "1" was multiplied as text (a day of it was 86400 ones), and time going back let the clocks count a shift twice.
+        with self.session() as c:
+            before = c.state["time"]
+            c.commit({"time": {"day": "1"}})
+            c.commit({"time": "2 stretches"})
+            self.assertEqual(c.state["time"], before + 86400 + 1800)
+            count = len(c.events)
+            for spent in ({"hour": -5}, {"shift": "-1"}, {"hour": float("nan")}, {"hour": "inf"}, {"hour": True}, {"hour": [1]}):
+                with self.subTest(spent=spent), self.assertRaisesRegex(SoloError, "is a number from zero up"):
+                    c.commit({"time": spent})
+            for spent in ({"day": 366}, {"round": 10 ** 400}, "400 days"):
+                with self.subTest(spent=spent), self.assertRaisesRegex(SoloError, "more than a year of game time"):
+                    c.commit({"time": spent})
+            self.assertEqual(len(c.events), count)
+            c.commit({"time": {"day": 365}}, rng=Dice(*[1] * 6))  # a year in rounds is counted, not listed
+            self.assertTrue(c.state["clocks"]["dark_ritual"]["full"])
+
     def test_rejected_commits_write_nothing(self):
         with self.session() as c:
             for payload, message in (

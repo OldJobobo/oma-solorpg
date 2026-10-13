@@ -9,6 +9,7 @@ import copy
 import fcntl
 import json
 import marshal
+import math
 import os
 import re
 import sys
@@ -32,6 +33,9 @@ SPEAKERS = ("gm", "player")
 _COMMIT_KEYS = {"note", "facts", "npc", "faction", "promise", "pc", "clock", "time", "clue", "chronicle", "override", "chaos", "end", "learn", "consequence"}
 # What a clock says, for a commit's time in the words the GM would use for it.
 _CLOCK = {"second": 1, "minute": 60, "hour": 3600, "day": 86400}
+# The most game time one step of the story passes: a year. More is a slip (a number written as text
+# once multiplied the text, and the clocks counted the boundaries it crossed for ever).
+_MOST_TIME = 365 * 86400
 # A commit's time written out: "10 minutes", "a stretch", "2 hours and 30 minutes".
 _TIME_WORDS = re.compile(r"\b(?:(\d+(?:\.\d+)?)\s*|(an?|one)\s+)([a-z]+)\b")
 # The commit keys that hold a JSON object, with an example, for the GM that sends a string or a list instead.
@@ -749,7 +753,7 @@ class Campaign:
             seconds = self._seconds(spent)
             before = self.state["time"]
             event = self.append("move", to=destination, forced=force, scene_check=check, time=seconds or None, **{"from": here})
-            self._follow([f"scene:{destination}"] + self._time_triggers(before, before + seconds), cause=event["seq"], rng=rng)
+            self._follow(Counter([f"scene:{destination}"]) + self._time_triggers(before, before + seconds), cause=event["seq"], rng=rng)
             if seconds:
                 self._burn(event["seq"])
             self._voices(event["seq"], rng)
@@ -2334,26 +2338,41 @@ class Campaign:
             f"promise:{pid}:{p['status']}" for pid, p in changes.get("promise", {}).items()
             if p["status"] != p.get("status_was")
         ]
-        return triggers + self._time_triggers(before, before + changes.get("time", 0))
+        return Counter(triggers) + self._time_triggers(before, before + changes.get("time", 0))
 
     def _time_triggers(self, before, after):
         """time:<unit> once for every boundary of that unit crossed between two moments, and `activity` once
         when what happened took a stretch or more (the unit [threats] activity names): a search, a rest, a
-        shift of travel. A threat that advances on an activity moves one step for it, however long it took."""
-        triggers = [f"time:{unit}" for unit, seconds in self.system["time"].items() for _ in range(int(after // seconds - before // seconds))]
+        shift of travel. A threat that advances on an activity moves one step for it, however long it took.
+        Counted, not listed one by one: a year in rounds is three million of them."""
+        triggers = Counter({f"time:{unit}": int(after // seconds - before // seconds) for unit, seconds in self.system["time"].items()})
         minimum = self.system["time"].get((self.system.get("threats") or {}).get("activity", "stretch"))
-        return triggers + ["activity"] * bool(minimum and after - before >= minimum)
+        triggers["activity"] = int(bool(minimum and after - before >= minimum))
+        return +triggers
 
-    def _seconds(self, spent):
-        """{ stretch = 2 } in seconds, in the system's own time units (plural as well: rounds), or in the clock's (minutes: a GM writes what it means)."""
+    def _seconds(self, spent, what="time"):
+        """{ stretch = 2 } in seconds, in the system's own time units (plural as well: rounds, stretches), or in the
+        clock's (minutes: a GM writes what it means). Words read the same: "2 stretches". Each amount is a number
+        from zero up (written as text, it reads as the number), and all of it together at most a year."""
+        units = {**_CLOCK, **self.system["time"]}
+        plurals = {_plural(unit): unit for unit in units}
+        if isinstance(spent, str):
+            spent = _time_words(spent) or spent
+        if spent is not None and not isinstance(spent, dict):
+            raise SoloError(f'{what} is game time, like {{"stretch": 1}} or "2 hours"; not {spent!r}')
         seconds = 0
         for unit, amount in (spent or {}).items():
-            one = unit[:-1] if unit.endswith("s") and unit[:-1] in {**self.system["time"], **_CLOCK} else unit
-            if one in self.system["time"] or one in _CLOCK:
-                seconds += int({**_CLOCK, **self.system["time"]}[one] * amount)
-            else:
+            one = plurals.get(unit, unit)
+            number = _amount(amount)
+            if one not in units:
                 raise SoloError(f"unknown time unit {unit}; the system has {', '.join(self.system['time']) or 'none'}, and seconds, minutes, hours and days will do")
-        return seconds
+            elif number is None:
+                raise SoloError(f'{what}: {unit} is a number from zero up, like {{"{unit}": 2}}; not {amount!r}')
+            elif number > _MOST_TIME or seconds + units[one] * number > _MOST_TIME:
+                raise SoloError(f"{what} is more than a year of game time, the most one step of the story passes: "
+                                "let it pass a year at a time, or say what happened in between")
+            seconds += units[one] * number
+        return int(seconds)
 
     def _normalize(self, payload):
         """Check a commit against the packs and the current state. Returns absolute changes
@@ -2638,7 +2657,7 @@ class Campaign:
                         "leave when out and give at, npc or after, or no trigger at all (a loose end you bring in)") from None
                 change["when"] = str(item["when"])
             if item.get("after"):
-                seconds = self._seconds(item["after"])
+                seconds = self._seconds(item["after"], what=f"consequence {consequence_id}: after")
                 if seconds <= 0:
                     raise SoloError(f'consequence {consequence_id}: after is game time from now, like {{"shift": 1}}')
                 change["due_at"] = self.state["time"] + seconds
@@ -4027,6 +4046,18 @@ def _by_id(items, fields):
 
 def _listed(value):
     return [] if value is None else [value] if isinstance(value, str) else list(value)
+
+
+def _amount(value):
+    """A number from zero up, from a number or the text of one ("2"), or None: never true or false, NaN or infinity."""
+    if isinstance(value, str):
+        try:
+            value = float(value.strip())
+        except ValueError:
+            return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or (isinstance(value, float) and not math.isfinite(value)):
+        return None
+    return value if value >= 0 else None
 
 
 def _time_words(text):
