@@ -196,7 +196,8 @@ def _animals(pack, section):
         animal = packs.slug(name)
         pack.toml(f"bestiary/{animal}.toml", {"name": ids.sentence(name), "role": "A common animal", "description": "Common animal.",
                                               "attack": Inline({"label": label, "value": int(skill), "damage": roll(damage)}), "source": f"p. {row['page']}",
-                                              "stats": {"hp": int(hp), "armor": 0, "movement": int(movement)}, "skills": _skills(skills)})
+                                              "stats": {"hp": grid.number(section, row["page"], hp, "hp"), "armor": 0,
+                                                        "movement": grid.number(section, row["page"], movement, "movement")}, "skills": _skills(skills)})
         made.append(f"bestiary/{animal}")
     pack.item("bestiary_common_animals", "Common Animals", "creature", section.pages, made)
 
@@ -224,7 +225,7 @@ def _typical(pack, section, known):
         if weapon:
             skill = weapon["skill"] if weapon["skill"] in skills else max(skills, key=skills.get)
             entry["attack"] = Inline({"label": ids.label(weapon["id"]), "skill": skill, "damage": weapon["damage"], **({"bonus": roll(bonus_dice.group(1))} if bonus_dice else {})})
-        entry["stats"] = {"hp": int(hp), "armor": sum(system["armor"].get(item, 0) for item in found)}
+        entry["stats"] = {"hp": grid.number(section, row["page"], hp, "hp"), "armor": sum(system["armor"].get(item, 0) for item in found)}
         entry["skills"] = skills
         pack.toml(f"bestiary/{packs.slug(name)}.toml", entry)
         made.append(f"bestiary/{packs.slug(name)}")

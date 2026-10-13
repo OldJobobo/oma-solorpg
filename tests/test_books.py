@@ -390,6 +390,12 @@ class ChangedGearTableTest(unittest.TestCase):
                                                r"this may be another printing than the importer was written for"):
             self.build(["WEAPON", "GRIP", "STR", "RANGE", "DAMAGE", "COST", "SUPPLY", "FEATURES"], ["Sword, Long", "1H", "9", "2", "2D6", "11 gold", "Common", "Slashing"])
 
+    def test_a_number_cell_that_holds_more_than_a_number_is_named_with_its_column_and_page(self):
+        names = ["WEAPON", "GRIP", "STR", "RANGE", "DAMAGE", "DURABILITY", "COST", "SUPPLY", "FEATURES"]
+        with self.assertRaisesRegex(SoloError, r"Test Book.pdf, 'Table: Melee Weapons' \(p. 3\): the table on p. 3 has '9\*' in its STR column, where the "
+                                               r"importer reads a number; this may be another printing than the importer was written for"):
+            self.build(names, ["Sword, Long", "1H", "9*", "2", "2D6", "14", "11 gold", "Common", "Slashing"])
+
     def test_a_grip_written_out_is_a_grip_and_the_weapon_a_weapon(self):
         names = ["WEAPON", "GRIP", "STR", "RANGE", "DAMAGE", "DURABILITY", "COST", "SUPPLY", "FEATURES"]
         for grip, hands in (("1-handed", 1), ("Two-handed", 2), ("2 H", 2)):

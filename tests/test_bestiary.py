@@ -214,6 +214,10 @@ class ChangedAnimalsTableTest(unittest.TestCase):
         with self.assertRaisesRegex(SoloError, r"'Common Animals' \(p. 2\): can't read the attack of Hare on p. 2 \('Bite, D3, at 8'\)"):
             self.build(["ANIMAL", "MOVEMENT", "HP", "ATTACK", "SKILLS"], ["Hare", "16", "3", "Bite, D3, at 8", "Evade 14"])
 
+    def test_a_number_cell_that_holds_more_than_a_number_is_named_with_its_column_and_page(self):
+        with self.assertRaisesRegex(SoloError, r"'Common Animals' \(p. 2\): the table on p. 2 has '3 each' in its HP column, where the importer reads a number"):
+            self.build(["ANIMAL", "MOVEMENT", "HP", "ATTACK", "SKILLS"], ["Hare", "16", "3 each", "Bite (skill level 8, damage D3)", "Evade 14"])
+
 
 if __name__ == "__main__":
     unittest.main()

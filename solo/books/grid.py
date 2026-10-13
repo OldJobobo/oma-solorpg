@@ -8,6 +8,8 @@ a new row where the gap to the line above is a row's height, so a line close und
 only carries the rest of a wrapped cell and is added to the row above.
 """
 
+import re
+
 from ..sections import paragraphs
 from .read import changed
 
@@ -65,6 +67,9 @@ class Cells(dict):
     def __missing__(self, name):
         raise changed(self.section, f"the table on p. {self.page} has no {name.upper()} column")
 
+    def number(self, name):
+        return number(self.section, self.page, self[name], name)
+
 
 def cells(section, row, count):
     """A row's cells, for a recipe that reads them in order: an error that says which table of which book when it
@@ -72,6 +77,14 @@ def cells(section, row, count):
     if len(row["cells"]) != count:
         raise changed(section, f"the table on p. {row['page']} has {len(row['cells'])} columns, and the importer reads {count}")
     return row["cells"]
+
+
+def number(section, page, text, column):
+    """The whole number in a cell ("12", "+2"): a cell that holds anything more ("9*") is an error that says which table of
+    which book, not a ValueError."""
+    if re.fullmatch(r"\+?\d+", text.strip()) is None:
+        raise changed(section, f"the table on p. {page} has {text!r} in its {column.upper()} column, where the importer reads a number")
+    return int(text)
 
 
 def _is_header(line):

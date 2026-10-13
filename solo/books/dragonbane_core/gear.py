@@ -52,7 +52,7 @@ def build(pack):
                 weapons[item_id] = _weapon(name, cells, skills)
                 refs.append(f"system.toml:weapons.{item_id}")
             elif worn:
-                armor[item_id] = int(cells["armor rating"].lstrip("+"))
+                armor[item_id] = cells.number("armor rating")
                 if _banes(cells["effect"]):
                     entry["banes"] = _banes(cells["effect"])
             pack.gear["gear"][item_id] = entry
@@ -123,10 +123,10 @@ def _weapon(name, cells, skills):
         spec["bonus"] = skills[skill]
     spec["grip"] = _grip(cells["grip"])
     if cells["str"] != "—":
-        spec["str"] = int(cells["str"])
+        spec["str"] = cells.number("str")
     spec["range"] = _range(cells["range"])
     if cells["durability"] != "—":
-        spec["durability"] = int(cells["durability"])
+        spec["durability"] = cells.number("durability")
     if features:
         spec["features"] = features
     if "cannot be used for parrying" in cells["features"].lower() or "requires quiver" in cells["features"].lower() or name in ("Sling",):
