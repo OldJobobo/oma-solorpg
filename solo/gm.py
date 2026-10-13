@@ -155,9 +155,10 @@ def stop(root):
     # The agent's pid, read once the stop file is down: a turn starting its agent looks for the file once the
     # pid is written, so one of the two ends it.
     pid = _load(Path(root) / ".solo" / "turn.json").get("agent_pid")
-    if pid and _alive(pid):
+    # Only a process that carries this campaign's SOLO_GM marker, as in _reap: a pid gets reused.
+    if pid and _ours(pid, root):
         try:
-            os.killpg(os.getpgid(pid), signal.SIGTERM)
+            os.killpg(os.getpgid(int(pid)), signal.SIGTERM)
         except (ProcessLookupError, PermissionError):
             pass
 
@@ -428,6 +429,8 @@ class Adapter:
                     if isinstance(event, dict):
                         result["heard"] = True
                         self.read(event, result, live)
+            # Reaped: its pid may soon be another process's, and turn.json mustn't point a stop at it.
+            live.update(force=True, agent_pid=None)
             errors.seek(0)
             errors = errors.read()
         if silent.is_set():

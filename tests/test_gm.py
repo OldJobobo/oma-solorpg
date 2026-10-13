@@ -564,6 +564,27 @@ class GmTest(Agents):
         self.assertIsNotNone(orphan.wait(5))  # this campaign's agent: ended
         self.assertIsNone(stranger.poll())    # anything else with that pid: left alone
 
+    def test_stop_ends_only_this_campaigns_agent_and_a_reaped_agent_leaves_no_pid(self):
+        sleeper = ["python3", "-c", "import time; time.sleep(30)"]
+        stranger = subprocess.Popen(sleeper, start_new_session=True)  # a recycled pid: anyone's process
+        ours = subprocess.Popen(sleeper, env={**os.environ, "SOLO_GM": str(self.root)}, start_new_session=True)
+        for process in (stranger, ours):
+            self.addCleanup(process.wait)
+            self.addCleanup(process.kill)
+        turn = self.root / ".solo" / "turn.json"
+        for process in (stranger, ours):
+            (self.root / ".solo" / "stop").unlink(missing_ok=True)
+            turn.write_text(json.dumps({"id": "t1", "status": "thinking", "pid": os.getpid(), "started": gm._started(os.getpid()),
+                                        "agent_pid": process.pid}))
+            gm.stop(self.root)
+        self.assertIsNotNone(ours.wait(5))
+        self.assertIsNone(stranger.poll())
+        # Once the agent is reaped, turn.json no longer names its pid, even before the turn is written down.
+        self.agent("claude", CLAUDE_STREAM)
+        live = gm.Live(turn, "Hi")
+        gm.ADAPTERS["claude"].run(self.root, "Hi", None, live)
+        self.assertIsNone(json.loads(turn.read_text())["agent_pid"])
+
     def test_a_resumed_turn_tells_the_gm_what_the_player_did_at_the_table(self):
         self.agent("claude", CLAUDE_STREAM)
         gm.turn(self.root, "I look around.")
