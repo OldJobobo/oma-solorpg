@@ -65,7 +65,7 @@ uninstall:
 # PyMuPDF reads the PDFs. Only the import commands need it.
 deps:
 	@python3 -c "import pymupdf" 2>/dev/null || { \
-	  echo "solo extract needs PyMuPDF: uv pip install --system pymupdf"; exit 1; }
+	  echo "solo extract needs PyMuPDF: on Omarchy, sudo pacman -S python-pymupdf (the README's Troubleshooting has other systems)"; exit 1; }
 
 # Dragonbane's packs and adventures from your own PDFs, without an agent: each book an importer here knows is read by its bookmarks and layout, and what the pack holds is checked
 # against the book's pages. Nothing of a book is in this repository: the importers hold where things are and how to read them. REPLACE=1 builds again over packs made this way.

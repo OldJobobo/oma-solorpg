@@ -79,6 +79,29 @@ class ReadmeTest(unittest.TestCase):
             self.assertIn(f"\n{section}\n", text)
 
 
+class PyMuPDFTest(unittest.TestCase):
+    # Arch marks its system Python as externally managed, so uv and pip refuse to install into it;
+    # on Omarchy the package comes from pacman, and the README says what to do elsewhere.
+    PLACES = ["Makefile", "CONTRIBUTING.md", "docs/INGESTION.md", "solo/extract.py", "skills/solo-rules-import/SKILL.md"]
+
+    def test_every_place_that_says_how_to_install_pymupdf_gives_the_pacman_line(self):
+        for place in self.PLACES:
+            text = (ROOT / place).read_text(encoding="utf-8")
+            self.assertNotIn("--system pymupdf", text, place)
+            self.assertIn("pacman -S python-pymupdf", text, place)
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertIn("sudo pacman -S python-pymupdf", readme)
+        self.assertIn("python3 -m pip install --user pymupdf", readme)
+
+    def test_extract_without_pymupdf_says_how_to_install_it_on_omarchy(self):
+        import sys
+        import unittest.mock
+        from solo import SoloError, extract
+        with unittest.mock.patch.dict(sys.modules, {"pymupdf": None}), self.assertRaises(SoloError) as refused:
+            extract._pymupdf()
+        self.assertIn("sudo pacman -S python-pymupdf", str(refused.exception))
+
+
 class RepositoryTest(unittest.TestCase):
     def test_ci_installs_what_the_skipping_tests_need_and_loads_the_qml(self):
         workflow = (ROOT / ".github" / "workflows" / "test.yml").read_text(encoding="utf-8")
