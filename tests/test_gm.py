@@ -255,6 +255,49 @@ class GmTest(Agents):
         gm.reset_spend(self.root)
         self.assertEqual(gm.spent(self.root, "sess-1")["cost_usd"], 0.0)
 
+    def hangs(self):
+        """A stand-in claude that starts its session and then says nothing more, so its turn ends without a result."""
+        script = self.bin / "claude"
+        script.write_text("#!/usr/bin/env python3\nimport json, time\n"
+                          "print(json.dumps({'type': 'system', 'subtype': 'init', 'session_id': 'sess-1'}), flush=True)\ntime.sleep(30)\n")
+        script.chmod(script.stat().st_mode | stat.S_IEXEC)
+
+    def test_a_turn_ended_before_it_said_its_cost_is_charged_an_estimate(self):
+        # The quiet limit, the clock and Stop end a turn with no result event: no usage, and it used to cost nothing.
+        self.hangs()
+        with unittest.mock.patch.dict(os.environ, {"SOLO_GM_TIMEOUT": "1"}):
+            self.assertEqual(gm.turn(self.root, "Hello?")["status"], "error")
+        self.assertEqual(gm.status(self.root)["usage"], {"cost_usd": 0.5, "estimated": True})  # nothing dearer yet
+        self.assertEqual(gm.spent(self.root, "sess-1")["cost_usd"], 0.5)
+        self.agent("claude", self.spend(0.8))
+        gm.turn(self.root, "Hello again?")
+        self.hangs()
+        with unittest.mock.patch.dict(os.environ, {"SOLO_GM_TIMEOUT": "1"}):
+            gm.turn(self.root, "Still there?")
+        self.assertEqual(gm.status(self.root)["usage"]["cost_usd"], 0.8)  # the dearest turn the session reported
+        ledger = json.loads(gm._spend_path(self.root).read_text())
+        self.assertEqual((ledger["turns"], ledger["cost_usd"], ledger["estimated_usd"]), (3, 2.1, 1.3))
+        # Never more than the turn was allowed: 10 - 9.8.
+        gm.set_budget(usd=2.3)
+        with unittest.mock.patch.dict(os.environ, {"SOLO_GM_TIMEOUT": "1"}):
+            gm.turn(self.root, "Hello?")
+        self.assertEqual(gm.status(self.root)["usage"]["cost_usd"], 0.2)
+
+    def test_only_an_agents_own_words_for_a_lost_session_start_a_fresh_one(self):
+        # A fresh session starts its count at nothing: any error that said "not found" used to start one.
+        (self.root / ".solo" / "agent.json").write_text(json.dumps({"agent": "claude", "session": "sess-1"}))
+        script = self.bin / "claude"
+        script.write_text(f"#!/bin/sh\necho run >> {self.tmp / 'runs'}\necho 'Error: settings file not found' >&2\nexit 1\n")
+        script.chmod(script.stat().st_mode | stat.S_IEXEC)
+        self.assertEqual(gm.turn(self.root, "Hi")["error"], "Error: settings file not found")
+        self.assertEqual((self.tmp / "runs").read_text(), "run\n")  # no fresh session tried
+        self.assertEqual(json.loads((self.root / ".solo" / "agent.json").read_text())["session"], "sess-1")
+        lost = gm.ADAPTERS["claude"].lost
+        self.assertTrue(lost("No conversation found with session ID: sess-1"))
+        self.assertTrue(lost("Error: thread/resume: no rollout found for thread id 019da1a1-bed9-7a43-88a2-b49d43915021"))
+        self.assertFalse(lost("API error: model not found"))
+        self.assertFalse(lost("no session token; log in again"))
+
     def test_an_agent_that_cant_say_what_a_turn_costs_is_held_to_turns(self):
         self.agent("codex", CODEX_STREAM)
         with unittest.mock.patch.dict(os.environ, {"SOLO_GM_BUDGET_TURNS": "2"}):

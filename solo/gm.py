@@ -60,6 +60,8 @@ _MAX_TURNS = 40
 # and could otherwise set its own count back to nothing.
 _BUDGET_USD = 10.0
 _BUDGET_TURNS = 200
+# What a Claude Code turn ended before it said its cost is charged while the session has no reported turn to go by.
+_ESTIMATE_USD = 0.50
 # Tools a GM turn is never given, on top of the short list of `solo` commands it is allowed: nothing on the web,
 # and no file written outside solo.
 _DENIED = ("WebFetch", "WebSearch", "Edit", "Write", "NotebookEdit")
@@ -202,7 +204,8 @@ def _turn(root, folder, text, agent, live):
     over = overspent(used)
     if over:
         return live.fail(over)
-    result = adapter.run(root, prompt, session, live, budget_left(used))
+    left = budget_left(used)
+    result = adapter.run(root, prompt, session, live, left)
     result["stopped"] = result.get("stopped") or _asked_to_stop(folder, live)
     if result.get("stale") and not result["stopped"]:
         # The agent lost the session (cleared, or another machine): start a fresh one,
@@ -210,8 +213,13 @@ def _turn(root, folder, text, agent, live):
         live.reset()
         with campaign.session(root) as c:
             prompt = book_prompt(c)
-        result = adapter.run(root, prompt, None, live, budget_left(spent(root, None)))
+        left = budget_left(spent(root, None))
+        result = adapter.run(root, prompt, None, live, left)
         result["stopped"] = result.get("stopped") or _asked_to_stop(folder, live)
+    if adapter.priced and result.get("session") and (result.get("usage") or {}).get("cost_usd") is None:
+        # The quiet limit, the clock or Stop ended the turn before the agent said what it cost, and such a turn
+        # is often the dearest: it is charged an estimate, never more than it was allowed to spend.
+        result["usage"] = {**(result.get("usage") or {}), "cost_usd": _estimate(root, result["session"], left), "estimated": True}
     # What the turn cost: kept with the turn, and added to what the session has spent so far.
     live.update(usage=result.get("usage"))
     if result.get("session"):
@@ -331,6 +339,9 @@ class Adapter:
     """Runs one agent turn and reads its JSON lines. Subclasses build the command and
     read the events; `run` returns {session, text, error, stale}."""
 
+    # Whether the agent says what a turn cost, so the session's dollars are counted.
+    priced = False
+
     def command(self, session, left=None):
         raise NotImplementedError
 
@@ -401,13 +412,15 @@ class Adapter:
         return result
 
     def lost(self, errors):
-        """Whether the agent refused to resume because it has no such session."""
-        text = errors.lower()
-        return "no conversation" in text or "not found" in text or "no session" in text
+        """Whether the agent refused to resume because it has no such session: only the agents' own words for
+        that, since a fresh session starts its count at nothing."""
+        return bool(_LOST.search(errors))
 
 
 class Claude(Adapter):
     """Claude Code: `claude -p` with stream-json, partial messages for live typing."""
+
+    priced = True
 
     def run(self, root, prompt, session, live, left=None):
         if _settings_flags() is None:
@@ -490,6 +503,8 @@ class Codex(Adapter):
 
 
 ADAPTERS = {"claude": Claude(), "codex": Codex()}
+# What each agent says when it has no session by the id it was given to resume: Claude Code, then Codex.
+_LOST = re.compile(r"no conversation found with session id|no rollout found for thread id|no thread with id", re.I)
 # What Claude Code's result says when a limit ended the turn.
 _STOPPED_AT = {
     "error_max_turns": "The GM used all the model calls a turn is allowed and was stopped. Try again, or ask for less at a time.",
@@ -539,9 +554,7 @@ def set_budget(usd=None, turns=None):
 def spent(root, session):
     """What the agent session has used so far, from the turns' own usage: a session that has none
     (a new one) has spent nothing."""
-    path = _spend_path(root)
-    # A campaign last played before the count moved out of it: its old count, until a turn writes the new one.
-    saved = _load(path if path.exists() else Path(root) / ".solo" / "spend.json")
+    saved = _ledger(root)
     if session and saved.get("session") == session:
         return {"session": session, "turns": saved.get("turns", 0), "cost_usd": saved.get("cost_usd", 0.0)}
     return {"session": session, "turns": 0, "cost_usd": 0.0}
@@ -551,6 +564,12 @@ def reset_spend(root):
     """Start counting again, for a player who would rather not raise the limit."""
     _spend_path(root).unlink(missing_ok=True)
     (Path(root) / ".solo" / "spend.json").unlink(missing_ok=True)
+
+
+def _ledger(root):
+    path = _spend_path(root)
+    # A campaign last played before the count moved out of it: its old count, until a turn writes the new one.
+    return _load(path if path.exists() else Path(root) / ".solo" / "spend.json")
 
 
 def _spend_path(root):
@@ -575,14 +594,29 @@ def budget_left(used):
     return {"usd": max(round(budget()["usd"] - used["cost_usd"], 2), 0.01)}
 
 
+def _estimate(root, session, left):
+    """What a turn that never said its cost is charged: the dearest turn this session has reported, or
+    _ESTIMATE_USD before it has reported one, and never more than the turn was allowed (`left`)."""
+    saved = _ledger(root)
+    dearest = saved.get("dearest_usd") if saved.get("session") == session else None
+    return round(min(dearest or _ESTIMATE_USD, left["usd"]), 2)
+
+
 def _record_spend(root, used, result):
-    """Only `solo gm turn` writes the count, once its agent has gone: nothing the GM runs ever does."""
-    cost = (result.get("usage") or {}).get("cost_usd") or 0.0
+    """Only `solo gm turn` writes the count, once its agent has gone: nothing the GM runs ever does. Beside
+    it are the dearest turn the agent reported and how much of the count is estimated."""
+    usage = result.get("usage") or {}
+    cost = usage.get("cost_usd") or 0.0
+    before = _ledger(root)
+    before = before if before.get("session") == result["session"] else {}
+    dearest = before.get("dearest_usd", 0.0) if usage.get("estimated") else max(before.get("dearest_usd", 0.0), cost)
+    estimated = before.get("estimated_usd", 0.0) + (cost if usage.get("estimated") else 0.0)
     path = _spend_path(root)
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f"{path.name}.{os.getpid()}")
     temporary.write_text(json.dumps({"campaign": str(Path(root).resolve()), "session": result["session"], "turns": used["turns"] + 1,
-                                     "cost_usd": round(used["cost_usd"] + cost, 6)}) + "\n", encoding="utf-8")
+                                     "cost_usd": round(used["cost_usd"] + cost, 6), "dearest_usd": dearest,
+                                     "estimated_usd": round(estimated, 6)}) + "\n", encoding="utf-8")
     os.replace(temporary, path)
     (Path(root) / ".solo" / "spend.json").unlink(missing_ok=True)
 
