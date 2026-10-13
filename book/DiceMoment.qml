@@ -66,6 +66,15 @@ Item {
     spin.restart()
   }
 
+  // Gone at once, whatever it was doing (the Book was shut).
+  function end() {
+    tumble.stop()
+    hold.stop()
+    fadeOut.stop()
+    spin.stop()
+    opacity = 0
+  }
+
   function random(i) {
     return 1 + Math.floor(Math.random() * (sides[i] || 6))
   }

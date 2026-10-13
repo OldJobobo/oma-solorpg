@@ -47,8 +47,23 @@ Item {
   // The story column's width: a line of about 75 characters, however wide the window.
   readonly property real measure: theme.prose * 38
 
+  // A window that is hidden hides nothing inside it, and the plugin stays loaded with the
+  // Book shut. So the page itself is hidden with its window: every animation on it runs only
+  // while its item is visible, and a closed Book takes no time at all. (Loaded only while open,
+  // the page would lose what the player was writing, where they had scrolled and a gravestone
+  // already dismissed.)
+  visible: active
+
   onGameChanged: react()
-  onActiveChanged: if (active && game) titleCard.show(game.scene_title, game.title)
+  onActiveChanged: {
+    if (active && game) {
+      titleCard.show(game.scene_title, game.title)
+    } else if (!active) {  // a moment under way ends with the window, rather than play on unseen
+      dice.end()
+      titleCard.dismiss()
+      hurtOnLanding = false
+    }
+  }
   // Another campaign's story is numbered from its own start: what this one had seen means
   // nothing there, and would hold back its dice and scene cards until it caught up.
   onCampaignChanged: {
@@ -78,6 +93,9 @@ Item {
     }
     var fresh = beats.filter(b => b.seq > seen)
     seen = Math.max(seen, newest)
+    if (fresh.length) storyView.follow()
+    // Shut, the Book keeps its place and nothing more: no moment plays to an empty room.
+    if (!active) return
     var scene = fresh.filter(b => b.kind === "scene").pop()
     var roll = fresh.filter(b => b.kind === "roll" || b.kind === "voice").pop()
     var hurt = fresh.some(b => b.kind === "hurt" && (b.dealt || 0) > 0)
@@ -91,7 +109,6 @@ Item {
     if (hurt) strike("hurt")
     else if (!dice.visible && roll && roll.outcome && (roll.outcome.dragon || roll.outcome.demon))
       strike(roll.outcome.dragon ? "dragon" : "demon")
-    if (fresh.length) storyView.follow()
   }
 
   // A blow that came with a roll waits for the dice to land.
@@ -446,7 +463,7 @@ Item {
                 Timer {
                   interval: 16
                   repeat: true
-                  running: live.shown < live.full.length
+                  running: live.shown < live.full.length && live.visible
                   onTriggered: live.shown = Math.min(live.full.length, live.shown + Math.max(1, Math.ceil((live.full.length - live.shown) / 40)))
                 }
               }

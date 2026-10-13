@@ -26,7 +26,7 @@ sys.path.insert(0, str(HERE))
 from PySide6.QtCore import Property, QFileSystemWatcher, QMetaObject, QObject, QPointF, Q_ARG, QSize, Qt, QTimer, QUrl, Signal, Slot  # noqa: E402
 from PySide6.QtGui import QColor, QGuiApplication  # noqa: E402
 from PySide6.QtQml import QQmlEngine, qmlRegisterModule, qmlRegisterSingletonInstance, qmlRegisterType  # noqa: E402
-from PySide6.QtQuick import QQuickItem, QQuickView  # noqa: E402
+from PySide6.QtQuick import QQuickItem, QQuickView, QQuickWindow  # noqa: E402
 
 LAUNCHED = []
 
@@ -202,12 +202,16 @@ class PanelWindow(QQuickItem):
     color = prop(QColor, "color", QColor("transparent"), notify=colorChanged)
 
 
-class FloatingWindow(QQuickItem):
-    titleChanged = Signal()
-    colorChanged = Signal()
-    title = prop(str, "title", "", notify=titleChanged)
-    color = prop(QColor, "color", QColor("transparent"), notify=colorChanged)
+class FloatingWindow(QQuickWindow):
+    """A window of its own, as Quickshell's is. Hiding a window hides nothing in it as far as QML can tell, so the
+    Book has to stop its own animations when it is shut; an Item in its place hid them, and hid that they ran."""
     minimumSize = prop(QSize, "minimumSize", QSize())
+    implicitWidth = prop(float, "implicitWidth", 0)
+    implicitHeight = prop(float, "implicitHeight", 0)
+
+    def showEvent(self, event):
+        self.resize(int(self.implicitWidth) or 1100, int(self.implicitHeight) or 860)
+        super().showEvent(event)
 
 
 LAYER_SHELL = re.compile(r"^\s*(exclusionMode:.*|WlrLayershell\..*)$", re.M)
@@ -491,6 +495,18 @@ def desk_moments(item, panel, out, work, wait):
            ["pw-play " + str(work / "cache"), "/dice-", "desk --after 1.94 flash dragon", "sleep \"$0\"; exec \"$@\" 1.94 pw-play", "/dragon-"], shot="table-dragon")
     expect("a blow to dying", lambda c: c.wound("hero", "40", "a rockfall", armor=False, rng=Dice()),
            ["desk flash hit", "/hit-", "desk dying on 0", "/heartbeat-"], shot="table-dying")
+    # Dying, the Book's page beats and breathes; shut, it runs nothing (the plugin stays loaded with the Book shut).
+    from render import running
+    book = item.findChild(QObject, "book")
+    book.window().grabWindow().save(str(out / "book-dying.png"))
+    if not running(book):
+        problems.append("nothing runs on the open Book of a dying hero: the check of the shut Book would prove nothing")
+    item.setProperty("bookOpen", False)
+    wait(300)
+    if running(book):
+        problems.append(f"the shut Book still runs {running(book)}")
+    item.setProperty("bookOpen", True)
+    wait(500)
     expect("a Demon on a death roll", lambda c: c.death_roll(rng=Dice(20, 3, 3, 3)),
            ["desk --after 1.94 flash demon", "desk --after 1.94 dying on 2", "/demon-"])
     expect("death", lambda c: c.death_roll(rng=Dice(20, 3, 3, 3)), ["desk --after 1.94 death", "/bell-"])

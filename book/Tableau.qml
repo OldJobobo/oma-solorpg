@@ -27,7 +27,7 @@ Rectangle {
     if (!last || last.seq === undefined || last.seq === shown) return
     var first = shown < 0
     shown = last.seq
-    if (first) return
+    if (first || !visible) return  // a blow struck while the Book was shut isn't played when it opens
     strike.restart()
     var attacker = last.from === "pc" ? heroFighter : foeFighter(last.from)
     var target = last.to === "pc" ? heroFighter : foeFighter(last.to)
@@ -260,7 +260,7 @@ Rectangle {
       text: tableau.fight && tableau.fight.incoming ? tableau.fight.incoming.name + " is about to hit: " + tableau.fight.incoming.damage
         + ". Evade, parry or take it (on the table, or tell the GM)." : ""
       SequentialAnimation on opacity {
-        running: tableau.fight !== null && !!tableau.fight.incoming
+        running: tableau.fight !== null && !!tableau.fight.incoming && tableau.visible
         loops: Animation.Infinite
         NumberAnimation { to: 0.55; duration: 700; easing.type: Easing.InOutSine }
         NumberAnimation { to: 1.0; duration: 700; easing.type: Easing.InOutSine }

@@ -18,9 +18,28 @@ sys.path.insert(0, str(HERE))
 
 from PySide6.QtCore import QMetaObject, QObject, Q_ARG, Q_RETURN_ARG, QTimer, QUrl, SIGNAL  # noqa: E402
 from PySide6.QtGui import QGuiApplication  # noqa: E402
-from PySide6.QtQuick import QQuickView  # noqa: E402
+from PySide6.QtQuick import QQuickItem, QQuickView  # noqa: E402
 
 import scenario  # noqa: E402
+
+
+def running(item):
+    """The timers, animations and particle systems running under `item`, by class name. They hang on the tree of
+    objects, a Repeater's items only on the tree of items, so both are walked."""
+    import shiboken6
+    found, seen, todo = [], set(), [item]
+    while todo:
+        thing = todo.pop()
+        address = shiboken6.getCppPointer(thing)[0]
+        if address in seen:
+            continue
+        seen.add(address)
+        if thing.metaObject().indexOfProperty("running") >= 0 and thing.property("running"):
+            found.append(thing.metaObject().className())
+        todo.extend(thing.children())
+        if isinstance(thing, QQuickItem):
+            todo.extend(thing.childItems())
+    return found
 
 
 def main(out):
@@ -60,8 +79,27 @@ def main(out):
         view.grabWindow().save(str(out / f"{name}.png"))
         print("wrote", out / f"{name}.png")
 
+    title = root.findChild(QObject, "titleCard")
+
+    def settle():  # an open Book names the scene first, on opening and with a campaign it hasn't shown
+        for _ in range(40):
+            wait(150)
+            if not title.property("visible"):
+                break
+
     root.setProperty("game", fight)
-    shot("fight", 700)
+    settle()
+    shot("fight", 300)
+
+    # Shut, the Book runs nothing (the plugin stays loaded, so it would run all day); open, the page lives again.
+    if not running(book):
+        errors.append("nothing runs on the open Book's page: the check below would prove nothing")
+    book.setProperty("active", False)
+    wait(300)
+    if running(book):
+        errors.append(f"the shut Book still runs {running(book)}")
+    book.setProperty("active", True)
+    settle()
     book.setProperty("codexOpen", True)
     shot("codex")
     book.setProperty("codexOpen", False)
@@ -79,7 +117,6 @@ def main(out):
     shot("dice-dragon", 2700)
     wait(5000)
 
-    title = root.findChild(QObject, "titleCard")
     QMetaObject.invokeMethod(title, "show", Q_ARG("QVariant", "Chieftain's Hall"), Q_ARG("QVariant", "The Red Tusk Hall"))
     shot("title-decrypting", 250)
     shot("title", 1400)
@@ -127,6 +164,7 @@ def main(out):
     wait(300)
     if book.property("seen") != fight["story"][-1]["seq"]:
         errors.append(f"the Book kept the last campaign's place: seen {book.property('seen')}")
+    settle()
     book.setProperty("actionError", "Ragna isn't carrying a torch")
     shot("refused", 700)
     book.setProperty("actionError", "")

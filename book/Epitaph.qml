@@ -189,6 +189,6 @@ Item {
     PauseAnimation { duration: 800 }
     NumberAnimation { target: hint; property: "opacity"; to: 1; duration: 800 }
   }
-  onVisibleChanged: if (visible) arrive.restart()
+  onVisibleChanged: visible ? arrive.restart() : arrive.complete()
   Component.onCompleted: if (visible) arrive.restart()
 }

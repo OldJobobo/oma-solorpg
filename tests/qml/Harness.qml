@@ -48,6 +48,5 @@ Item {
     theme: theme
     game: harness.game
     turn: harness.turn
-    active: false
   }
 }

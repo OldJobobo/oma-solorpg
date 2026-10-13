@@ -33,6 +33,15 @@ Item {
     drawRules.restart()
   }
 
+  // Gone at once, wherever it had got to.
+  function dismiss() {
+    decrypt.stop()
+    hold.stop()
+    fadeOut.stop()
+    drawRules.stop()
+    opacity = 0
+  }
+
   function scramble() {
     var out = ""
     for (var i = 0; i < title.length; i++) {

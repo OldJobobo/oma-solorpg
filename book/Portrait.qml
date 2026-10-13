@@ -72,7 +72,7 @@ Item {
       text: face.strokes("w")
       color: face.theme.urgent
       SequentialAnimation on opacity {
-        running: !!face.portrait && face.portrait.wounds >= 2 && face.alive
+        running: !!face.portrait && face.portrait.wounds >= 2 && face.alive && face.visible
         loops: Animation.Infinite
         onRunningChanged: if (!running) wound.opacity = 1
         NumberAnimation { to: 0.45; duration: 900; easing.type: Easing.InOutSine }
@@ -118,10 +118,10 @@ Item {
   }
   Timer { id: unblink; interval: 130; onTriggered: face.blinking = false }
 
-  onArtChanged: if (art !== "") flicker.restart()
+  onArtChanged: if (art !== "" && visible) flicker.restart()
 
   SequentialAnimation on opacity {
-    running: !!face.portrait && face.portrait.mood !== "dead"
+    running: !!face.portrait && face.portrait.mood !== "dead" && face.visible
     loops: Animation.Infinite
     NumberAnimation { to: 0.84; duration: 2600; easing.type: Easing.InOutSine }
     NumberAnimation { to: 1.0; duration: 2600; easing.type: Easing.InOutSine }
