@@ -45,6 +45,23 @@ class PushTest(CampaignTest):
         self.assertEqual(conditions, ["scared"])
         self.assertTrue(campaign.describe(pushed).endswith("; took scared"))  # the log says what it cost
 
+    def test_a_roll_stands_once_the_story_goes_on(self):
+        with self.session() as c:
+            c.check("sneaking", rng=Dice(12))
+            c.say("The guard turns your way. Push it?")
+            c.say("Yes, with everything I have.", by="player")
+            self.assertTrue(c.state["last_check"]["outcome"]["pushable"])  # words at the table don't settle it
+            c.commit({"note": "the guard sees her"})
+            self.assertFalse(c.state["last_check"]["outcome"]["pushable"])  # so the panel stops offering it
+            with self.assertRaisesRegex(SoloError, "that roll stands: the story went on after it"):
+                c.push("scared")
+            c.check("sneaking", rng=Dice(12))
+            c.move("gate", rng=Dice(10))
+            with self.assertRaisesRegex(SoloError, "that roll stands"):
+                c.push("scared")
+            self.assertTrue(all(e["outcome"]["pushable"] for e in c.events if e["type"] == "check"))  # the log keeps the roll as it was
+            self.assertEqual(c.state["last_check"], campaign.fold(c.system, c.adventure, c.events)["last_check"])
+
     def test_successes_and_demons_cannot_be_pushed(self):
         with self.session() as c:
             c.check("swords", rng=Dice(3))

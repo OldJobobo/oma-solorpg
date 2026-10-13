@@ -384,7 +384,8 @@ class Campaign:
         return event
 
     def push(self, condition=None, rng=None, sole_survivor=False):
-        """Push the last check once. The cost comes from the system pack: a condition the
+        """Push the last check once, while it is still the result the story waits on: a commit or a
+        move after it and it stands as it fell. The cost comes from the system pack: a condition the
         character doesn't have yet (Dragonbane) or a track increase (stress in Alien). A hero
         with Sole Survivor may pay willpower instead of a condition."""
         if self.system["family"] == "action-roll":
@@ -407,6 +408,8 @@ class Campaign:
             raise SoloError("nothing to push: make a check first")
         elif last["type"] == "push":
             raise SoloError("that roll was already pushed")
+        elif last.get("stood"):
+            raise SoloError("that roll stands: the story went on after it (a commit or a move), so it can't be pushed any more")
         elif not last["outcome"]["pushable"]:
             raise SoloError("that roll can't be pushed: it succeeded or it was a Demon")
         elif cost == "condition" and not available:
@@ -475,8 +478,8 @@ class Campaign:
         return event
 
     def burn(self, rng=None):
-        """Burn momentum on the last action roll: the challenge dice under it are cancelled,
-        and momentum goes back to its reset."""
+        """Burn momentum on the last action roll, while it is still open (see act): the challenge
+        dice under it are cancelled, and momentum goes back to its reset."""
         self._moves_only("burn momentum")
         self._able("burn momentum")
         last, momentum = self.state["last_check"], self.state["pc"]["tracks"]["momentum"]
@@ -492,6 +495,8 @@ class Campaign:
             burned = mechanics.burn(last["outcome"], momentum["value"])
             if burned is None:
                 raise SoloError(f"burning momentum {momentum['value']} wouldn't change the roll: every challenge die the score doesn't beat is at or above it")
+            elif self.state["open_roll"] != last["seq"]:
+                raise SoloError("that roll stands: the story went on after it (a commit, a move or another move made), so momentum can't be burned on it any more")
             changes = {"pc": {"tracks": {"momentum": momentum["reset"]}, "tracks_was": {"momentum": momentum["value"]}}}
             event = self.append("burn", of=last["seq"], move=last["move"], label=last["label"], stat=last.get("stat"), changes=changes, outcome=burned)
             self._follow(_triggers(burned), event["seq"], rng)
@@ -2857,7 +2862,7 @@ def burn_option(state):
     neither computes a rule."""
     last, momentum = state["last_check"], ((state["pc"] or {}).get("tracks") or {}).get("momentum")
     burned = None
-    if last and last["type"] == "act" and "track" not in last and momentum and momentum["value"] > 0:
+    if last and last["type"] == "act" and last["seq"] == state["open_roll"] and "track" not in last and momentum and momentum["value"] > 0:
         burned = mechanics.burn(last["outcome"], momentum["value"])
     if burned:
         return {"momentum": momentum["value"], "reset": momentum["reset"], "hit": burned["hit"]}
@@ -3369,6 +3374,10 @@ def apply(state, event, adventure):
         state["clocks"][event["clock"]]["stopped"] = True
     elif kind == "due" and event["consequence"] in state["consequences"]:
         state["consequences"][event["consequence"]]["due"] = True
+    if kind in ("commit", "move") and (state["last_check"] or {}).get("outcome", {}).get("pushable"):
+        # The story went on: the roll stands as it fell, and its push is no longer on offer (the panel reads pushable).
+        last = state["last_check"]
+        state["last_check"] = {**last, "outcome": {**last["outcome"], "pushable": False}, "stood": True}
     if kind in ("fight", "join"):
         for foe in event["foes"].values():
             if foe["npc"] in state["npcs"]:
