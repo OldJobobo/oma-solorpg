@@ -346,9 +346,18 @@ class Campaign:
                 self.append("due", consequence=consequence_id, text=consequence["text"], npc=consequence["npc"])
 
     def save(self):
+        """Write state.json. It keeps up with the log whatever the packs make of it: what they add (the
+        kit, the map, the codex, the art) is left out when it can't be worked out, and said, rather than
+        failing a command whose events are written (its retry would roll again) and leaving the panel behind."""
         path = self.root / "state.json"
         temporary = path.with_name("state.json.tmp")
-        temporary.write_text(json.dumps(snapshot(self.system, self.state, self.adventure), ensure_ascii=False, indent=1), encoding="utf-8")
+        try:
+            view = snapshot(self.system, self.state, self.adventure)
+        except Exception as error:  # whatever it was, the log stands and the state follows it
+            reason = error if isinstance(error, SoloError) else f"{type(error).__name__}: {error}"
+            print(f"solo: state.json is written without what the packs add to it ({reason}); solo validate says what to fix", file=sys.stderr)
+            view = {k: v for k, v in self.state.items() if k not in _GM_ONLY}
+        temporary.write_text(json.dumps(view, ensure_ascii=False, indent=1), encoding="utf-8")
         os.replace(temporary, path)
 
     # Rolls -----------------------------------------------------------------------

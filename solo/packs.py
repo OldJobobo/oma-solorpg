@@ -923,7 +923,24 @@ def compile_condition(text):
     for path in _paths(tree):
         if path[0] not in _ROOTS and not (len(path) == 1 and path[0] in ATTITUDES):
             raise SoloError(f"condition {text!r}: unknown name {'.'.join(path)}")
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Compare):
+            sides = [node.left, *node.comparators]
+            for op, a, b in zip(node.ops, sides, sides[1:]):
+                attitude = next((side for side in (a, b) if _is_attitude(side)), None)
+                words = next((side.value for side in (a, b) if isinstance(side, ast.Constant) and isinstance(side.value, str)), None)
+                if isinstance(op, (ast.Lt, ast.LtE, ast.Gt, ast.GtE)) and attitude is not None and words is not None:
+                    raise SoloError(f"condition {text!r}: can't compare {'.'.join(_path(attitude))} with {words!r} "
+                                    "(attitudes compare with bare names: friendly)")
     return tree
+
+
+def _is_attitude(node):
+    """Whether a name in a condition reads an attitude or a standing: a number, compared with bare names."""
+    if not isinstance(node, (ast.Name, ast.Attribute)):
+        return False
+    path = _path(node)
+    return path[0] == "faction" or (path[0] == "npc" and len(path) > 2 and path[2] == "attitude")
 
 
 def evaluate(condition, state):
@@ -952,6 +969,9 @@ def _eval(node, state):
 
 
 def _compare(op, a, b):
+    """One comparison. Values of kinds that don't compare (a fact the GM wrote as "two", held against 2)
+    compare false, the way a value not set yet does: a condition is read on every command, and one
+    that raised would fail them all."""
     try:
         match op:
             case ast.Eq():
@@ -973,7 +993,7 @@ def _compare(op, a, b):
             case _:
                 return a >= b
     except TypeError:
-        raise SoloError(f"can't compare {a!r} with {b!r} (attitudes compare with bare names: friendly)") from None
+        return isinstance(op, ast.NotIn)
 
 
 def _lookup(path, state):

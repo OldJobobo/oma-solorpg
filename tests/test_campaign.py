@@ -1,6 +1,8 @@
+import io
 import json
 import shutil
 import unittest
+import unittest.mock
 
 from helpers import CampaignTest, Dice, LikelihoodTest
 
@@ -353,6 +355,39 @@ class ReplayTest(CampaignTest):
             self.assertIn("## Pack problems", cli.scene_digest(c))
             c.save()
         self.assertGreater(json.loads((root / "state.json").read_text())["pack_problems"], 0)
+
+    def guarded(self, when):
+        """A campaign on a copy of the adventure whose way from the gate into the hall opens `when`."""
+        adventure = self.tmp / "guarded"
+        shutil.copytree(self.adventure, adventure)
+        spec = adventure / "adventure.toml"
+        spec.write_text(spec.read_text().replace('exits = { hall = "Into the hall",', f'exits = {{ hall = {{ label = "Into the hall", when = "{when}" }},'))
+        root = campaign.create(self.tmp / "guarded-game", self.system, adventure, self.character)
+        with campaign.session(root) as c:
+            c.move("gate", rng=Dice(10))
+        return root, spec
+
+    def test_a_fact_of_the_wrong_type_shuts_the_way_and_fails_no_command(self):
+        root, _ = self.guarded("not fact.gate.guards or fact.gate.guards < 2")
+        with campaign.session(root) as c:
+            c.commit({"facts": {"gate.guards": "two"}})
+            with self.assertRaisesRegex(SoloError, "isn't open yet"):
+                c.move("hall")
+            c.check("swords", rng=Dice(3))
+            count = len(c.events)
+        with campaign.session(root) as c:
+            self.assertEqual(len(c.events), count)
+        self.assertEqual(json.loads((root / "state.json").read_text())["seq"], count)
+
+    def test_a_condition_the_packs_broke_since_leaves_state_json_with_the_log(self):
+        root, spec = self.guarded("fact.gate.guards < 2")
+        spec.write_text(spec.read_text().replace("fact.gate.guards < 2", "fact.gate.guards <"))
+        with unittest.mock.patch("sys.stderr", io.StringIO()) as err:
+            with campaign.session(root) as c:
+                c.check("swords", rng=Dice(3))
+                count = len(c.events)
+        self.assertIn("can't read condition 'fact.gate.guards <'", err.getvalue())
+        self.assertEqual(json.loads((root / "state.json").read_text())["seq"], count)
 
     def test_a_broken_pack_is_reported_where_the_gm_reads(self):
         adventure = self.tmp / "red-tusk"

@@ -155,6 +155,15 @@ class ConditionTest(unittest.TestCase):
         with self.assertRaisesRegex(SoloError, "bare names"):
             packs.evaluate("npc.grukk.attitude >= 'friendly'", self.state)
 
+    def test_values_of_kinds_that_dont_compare_compare_false(self):
+        # A GM commits {"gate.guards": "two"}: the condition is read on every command, and it raised on all of them.
+        state = {**self.state, "facts": {"gate.guards": "two"}}
+        cases = {"fact.gate.guards < 2": False, "not fact.gate.guards or fact.gate.guards < 2": False,
+                 "2 >= fact.gate.guards": False, "'a' in clock.ritual": False, "'a' not in clock.ritual": True}
+        for text, expected in cases.items():
+            with self.subTest(text=text):
+                self.assertEqual(packs.evaluate(text, state), expected)
+
 
 if __name__ == "__main__":
     unittest.main()
