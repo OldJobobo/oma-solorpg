@@ -389,12 +389,15 @@ class CliTest(CliCase):
 
     def test_play_without_omarchy_explains_what_to_do(self):
         self.new_game()
+        (self.tmp / "home" / ".claude").mkdir(parents=True, exist_ok=True)
         with unittest.mock.patch("shutil.which", return_value=None):
             code, out, _ = self.solo("play", self.game)
         self.assertEqual(code, 0)
         self.assertIn("omarchy-agent isn't available", out)
-        # The GM needs solo and the skills, so play links them the first time.
+        # The GM needs solo and the skills, so play links them the first time, for the agents
+        # that are there (Claude Code's folder is) and no others, as setup does.
         self.assertTrue((self.tmp / "home" / ".claude" / "skills" / "solo-gm").is_symlink())
+        self.assertFalse([folder for folder in (".codex", ".agents", ".pi") if (self.tmp / "home" / folder).exists()])
 
     def test_play_focuses_a_gm_that_is_already_open(self):
         self.new_game()

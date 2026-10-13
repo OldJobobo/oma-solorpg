@@ -229,7 +229,7 @@ def _play(root, terminal=False):
     import subprocess
     from . import gm
     campaign.set_current(root)
-    for line in _links():
+    for line in _links(skill_dirs=_installed_skill_dirs()):
         if not line.startswith("ok"):
             print(line)
     _write_agent_files(root)
