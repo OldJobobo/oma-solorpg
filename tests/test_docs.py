@@ -110,8 +110,10 @@ class DesignDocsTest(unittest.TestCase):
     def test_plan_says_what_is_true_now(self):
         plan = (ROOT / "docs" / "PLAN.md").read_text(encoding="utf-8")
         for stale in ("omarchy agent`", "the agent window", "GM window: omarchy agent", "Single-window mode: revisit",
-                      "Until the cut button", "no cap on its tool calls", "(phase "):
+                      "Until the cut button", "no cap on its tool calls"):
             self.assertNotIn(stale, plan)
+        # Phases 7 to 8d were never defined anywhere a reader could look them up.
+        self.assertNotRegex(plan, r"(?i)\bphases? \d")
 
     def test_the_commit_keys_are_a_table_with_every_key_the_engine_takes(self):
         from solo import campaign
