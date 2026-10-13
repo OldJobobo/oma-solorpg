@@ -57,6 +57,18 @@ class ReadmeTest(unittest.TestCase):
     def readme(self):
         return (ROOT / "README.md").read_text(encoding="utf-8")
 
+    def test_every_command_is_in_the_readmes_commands_table(self):
+        from solo import cli
+        text = self.readme()
+        table = text[text.index("\n## Commands\n"):].split("\n## ", 2)[1]
+        listed = set()
+        for row in table.splitlines():
+            if row.startswith("| `"):
+                first = re.split(r"(?<!\\)\|", row)[1]
+                listed |= {span.removeprefix("solo ").split()[0] for span in re.findall(r"`([^`]+)`", first)}
+        missing = [name for name in cli.command_names() if name not in listed]
+        self.assertEqual(missing, [], f"the README's Commands table doesn't list: {', '.join(missing)}")
+
     def test_the_quick_start_is_the_three_commands_and_the_first_adventure(self):
         text = self.readme()
         quick = text[text.index("## Quick start"):text.index("\n## ", text.index("## Quick start") + 1)]

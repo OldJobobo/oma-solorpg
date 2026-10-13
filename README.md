@@ -309,17 +309,24 @@ Don't publish packs built from books you bought. They stay in `~/Games/solo`, wh
 
 ## Commands
 
+`solo -C <campaign folder> <command>` runs a command on that campaign; without `-C`, `solo` finds the campaign from the folder you're in, then takes the current one.
+
 | | |
 |---|---|
 | `solo scene` / `npc <id>` / `rule <topic>` | what the GM reads (Markdown) |
 | `solo check <skill> [--boons N --banes N]` / `push [--condition C \| --sole-survivor]` | rolls through the system's resolver (games of skills) |
 | `solo act <move> [--stat S] [--add N] [--track ID]` / `burn` | a move's roll, with the book's words for the result; burning momentum on it (games of moves) |
 | `solo track add <name> --kind K --rank R` / `mark <id> [--times N]` / `set <id> [--ticks N] [--rank R]` / `end <id> --how H` / `list` | progress tracks: vows, journeys, fights, bonds (games of moves) |
-| `solo rest <round\|stretch\|shift> [--heal C] [--tend]` | rests from the system pack; time passes |
+| `solo rest <round\|stretch\|shift> [--heal C] [--tend] [--use A]` | rests from the system pack; time passes |
+| `solo journey <km> [--mounted] [--road] [--difficult]` / `camp` | travel a shift at a time until the hero arrives or something needs the GM; finding a place to rest in the wild |
 | `solo roll <expr>` / `table <id>` / `ask "<question>" [--kind K] [--likely L \| --npc id \| --meaning]` | dice, tables, the oracle |
 | `solo threat add\|random\|advance\|end` / `search` / `scavenge` | threats, searching and scavenging (when the pack has solo rules) |
 | `solo fight <npc>... [--join \| --round \| --end]` / `attack [<foe>] --with W` / `enemy [<foe>]` / `ally <npc> [<foe>]` / `defend evade\|parry\|take` | fights |
+| `solo dragon double\|attack\|pierce [<foe>]` | what a Dragon on the hero's attack does: double the blow, a free attack on another foe, or pierce armor |
 | `solo wound <foe\|hero> <dice\|all> --why W [--through-armor] [--double]` | harm that isn't a weapon blow: fire, spells, traps; `hero` for a fall or a trap on the hero (armor counts) |
+| `solo repair <weapon> [--artisan]` | mend a damaged or broken weapon: a roll, or an artisan and none |
+| `solo cast <spell> [--power N] [--target F] [--grimoire]` / `prepare <spell> [--drop S]` / `learn <spell> [--from teacher\|grimoire]` | magic: cast a spell the hero knows (its WP paid, its school rolled), hold one ready, learn a new one |
+| `solo ability <name> [--cost N]` | pay for a heroic ability the GM runs from its rules page, and log it |
 | `solo death-roll [--heal]` / `rally` / `hero <character>` / `mark <skill>` / `advance` | dying (or saving yourself, rallying alone), carrying on after a death, advancement |
 | `solo prefs [--tone T] [--line L] [--veil V] [--clear]` | the player's table settings (the GM can't run it without asking) |
 | `solo voice <skill> <text>` / `light [torch] [--out]` | a skill speaks up if a quiet roll succeeds; torches burn down |
@@ -330,10 +337,11 @@ Don't publish packs built from books you bought. They stay in `~/Games/solo`, wh
 | `solo gm budget [dollars] [--turns N] [--reset]` | what one GM session may spend (10 dollars, 200 turns, by default); the Book stops with a plain sentence when it is used up (the GM can't run it) |
 | `solo strike [--note N] [--line L] [--veil V]` | the X-card, the Book's "cut the GM's last message": it leaves the page and `recall`, and the GM is told not to come back to it (the player's, not the GM's) |
 | `solo report [-n N] [--no-messages] [--out F]` | a bug report safe to post: ids, numbers and dice, the GM's commands and the engine and pack versions, with the books' words left out |
+| `solo review [--trace F]` | the campaign checked as a play test would: refused commands, bookkeeping in the story, foes that never struck back, consequences never paid, a person with two names |
 | `solo desk flash\|dying\|death\|candle\|omen\|screensaver\|sound\|restore\|settings` | desktop effects, always restored |
 | `solo recall <words>` / `history` | the GM's long memory: search everything said and written down, or the whole story in order |
 | `solo state` / `log` / `rebuild` / `validate` / `outline` | inspection, repair and review |
-| `solo new [<adventure>]` / `character` / `library` / `use` / `play [--terminal]` | campaigns and heroes |
+| `solo new [<adventure>]` / `character` / `library` / `use` / `play [--terminal]` / `delete <dir> [--yes]` | campaigns and heroes |
 | `solo setup` / `import` / `extract <pdf>` / `inventory` / `audit` / `compare` | installation and content: a book's PDF as text, a pack built from a book (`import book`), a first inventory, a table from the book, Ironsworn from Datasworn, a pack checked against its inventory and its pages, two packs side by side |
 | `solo campaign new\|next\|roll\|check` | a campaign from a premise: roll it, roll its next mission from what the hero did, roll for its author, check it's written and every roll is used |
 

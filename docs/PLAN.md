@@ -603,54 +603,7 @@ The first real GM run of this (a scripted session dropped partway, and the hero 
 
 ## CLI
 
-```
-solo new [<adventure>] [--character <file|pre-made|words>] [--name N] [--seed N]
-         [--dir DIR] [--title T] [--system PACK] [--play] [--tone T] [--line L]... [--veil V]...
-solo library                   systems, adventures, campaigns (JSON, for the panel)
-solo character [<words>...] [--system S] [--name N] [--seed N] [--out FILE]
-solo use <dir>                 make a campaign current
-solo play [<dir>]              open or focus the GM (+ summon the panel)
-solo setup [--plugin]          link solo into ~/.local/bin and the skills into agent dirs
-solo scene                     scene digest: text, exits, NPCs, branches, clocks (Markdown)
-solo move <exit>
-solo npc <id>                  profile + live state (Markdown)
-solo rule <topic>              search imported rules text (Markdown)
-solo check <skill|attribute> [--boons N] [--banes N]
-solo push [--condition <c>]
-solo rest <round|stretch|shift> [--heal <condition>]
-solo roll <expr>               2d20kl, 5d6cs>=6, d66, 1d6+@stress ...
-solo table <id>
-solo ask "<question>" [--kind <column>] [--likely <level> | --npc <id>]   (the fortune chart; or the likelihood oracle, with random events)
-solo ask ["<question>"] --meaning  words to interpret (the inspiration table in Dragonbane)
-solo fight <npc>... | --join <npc>... | --round | --end
-solo attack [<foe>] [--with W] [--boons N] [--banes N]
-solo enemy [<foe>]             a foe attacks; a hit waits as incoming
-solo ally <npc> [<foe>]        an NPC on the hero's side attacks a foe, once a round
-solo defend evade|parry|take [--with W]
-solo wound <foe> <dice|all> --why W [--through-armor] [--double]   harm by fire, spells, traps
-solo death-roll [--heal]        the dying hero's roll, or (alone) a HEALING roll to save themselves
-solo rally                     alone at zero HP: act again, still dying
-solo threat add "<text>" [--recurring] | random | advance <id> [--by N] | end <id>
-solo search / solo scavenge [--again]
-solo hero <character> [--name N] [--seed N]   after a death, the story goes on with another hero
-solo mark <skill> [--reason R] / solo advance
-solo prefs [--tone T] [--line L]... [--veil V]... [--clear]   (not in the GM's allowed commands)
-solo commit '<json>'
-solo resume                    the GM's last message and what came after (Markdown)
-solo recall <words> [-n N]     search the whole campaign: everything said, notes, facts, memories (Markdown)
-solo history                   the whole campaign in order, by chronicle chapters (Markdown)
-solo say [--player] <text|->   record a message word for word; --hook reads a Claude Code hook
-solo state | solo log [-n N] | solo rebuild
-solo validate [<pack>]
-solo outline [--adventure A]   the pack on one page for its author: gates, stages, facts read (spoilers)
-solo extract <pdf> [--out DIR]    a book as pages, chapters and tables, running heads out, printed pages kept
-solo inventory <pack> --extract DIR   start a book's inventory: a file per chapter, an item per section and table
-solo import table <file|-> --out <tables/id.toml> [--name N] [--formula F] [--pages P]   a book's roll table
-solo audit [--system S | --adventure A]   the pack against its inventory and the book's pages
-solo import foundry adventure <src...> --out <dir> [--journal <name>]
-solo import foundry rules <src...> --out <system pack>
-solo import foundry character <actor.json> --out <pc.json>
-```
+Every command is in the [README's Commands table](../README.md#commands) with its main options, and `solo <command> --help` has the rest.
 
 `solo new examples/red-tusk` and `solo new red-tusk` both work: the system comes from the adventure, the hero is random unless `--character` says otherwise, and the folder is `~/Games/solo/campaigns/red-tusk-<hero>` (suffixed if taken). Mechanical commands print JSON; prose commands print Markdown; errors go to stderr with exit status 1.
 
