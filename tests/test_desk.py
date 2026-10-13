@@ -141,6 +141,18 @@ class DeskTest(CampaignTest):
         self.assertIsNone(desk._saved("border"))
         self.assertEqual(border.read_text(), "ff7a0c0c")
 
+    def test_an_omens_words_are_never_read_as_an_option(self):
+        calls = self.tmp / "notify.calls"
+        for name in ("notify-send", "omarchy-notification-send"):
+            script = self.bin / name
+            script.write_text(f"#!/usr/bin/env python3\nimport json, sys\nopen({str(calls)!r}, 'a').write(json.dumps(sys.argv) + '\\n')\n")
+            script.chmod(script.stat().st_mode | stat.S_IEXEC)
+            desk.omen("--urgency=critical")
+            script.unlink()
+        sent, omarchy = [json.loads(line) for line in calls.read_text().splitlines()]
+        self.assertEqual(sent[-3:], ["--", "An omen", "--urgency=critical"])  # GLib reads no option after --
+        self.assertEqual(omarchy[-2:], ["An omen", "\u200b--urgency=critical"])  # no "--" there: no option by that name
+
     def test_nothing_is_changed_when_the_border_cant_be_read(self):
         (self.bin / "hyprctl").write_text("#!/bin/sh\nexit 1\n")
         self.assertFalse(desk.flash("dragon"))

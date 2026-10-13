@@ -387,10 +387,14 @@ def omen(text):
 
 
 def notify(title, text):
+    """A desktop notification. The text can be a pack's (an omen's words), and must never be taken for an
+    option: notify-send (GLib) stops reading options at "--"; omarchy-notification-send has no such mark
+    and knows its options by their exact names, so text that starts with a dash gets a zero-width space first."""
     if shutil.which("omarchy-notification-send"):
+        text = f"​{text}" if text.startswith("-") else text
         return _run(["omarchy-notification-send", "--app-name", "oma-solorpg", "-g", GLYPH, title, text]) is not None
     elif shutil.which("notify-send"):
-        return _run(["notify-send", "--app-name", "oma-solorpg", title, text]) is not None
+        return _run(["notify-send", "--app-name", "oma-solorpg", "--", title, text]) is not None
     return False
 
 
