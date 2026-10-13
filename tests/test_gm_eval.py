@@ -124,7 +124,7 @@ class Run(CampaignTest):
         def stand_in(root, text=None, agent=None):
             with campaign.session(root) as c:
                 c.say("Rain on the road. Do you go on?", "gm")
-            return {"status": "done", "text": "Rain on the road. Do you go on?", "model": "claude-stand-in-1"}
+            return {"status": "done", "text": "Rain on the road. Do you go on?", "model": "stand-in-model-1"}
 
         def judge(*_):
             raise OSError(7, "Argument list too long")
@@ -137,7 +137,7 @@ class Run(CampaignTest):
                 unittest.mock.patch.object(harness, "judge_run", judge):
             os.environ.pop("SOLO_GM_MODEL", None)
             report = harness.run(scenario, self.tmp / "run", log=lambda *_: None)
-        self.assertEqual(report["model"], "claude-stand-in-1")  # not "default": what the stream's init event named
+        self.assertEqual(report["model"], "stand-in-model-1")  # not "default": what the stream's init event named
         self.assertIn("Argument list too long", report["judge"]["error"])
         self.assertIn("The judge failed", (self.tmp / "run" / "report.md").read_text())
 
