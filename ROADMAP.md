@@ -61,6 +61,8 @@ Left:
 
 - Run `injected-scene` with a real GM, and add the cheat and lines-and-veils scenarios of item 5.
 - A control for the budget on the Table, and a line in the Book when a session is close to its limit.
+- A Codex GM can still delete or rewrite `.solo/agent.json` (the session id the spending count is keyed to), and the next turn starts a fresh session whose count starts at zero. Closing it means keeping the session id outside the campaign folder too, which changes how the play-test harness starts a new session.
+- The Book's first prompt now puts the table and the adventure's text in a block marked as data (2026-10-13). `injected-scene` hasn't been run against it.
 
 The lint can't stop a clever injection, only the obvious; the GM's own tool limits are what hold when it fails.
 

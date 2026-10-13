@@ -152,6 +152,8 @@ solo character elf mage --seed 7                           # just look at a hero
 
 The GM runs headless: `solo gm turn` drives Claude Code or Codex one turn at a time and streams what it writes. GM pace, under the table's settings, sets how long it thinks before it answers: Quick answers sooner and spends fewer tokens, Careful thinks longer about the rules. It is the agent's effort level (low, medium or high), one pace for every campaign (`solo gm pace`). Other agents open in a terminal (Terminal on the table, or `solo play --terminal`), and the Book still shows the story as it is recorded.
 
+A GM turn is held in code, not only by the GM's instructions. Claude Code gets two tools, Bash and Read, and Bash may run only the GM's own `solo` commands; a recent Claude Code also runs with `--restricted` and `--permission-mode dontAsk`, so none of your own Claude Code settings or allow rules reach the GM. Codex's sandbox keeps the GM inside the campaign folder, but Codex has no list of allowed commands, so untrusted adventure text is held back less under Codex than under Claude Code. Every turn has a time limit, and every GM session a spending limit (`solo gm budget`), counted in `~/.local/state/solo`, outside the campaign folder the GM can write. The commands that are yours alone (`solo strike`, `solo prefs`, and setting the budget or the pace) refuse to run inside a GM turn.
+
 ## The desktop joins in
 
 While a game is on, Omarchy plays along:
@@ -334,7 +336,7 @@ Don't publish packs built from books you bought. They stay in `~/Games/solo`, wh
 | `solo resume [--book]` / `say [--player] <text>` | where the table stopped; record what was said |
 | `solo gm turn [text]` / `gm stop` / `gm status` / `gm agent` | the Book's GM: one headless turn, streamed to `.solo/turn.json` |
 | `solo gm pace [quick\|normal\|careful]` | how long the GM thinks before it answers, for every campaign (the GM can't run it) |
-| `solo gm budget [dollars] [--turns N] [--reset]` | what one GM session may spend (10 dollars, 200 turns, by default); the Book stops with a plain sentence when it is used up (the GM can't run it) |
+| `solo gm budget [dollars] [--turns N] [--reset]` | what one GM session may spend (10 dollars, 200 turns, by default), counted outside the campaign folder; the Book stops with a plain sentence when it is used up (the GM can't run it) |
 | `solo strike [--note N] [--line L] [--veil V]` | the X-card, the Book's "cut the GM's last message": it leaves the page and `recall`, and the GM is told not to come back to it (the player's, not the GM's) |
 | `solo report [-n N] [--no-messages] [--out F]` | a bug report safe to post: ids, numbers and dice, the GM's commands and the engine and pack versions, with the books' words left out |
 | `solo review [--trace F]` | the campaign checked as a play test would: refused commands, bookkeeping in the story, foes that never struck back, consequences never paid, a person with two names |
