@@ -38,8 +38,7 @@ Item {
   property bool opened: false
 
   readonly property string solo: decodeURIComponent(Qt.resolvedUrl("bin/solo").toString().replace(/^file:\/\//, ""))
-  readonly property string stateDir: (Quickshell.env("XDG_STATE_HOME") || Quickshell.env("HOME") + "/.local/state") + "/solo"
-  property string campaign: ""
+  readonly property string campaign: currentFile.campaign
   property var game: null
   property var library: null
   // The campaign whose card is asking "delete for good?", by folder.
@@ -894,19 +893,12 @@ Item {
     return root.game ? root.game.log.filter(e => !e.hidden).slice(-14).reverse() : []
   }
 
-  // Which campaign is current, as recorded by `solo new`, `solo use` and `solo play`.
-  // Read synchronously so open() already knows whether to show Home or the table, and
-  // re-read on open and after every command: a watch set while the file didn't exist
-  // yet (the very first game) never fires.
-  FileView {
+  // Which campaign is current (book/CurrentCampaign.qml). Read synchronously so open()
+  // already knows whether to show Home or the table, and re-read on open and after every
+  // command, so a game begun here is followed at once.
+  CurrentCampaign {
     id: currentFile
-    path: root.stateDir + "/current"
     blockLoading: true
-    watchChanges: true
-    printErrors: false
-    onFileChanged: reload()
-    onLoaded: root.campaign = text().trim()
-    onLoadFailed: root.campaign = ""
   }
 
   FileView {

@@ -4,6 +4,7 @@ import Quickshell.Io
 // Qualified: from Qt 6.12 QtQuick has a Color of its own, which a bare Color would mean.
 import qs.Commons as Commons
 import qs.Ui
+import "book"
 
 // The d20 in the bar. It follows the game: it spins when a die is cast and lands with a
 // flare of gold for a Dragon or red for a Demon; it is lit when the GM is waiting for your
@@ -15,8 +16,7 @@ BarWidget {
   moduleName: "cabral.oma-solorpg"
 
   readonly property string solo: decodeURIComponent(Qt.resolvedUrl("bin/solo").toString().replace(/^file:\/\//, ""))
-  readonly property string stateDir: (Quickshell.env("XDG_STATE_HOME") || Quickshell.env("HOME") + "/.local/state") + "/solo"
-  property string campaign: ""
+  readonly property string campaign: current.campaign
   property var game: null
 
   readonly property var pc: game && game.pc ? game.pc : null
@@ -69,14 +69,8 @@ BarWidget {
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
 
-  FileView {
-    path: root.stateDir + "/current"
-    watchChanges: true
-    printErrors: false
-    onFileChanged: reload()
-    onLoaded: root.campaign = text().trim()
-    onLoadFailed: root.campaign = ""
-  }
+  // The same watch on `current` as the Table's, so the first game ever shows here without a restart.
+  CurrentCampaign { id: current }
 
   FileView {
     path: root.campaign !== "" ? root.campaign + "/state.json" : ""

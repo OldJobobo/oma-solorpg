@@ -147,8 +147,10 @@ class FileView(QObject):
         super().__init__(parent)
         self._text = ""
         self._watcher = QFileSystemWatcher(self)
-        self._watcher.fileChanged.connect(self._changed)
-        self._watcher.directoryChanged.connect(self._changed)
+        # Through a function, not the bound method: a FileView at the root of a component of its own that declares
+        # properties (book/CurrentCampaign.qml) gets a metaobject from QML, and a slot PySide adds to it never runs.
+        self._watcher.fileChanged.connect(lambda path: self._changed(path))
+        self._watcher.directoryChanged.connect(lambda path: self._changed(path))
 
     def _get_path(self):
         return getattr(self, "_path", "")
@@ -182,6 +184,7 @@ class FileView(QObject):
 
     @Slot()
     def reload(self):
+        self._watch()  # as Quickshell's does: every reload sets the watch again
         try:
             self._text = Path(self._path).read_text(encoding="utf-8")
         except OSError:
@@ -304,6 +307,7 @@ def main(out):
     errors += magic_and_dragons(item, panel, out, work, wait)
     errors += errors_by_source(item, work, wait)
     errors += commands_wait_their_turn(item, panel, work, wait)
+    errors += the_first_game(load, work, wait)
     print("bar tooltip:", bar.rootObject().tooltip())
     print("launched:")
     for command in LAUNCHED:
@@ -753,6 +757,24 @@ def commands_wait_their_turn(item, panel, work, wait):
     if item.property("busy") or not strength.property("enabled"):
         problems.append("the Table stayed busy after the commands ended")
     return problems
+
+
+def the_first_game(load, work, wait):
+    """The d20 sees the very first game without a restart of the shell: `current`, and the folder it is in, are made
+    by that game, after the bar began watching for them."""
+    fresh = work / "first-state"
+    os.environ["XDG_STATE_HOME"] = str(fresh)
+    try:
+        bar = load("BarWidget.qml", 60, 30)
+        wait(500)
+        game = (work / "state" / "solo" / "current").read_text().strip()
+        (fresh / "solo").mkdir(parents=True)
+        (fresh / "solo" / "current").write_text(game + "\n")
+        wait(4000)
+        seen = bar.rootObject().property("campaign")
+    finally:
+        os.environ["XDG_STATE_HOME"] = str(work / "state")
+    return [] if seen == game else [f"the d20 didn't see the first game: it follows {seen!r}"]
 
 
 def deleted_while_dying(item, bar, work, wait):
