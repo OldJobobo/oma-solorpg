@@ -16,6 +16,8 @@ from .. import SoloError
 
 _DIE = re.compile(r"^D(\d+|%)(?!\w)\s*(.*)$", re.I)
 _NUMBER = re.compile(r"^(\d+)(?:(\+)|\s*[–-]\s*(\d+))?(?:\s+(.*))?$")
+# A header is set smaller than this, bold (as grid.py reads a table's); cells at this size or smaller.
+_HEADER_SIZE = 8.6
 _CELL_SIZE = 9.3
 # Numbers whose left edges are this close are one column of numbers.
 _COLUMN = 8
@@ -43,7 +45,7 @@ def is_die(label):
 
 
 def is_marker(line):
-    return line["size"] < 8.6 and line["font"].endswith("-Bold") and is_die(line["text"])
+    return line["size"] < _HEADER_SIZE and line["font"].endswith("-Bold") and is_die(line["text"])
 
 
 def read(lines, glue, sides=None):
@@ -54,7 +56,7 @@ def read(lines, glue, sides=None):
     if not heads and sides is None:
         raise SoloError("no roll table here: a header with the die (D6, D20 ...) was not found")
     given, sides = sides, sides or faces(heads[0]["text"])
-    small = [line for line in lines if line["size"] < 8.6 and line["font"].endswith("-Bold")]
+    small = [line for line in lines if line["size"] < _HEADER_SIZE and line["font"].endswith("-Bold")]
     body = [line for line in lines if line["size"] <= _CELL_SIZE and line not in small]
     rows = _rows(body, sides, glue)
     top = rows[-1]["high"] if rows else 0
@@ -167,7 +169,7 @@ def columns(lines, glue):
     smaller die has "—" in the rows it doesn't use. Cells the PDF set in one line ("a dry well 2D6 crows")
     are cut apart where the words have a gap."""
     marks = sorted((line for line in lines if is_marker(line) and not _DIE.match(line["text"].strip()).group(2)), key=lambda line: line["x0"])
-    heads = [line for line in lines if line["size"] < 8.6 and line["font"].endswith("-Bold")]
+    heads = [line for line in lines if line["size"] < _HEADER_SIZE and line["font"].endswith("-Bold")]
     top = min(line["y0"] for line in marks)
     body = [cell for line in lines if line["size"] <= _CELL_SIZE and line not in heads and line["y0"] > top for cell in _split(line)]
     left = marks[0]["x0"] - _COLUMN
