@@ -666,6 +666,32 @@ class Isolation(Agents):
         self.assertIn("your own Claude Code settings", gm.status(self.root)["note"])
         self.assertEqual((self.tmp / "claude.help").read_text(), "asked\nasked\n")
 
+    def test_a_help_that_failed_is_asked_again_and_its_turn_says_whose_settings_it_ran_with(self):
+        # A --help that failed once was kept as "knows neither" for as long as that claude stayed installed.
+        broken = self.tmp / "broken"
+        broken.write_text("yes")
+        script = self.bin / "claude"
+        script.write_text(textwrap.dedent(f"""\
+            #!/usr/bin/env python3
+            import json, os, sys
+            if sys.argv[1:] == ["--help"]:
+                if os.path.exists({str(broken)!r}):
+                    sys.exit("claude: an update is half done")
+                print("  --restricted  Restricted mode")
+                sys.exit(0)
+            with open({str(self.tmp / 'claude.calls')!r}, "a") as f:
+                f.write(json.dumps(sys.argv[1:] + [sys.stdin.read()]) + "\\n")
+            print({chr(10).join(json.dumps(e) for e in CLAUDE_STREAM)!r})
+            """))
+        script.chmod(script.stat().st_mode | stat.S_IEXEC)
+        self.assertEqual(gm.turn(self.root, "Hi")["status"], "done")
+        self.assertFalse({"--restricted", "--setting-sources"} & set(self.calls("claude")[0]))
+        self.assertIn("your own Claude Code settings", gm.status(self.root)["note"])
+        broken.unlink()  # the same claude, answering now
+        gm.turn(self.root, "Again")
+        self.assertIn("--restricted", self.calls("claude")[1])
+        self.assertNotIn("note", gm.status(self.root))
+
 
 class Notes(unittest.TestCase):
     def test_a_leading_note_to_itself_is_dropped_before_the_book(self):

@@ -79,7 +79,7 @@ _CLAUDE_KIT = ("--strict-mcp-config", "--no-chrome", "--tools", "Bash,Read", "--
 # it put there. A Claude Code the player opens on the campaign in a terminal still reads it. --restricted
 # keeps the settings files out and confines Read to the campaign and the skill; a Claude Code too old for it
 # is given no setting sources, and one too old for that runs with the player's settings, which the turn notes.
-_UNISOLATED = ("This Claude Code knows neither --restricted nor --setting-sources, so the GM's turn ran with your own "
+_UNISOLATED = ("This Claude Code's help names neither --restricted nor --setting-sources, so the GM's turn ran with your own "
                "Claude Code settings. Update Claude Code.")
 # The GM's pace, which the player picks on the Table, and the effort level it asks of the
 # agent. A quick turn arrives sooner and spends fewer tokens. A careful one thinks longer
@@ -704,9 +704,9 @@ def _end_group(process):
 
 def _settings_flags():
     """The flags that keep the settings files out of a Claude Code turn, as far as the claude on PATH knows
-    them, or None when it knows neither. Its --help is read once for each claude, by path, modification time
-    and size (some installs give every file the same time), and the answer kept in ~/.cache/solo: an option it
-    doesn't know would fail every turn."""
+    them, or None when its help names neither. Its --help is read once for each claude, by path, modification
+    time and size (some installs give every file the same time), and the answer kept in ~/.cache/solo: an option
+    it doesn't know would fail every turn."""
     found = shutil.which("claude")
     if not found:
         return []  # the turn says it couldn't start the GM
@@ -720,9 +720,14 @@ def _settings_flags():
     if known.get("claude") != str(binary) or known.get("stamp") != stamp:
         env = {k: v for k, v in os.environ.items() if k not in NESTING}
         try:
-            text = subprocess.run([found, "--help"], capture_output=True, text=True, timeout=30, env=env, stdin=subprocess.DEVNULL).stdout
+            done = subprocess.run([found, "--help"], capture_output=True, text=True, timeout=30, env=env, stdin=subprocess.DEVNULL)
         except (OSError, subprocess.SubprocessError):
-            return []  # asked again next turn
+            done = None
+        if done is None or done.returncode or not done.stdout.strip():
+            # A help that failed says nothing about the flags. Kept, it would stand for as long as this claude
+            # does: it is asked again next turn, and this one runs with neither flag and says so.
+            return None
+        text = done.stdout
         known = {"claude": str(binary), "stamp": stamp, "restricted": "--restricted" in text, "setting_sources": "--setting-sources" in text}
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
