@@ -50,6 +50,10 @@ Item {
   // read. A read that fails never covers what a command said, nor the other way round.
   property var error: ({ text: "", place: "" })
   property var queryError: ({ text: "", place: "" })
+  // Commands that change something, waiting for the one running to end. While any runs or
+  // waits the Table is busy, and its buttons that run one wait too.
+  property var queue: []
+  readonly property bool busy: action.job !== null || queue.length > 0
 
   // New adventure. The seed makes the preview exactly the hero that Begin creates.
   property string pickedAdventure: ""
@@ -308,13 +312,21 @@ Item {
     }
   }
 
-  // Commands that change something. `done` runs after a success.
-  function run(args, place, done) {
-    if (action.job === null) {
-      root.error = { text: "", place: "" }
+  // Commands that change something, one at a time and in the order asked for: one asked for
+  // while another runs (from the Book, or Enter in a field) waits its turn, never lost.
+  // `done` runs after a success, `failed` after anything else.
+  function run(args, place, done, failed) {
+    root.error = { text: "", place: "" }
+    root.queue = root.queue.concat([{ args: [root.solo].concat(args), place: place, done: done || null, failed: failed || null }])
+    root.next()
+  }
+
+  function next() {
+    if (action.job === null && root.queue.length > 0) {
+      action.job = root.queue[0]
+      root.queue = root.queue.slice(1)
       action.said = ""
-      action.job = { place: place, done: done || null }
-      action.command = [root.solo].concat(args)
+      action.command = action.job.args
       action.running = true
     }
   }
@@ -326,11 +338,16 @@ Item {
     currentFile.reload()
     if (said !== "") root.error = { text: said, place: job.place }
     if (ok && job.done) job.done()
+    else if (!ok && job.failed) job.failed()
+    root.next()
   }
 
-  function act(args, place, done) {
+  function act(args, place, done, failed) {
     if (root.campaign !== "") {
-      root.run(["-C", root.campaign].concat(args), place, done)
+      root.run(["-C", root.campaign].concat(args), place, done, failed)
+    } else {
+      root.error = { text: "No campaign is open.", place: place }
+      if (failed) failed()
     }
   }
 
@@ -917,6 +934,7 @@ Item {
     onVisibleChanged: if (!visible) root.bookOpen = false
 
     BookView {
+      id: bookView
       objectName: "book"
       anchors.fill: parent
       theme: theme
@@ -932,7 +950,8 @@ Item {
       // The X-card: cut the GM's last message (a line or a veil too, if the player made it one), then the GM carries on without it.
       // What the player typed goes as --flag=value, so words that start with a dash stay words.
       onCut: (note, line, veil) => root.act(["strike"].concat(note !== "" ? ["--note=" + note] : []).concat(line !== "" ? ["--line=" + line] : [])
-                                              .concat(veil !== "" ? ["--veil=" + veil] : []), "book", () => root.speak(""))
+                                              .concat(veil !== "" ? ["--veil=" + veil] : []), "book",
+                                            () => { bookView.cutDone(true); root.speak("") }, () => bookView.cutDone(false))
       onAct: args => root.act(args, "book")
       onOpenTable: {
         root.opened = true
@@ -1056,6 +1075,13 @@ Item {
     fontSize: Commons.Style.font.bodySmall
     horizontalPadding: Commons.Style.space(8)
     verticalPadding: Commons.Style.space(3)
+  }
+
+  // A button that runs a command. It waits, greyed, while one runs, so a double click can't do
+  // the same thing twice.
+  component Act: Choice {
+    enabled: !root.busy
+    opacity: enabled ? 1 : 0.5
   }
 
   component Primary: Button {
@@ -1413,10 +1439,9 @@ Item {
                 RowLayout {
                   visible: root.deleting === modelData.path
                   spacing: Commons.Style.space(4)
-                  Choice {
+                  Act {
                     text: action.job !== null && action.job.place === "home" ? "Deleting…" : "Delete for good"
                     foreground: Commons.Color.urgent
-                    enabled: action.job === null
                     onClicked: {
                       var wasCurrent = modelData.current
                       root.run(["delete", modelData.path, "--yes"], "home", () => {
@@ -1681,7 +1706,7 @@ Item {
 
             Primary {
               text: action.job !== null && action.job.place === "begin" ? "Starting…" : "Begin adventure"
-              enabled: root.adventure !== null && root.preview !== null && action.job === null
+              enabled: root.adventure !== null && root.preview !== null && !root.busy
               opacity: enabled ? 1 : 0.5
               onClicked: root.begin()
             }
@@ -1727,7 +1752,7 @@ Item {
                 onClicked: root.openBook()
               }
 
-              Choice {
+              Act {
                 text: "Terminal"
                 tooltipText: "Open the GM in a terminal instead, or bring its window forward"
                 onClicked: root.run(["play", root.campaign, "--terminal"], "gm")
@@ -1836,18 +1861,19 @@ Item {
 
               Primary {
                 text: "Death roll"
-                enabled: action.job === null
+                enabled: !root.busy
+                opacity: enabled ? 1 : 0.5
                 onClicked: root.act(["death-roll"], "dying")
               }
 
-              Choice {
+              Act {
                 visible: !!(root.labels.dying && root.labels.dying.self_save)
                 text: "Save yourself"
                 tooltipText: "A HEALING roll instead of the death roll: stop dying on a success"
                 onClicked: root.act(["death-roll", "--heal"], "dying")
               }
 
-              Choice {
+              Act {
                 visible: !!(root.labels.dying && root.labels.dying.self_rally) && root.dying
                 text: "Rally"
                 tooltipText: "Rally yourself, with no bane: act again, still making death rolls"
@@ -1889,7 +1915,7 @@ Item {
 
               Repeater {
                 model: attributes.names
-                delegate: Choice {
+                delegate: Act {
                   required property string modelData
                   Layout.fillWidth: true
                   text: modelData.toUpperCase() + " " + (root.pc && root.pc.attributes ? root.pc.attributes[modelData] : "")
@@ -1906,7 +1932,7 @@ Item {
 
               Repeater {
                 model: root.skillList()
-                delegate: Choice {
+                delegate: Act {
                   required property var modelData
                   text: modelData.name + " " + modelData.value + (modelData.marked ? " •" : "")
                   tooltipText: modelData.marked ? "Marked for advancement" : ""
@@ -1972,7 +1998,7 @@ Item {
 
                   Repeater {
                     model: group.modelData.moves
-                    delegate: Choice {
+                    delegate: Act {
                       required property var modelData
                       text: modelData.name
                       selected: root.pickedMove === modelData.id
@@ -1998,7 +2024,7 @@ Item {
 
               Repeater {
                 model: root.pickOptions()
-                delegate: Choice {
+                delegate: Act {
                   required property var modelData
                   text: modelData.label
                   onClicked: root.rollMove(root.pickedMove, modelData.stat, modelData.track)
@@ -2104,11 +2130,10 @@ Item {
 
                 Repeater {
                   model: root.dragonOptions()
-                  delegate: Choice {
+                  delegate: Act {
                     required property var modelData
                     text: modelData.label
                     tooltipText: modelData.tip
-                    enabled: action.job === null
                     onClicked: root.act(["dragon", modelData.option].concat(modelData.foe !== "" ? [modelData.foe] : []), "dragon")
                   }
                 }
@@ -2125,7 +2150,7 @@ Item {
             ErrorLine { place: "dragon" }
 
             // Momentum can be burned on the roll just made, when that would change it.
-            Choice {
+            Act {
               visible: !!(root.game && root.game.burn) && !root.dead
               Layout.fillWidth: true
               selected: true
@@ -2149,20 +2174,20 @@ Item {
 
               Repeater {
                 model: root.pushChoices
-                delegate: Choice {
+                delegate: Act {
                   required property string modelData
                   text: modelData
                   onClicked: root.act(["push", "--condition", modelData], "roll")
                 }
               }
 
-              Choice {
+              Act {
                 visible: root.labels.push !== "condition"
                 text: "push"
                 onClicked: root.act(["push"], "roll")
               }
 
-              Choice {
+              Act {
                 visible: !!root.labels.push_ability && !!root.pc && (root.pc.abilities || []).indexOf(root.labels.push_ability.name) >= 0
                 text: root.labels.push_ability ? root.labels.push_ability.name + " (" + root.labels.push_ability.cost + ")" : ""
                 tooltipText: "Push without a condition"
@@ -2228,7 +2253,7 @@ Item {
                   tooltipText: (modelData.trick ? "A magic trick: always ready, and it works" : "Rank " + modelData.rank + (modelData.school ? ", " + modelData.school : ""))
                     + (modelData.damage && root.fight ? ". Hits the foe you aimed at" : "") + (modelData.heal ? ". Heals you" : "")
                   selected: !modelData.trick
-                  enabled: root.waiting === null && action.job === null
+                  enabled: root.waiting === null && !root.busy
                   opacity: enabled ? 1 : 0.5
                   onClicked: root.cast(modelData, false)
                 }
@@ -2247,7 +2272,7 @@ Item {
 
                 Line { text: spellRow.modelData.name + (spellRow.modelData.cost !== null ? " · " + spellRow.modelData.cost + " " + root.magic.track.toUpperCase() : "") }
 
-                Choice {
+                Act {
                   text: "Prepare"
                   tooltipText: "Hold it ready (it takes a stretch of study, the GM's to give)"
                   selected: root.preparing === spellRow.modelData.name
@@ -2257,7 +2282,7 @@ Item {
                 Choice {
                   text: "From the grimoire"
                   tooltipText: spellRow.modelData.reaction ? "A reaction spell can't be cast from the grimoire" : "Cast it unprepared: it takes twice as long"
-                  enabled: root.waiting === null && action.job === null && !spellRow.modelData.reaction
+                  enabled: root.waiting === null && !root.busy && !spellRow.modelData.reaction
                   opacity: enabled ? 1 : 0.4
                   onClicked: root.cast(spellRow.modelData, true)
                 }
@@ -2278,7 +2303,7 @@ Item {
 
               Repeater {
                 model: root.preparing !== "" ? root.ready().filter(s => !s.trick) : []
-                delegate: Choice {
+                delegate: Act {
                   required property var modelData
                   text: modelData.name
                   onClicked: root.putAside(modelData)
@@ -2312,7 +2337,7 @@ Item {
                   required property var modelData
                   text: modelData.name + " (" + root.abilityCost(modelData) + ")"
                   tooltipText: modelData.afford ? "Pay for it; the GM reads its page" : "Not enough to pay for it"
-                  enabled: modelData.afford && action.job === null
+                  enabled: modelData.afford && !root.busy
                   opacity: enabled ? 1 : 0.4
                   onClicked: root.useAbility(modelData)
                 }
@@ -2351,13 +2376,13 @@ Item {
                 RowLayout {
                   spacing: Commons.Style.space(4)
 
-                  Choice {
+                  Act {
                     text: "Mark progress"
                     tooltipText: trackCard.ranked ? "What a step of this rank is worth" : "One tick"
                     onClicked: root.act(["track", "mark", trackCard.modelData.id], "track")
                   }
 
-                  Choice {
+                  Act {
                     visible: trackCard.ranked
                     text: "Progress roll"
                     tooltipText: "Compare the filled boxes to the challenge dice"
@@ -2416,7 +2441,7 @@ Item {
                 }
               }
 
-              Choice {
+              Act {
                 text: "Start"
                 selected: true
                 onClicked: root.startTrack()
@@ -2438,7 +2463,7 @@ Item {
                 text: root.pc ? "Marked: " + (root.pc.marks || []).map(k => root.pc.skills[k] ? root.pc.skills[k].name : k).join(", ") : ""
               }
 
-              Choice {
+              Act {
                 text: "Roll advancement"
                 tooltipText: "At the end of a session: each marked skill may go up one"
                 onClicked: root.act(["advance"], "roll")
@@ -2474,7 +2499,7 @@ Item {
                   maximum: foeCard.foe.max
                 }
 
-                Choice {
+                Act {
                   visible: !foeCard.foe.down && !root.dead && !(root.fight && root.fight.incoming)
                   text: "Attacks you"
                   tooltipText: "Roll this foe's attack"
@@ -2501,7 +2526,7 @@ Item {
                   required property var modelData
                   text: modelData.label + " " + modelData.damage + root.weaponNote(modelData)
                   tooltipText: modelData.condition === "broken" ? "Broken: mend it first" : modelData.condition === "damaged" ? "Damaged: a bane on every use until it is mended" : ""
-                  enabled: modelData.condition !== "broken" && root.waiting === null
+                  enabled: modelData.condition !== "broken" && root.waiting === null && !root.busy
                   opacity: enabled ? 1 : 0.4
                   onClicked: root.attack(modelData.id)
                 }
@@ -2526,7 +2551,7 @@ Item {
               spacing: Commons.Style.space(4)
               visible: root.fight !== null && !!root.fight.incoming
 
-              Choice {
+              Act {
                 visible: !root.dying && root.fight !== null && !!root.fight.incoming && root.fight.incoming.can_defend !== false
                 text: "Evade"
                 onClicked: root.act(["defend", "evade"].concat(root.useArgs("defend", "dodge")), "fight", () => root.spent("defend", "dodge"))
@@ -2539,13 +2564,13 @@ Item {
                   required property var modelData
                   text: "Parry: " + modelData.label + root.weaponNote(modelData)
                   tooltipText: modelData.condition === "broken" ? "Broken: mend it first" : ""
-                  enabled: modelData.condition !== "broken"
+                  enabled: modelData.condition !== "broken" && !root.busy
                   opacity: enabled ? 1 : 0.4
                   onClicked: root.act(["defend", "parry", "--with", modelData.id].concat(root.useArgs("defend", "parry")), "fight", () => root.spent("defend", "parry"))
                 }
               }
 
-              Choice {
+              Act {
                 text: "Take it"
                 onClicked: root.act(["defend", "take"], "fight")
               }
@@ -2561,7 +2586,7 @@ Item {
               scope: "round"
             }
 
-            Choice {
+            Act {
               visible: root.fight !== null && !root.dead
               text: "Next round"
               tooltipText: "Deal new initiative cards"
@@ -2587,8 +2612,8 @@ Item {
                   readonly property bool blocked: used || root.fight !== null || root.dying || root.dead
                   text: root.labels.rests[modelData].label
                   tooltipText: used ? "Already taken this shift" : root.fight ? "Not during a fight" : "Recover and let time pass"
-                  enabled: !blocked
-                  opacity: blocked ? 0.4 : 1
+                  enabled: !blocked && !root.busy
+                  opacity: enabled ? 1 : 0.4
                   onClicked: root.act(["rest", modelData].concat(root.tend && root.labels.rests[modelData].tend ? ["--tend"] : []).concat(root.useArgs("rest", modelData)),
                                       "rest", () => root.spent("rest", modelData))
                 }
@@ -2623,7 +2648,7 @@ Item {
                   : root.game && root.game.dark ? "It is dark here." : "No light burning."
               }
 
-              Choice {
+              Act {
                 text: root.game && root.game.light ? "Put it out" : "Light a torch"
                 onClicked: root.act(root.game && root.game.light ? ["light", "--out"] : ["light", "torch"], "light")
               }
@@ -2683,7 +2708,7 @@ Item {
               Layout.fillWidth: true
               visible: root.pc !== null && !root.dead
 
-              Choice {
+              Act {
                 Layout.fillWidth: true
                 text: "Ask"
                 tooltipText: "Or press Enter in the question"
@@ -2691,7 +2716,7 @@ Item {
                 onClicked: root.askOracle()
               }
 
-              Choice {
+              Act {
                 text: "Meaning"
                 tooltipText: "Words to read for a question a yes or no can't answer"
                 onClicked: root.askMeaning()
@@ -2797,17 +2822,15 @@ Item {
 
                 Line { text: "The " + mending.modelData.label.toLowerCase() + " is " + mending.modelData.condition; size: Commons.Style.font.bodySmall }
 
-                Choice {
+                Act {
                   text: "Mend"
                   tooltipText: "A roll to mend it"
-                  enabled: action.job === null
                   onClicked: root.act(["repair", mending.modelData.id], "gear")
                 }
 
-                Choice {
+                Act {
                   text: "Artisan"
                   tooltipText: "An artisan mends it, with no roll"
-                  enabled: action.job === null
                   onClicked: root.act(["repair", mending.modelData.id, "--artisan"], "gear")
                 }
               }
@@ -2848,7 +2871,7 @@ Item {
 
               Repeater {
                 model: [["quick", "Quick"], ["normal", "Normal"], ["careful", "Careful"]]
-                delegate: Choice {
+                delegate: Act {
                   required property var modelData
                   text: modelData[1]
                   selected: root.pace === modelData[0]
@@ -2873,7 +2896,7 @@ Item {
 
               Repeater {
                 model: [["borders", "Borders"], ["screen", "Screen"], ["sound", "Sound"], ["candle", "Candlelight"], ["omens", "Omens"], ["screensaver", "Screensaver"]]
-                delegate: Choice {
+                delegate: Act {
                   required property var modelData
                   text: modelData[1]
                   selected: root.effects[modelData[0]] !== false

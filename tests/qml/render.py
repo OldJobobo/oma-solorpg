@@ -98,10 +98,19 @@ def main(out):
         errors.append("the cut link should show when the GM has spoken and isn't writing")
     book.setProperty("cutting", True)
     shot("cut", 500)
-    book.findChild(QObject, "cutInput").setProperty("text", "no fire")
+    cut_input = book.findChild(QObject, "cutInput")
+    cut_input.setProperty("text", "no fire")
     QMetaObject.invokeMethod(book, "cutIt", Q_ARG("QVariant", "line"))
-    if cuts != [("no fire", "no fire", "")] or book.property("cutting"):
-        errors.append(f"the X-card gave {cuts}, and the panel {'stayed open' if book.property('cutting') else 'closed'}")
+    QMetaObject.invokeMethod(book, "cutIt", Q_ARG("QVariant", "line"))  # a second click while the first is on its way
+    if cuts != [("no fire", "no fire", "")] or not book.property("cutting"):
+        errors.append(f"the X-card gave {cuts}, and the panel {'stayed open' if book.property('cutting') else 'closed'} before the table answered")
+    QMetaObject.invokeMethod(book, "cutDone", Q_ARG("QVariant", False))  # the table couldn't cut it
+    if not book.property("cutting") or cut_input.property("text") != "no fire":
+        errors.append("a cut the table refused closed the panel, or lost the words")
+    QMetaObject.invokeMethod(book, "cutIt", Q_ARG("QVariant", "line"))
+    QMetaObject.invokeMethod(book, "cutDone", Q_ARG("QVariant", True))
+    if len(cuts) != 2 or book.property("cutting") or cut_input.property("text") != "":
+        errors.append(f"a cut tried again gave {cuts}, and the panel {'stayed open' if book.property('cutting') else 'closed'}")
     root.setProperty("turn", {"status": "writing", "text": "..."})
     if book.property("canCut"):
         errors.append("nothing to cut while the GM is writing")

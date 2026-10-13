@@ -21,6 +21,7 @@ Item {
   property bool codexOpen: false
   property bool epitaphDismissed: false
   property bool cutting: false     // the X-card panel is open
+  property bool cutSent: false     // a cut is on its way, and the table hasn't said yet how it went
   property int seen: -1            // the newest story seq already shown (no replays on load)
   readonly property bool epitaphShown: dead && !epitaphDismissed
 
@@ -54,6 +55,7 @@ Item {
     epitaphDismissed = false
     codexOpen = false
     cutting = false
+    cutSent = false
     storyModel.clear()
     storyNewest = -1
   }
@@ -279,7 +281,7 @@ Item {
           }
 
           Text {
-            visible: book.actionError !== ""
+            visible: book.actionError !== "" && !cutPanel.visible
             width: side.width
             wrapMode: Text.Wrap
             textFormat: Text.PlainText
@@ -540,11 +542,23 @@ Item {
 
             RowLayout {
               spacing: book.theme.body
-              Link { objectName: "cutNow"; text: "cut"; onClicked: book.cutIt("") }
-              Link { objectName: "cutLine"; text: "cut, and never again"; enabled: cutInput.text.trim() !== ""; onClicked: book.cutIt("line") }
-              Link { objectName: "cutVeil"; text: "cut, off screen only"; enabled: cutInput.text.trim() !== ""; onClicked: book.cutIt("veil") }
+              Link { objectName: "cutNow"; text: "cut"; enabled: !book.cutSent; onClicked: book.cutIt("") }
+              Link { objectName: "cutLine"; text: "cut, and never again"; enabled: !book.cutSent && cutInput.text.trim() !== ""; onClicked: book.cutIt("line") }
+              Link { objectName: "cutVeil"; text: "cut, off screen only"; enabled: !book.cutSent && cutInput.text.trim() !== ""; onClicked: book.cutIt("veil") }
               Item { Layout.fillWidth: true }
               Link { text: "keep it"; onClicked: book.cutting = false }
+            }
+
+            // Why the cut didn't go through: the panel stays open with the words, to try again.
+            Text {
+              Layout.fillWidth: true
+              visible: book.actionError !== ""
+              wrapMode: Text.Wrap
+              textFormat: Text.PlainText
+              font.family: book.theme.mono
+              font.pixelSize: book.theme.small
+              color: book.theme.urgent
+              text: book.actionError
             }
           }
         }
@@ -635,11 +649,22 @@ Item {
   }
 
   // The X-card: what the player typed is a note to the GM, or a line (never in the story) or a veil (off screen).
+  // One cut at a time: a second click while the first is on its way would cut the message before it.
   function cutIt(as) {
+    if (cutSent) return
     var text = cutInput.text.trim()
+    cutSent = true
     cut(text, as === "line" ? text : "", as === "veil" ? text : "")
-    cutInput.text = ""
-    cutting = false
+  }
+
+  // The table's answer to a cut. Done, the panel closes; refused, it stays open with the
+  // player's words and says why (actionError).
+  function cutDone(ok) {
+    cutSent = false
+    if (ok) {
+      cutInput.text = ""
+      cutting = false
+    }
   }
 
   function submit() {
