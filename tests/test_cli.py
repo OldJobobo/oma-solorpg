@@ -293,6 +293,15 @@ class CliTest(CliCase):
         self.assertIn("skipped", self.solo("setup")[1])
         self.assertEqual(target.read_text(), "mine")
 
+    def test_solo_on_a_python_older_than_3_11_says_so_in_a_sentence(self):
+        import runpy
+        err = io.StringIO()
+        with unittest.mock.patch("sys.version_info", (3, 10, 12)), redirect_stderr(err), \
+                self.assertRaises(SystemExit) as stopped:
+            runpy.run_path(str(ROOT / "bin" / "solo"), run_name="__main__")
+        self.assertEqual(stopped.exception.code, 1)
+        self.assertEqual(err.getvalue(), "solo needs Python 3.11 or newer, and this is Python 3.10: install a newer python3 and run it again.\n")
+
     def test_play_without_omarchy_explains_what_to_do(self):
         self.new_game()
         with unittest.mock.patch("shutil.which", return_value=None):

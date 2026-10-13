@@ -4,6 +4,12 @@
 import sys
 from pathlib import Path
 
+# The engine reads its packs with tomllib, which came with Python 3.11. On an older one the import
+# below would end in a traceback, so say it in a sentence (no f-string: a very old Python can't read one).
+if sys.version_info < (3, 11):
+    sys.stderr.write("solo needs Python 3.11 or newer, and this is Python %d.%d: install a newer python3 and run it again.\n" % tuple(sys.version_info[:2]))
+    sys.exit(1)
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from solo.cli import main
