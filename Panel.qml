@@ -2508,7 +2508,7 @@ Item {
             Flow {
               Layout.fillWidth: true
               spacing: Commons.Style.space(4)
-              visible: !root.dying && !root.dead
+              visible: root.ridersFor("alone").length > 0 && !root.dying && !root.dead
 
               Repeater {
                 model: root.ridersFor("alone")
@@ -2656,7 +2656,7 @@ Item {
             Flow {
               Layout.fillWidth: true
               spacing: Commons.Style.space(4)
-              visible: root.pc !== null && !root.dying && !root.dead
+              visible: root.pc !== null && !root.dying && !root.dead && Object.keys(root.labels.rests).length > 0
 
               Repeater {
                 model: root.pc ? Object.keys(root.labels.rests) : []
@@ -2838,9 +2838,11 @@ Item {
 
             Heading { text: "Clues"; visible: root.game !== null && root.game.clues.length > 0 }
 
+            // An empty Flow has no height but still takes its spacing: each one shows only with something in it.
             Flow {
               Layout.fillWidth: true
               spacing: Commons.Style.space(4)
+              visible: root.game !== null && root.game.clues.length > 0
 
               Repeater {
                 model: root.game ? root.game.clues : []

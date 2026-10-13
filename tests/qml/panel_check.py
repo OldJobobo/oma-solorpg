@@ -54,6 +54,16 @@ def labelled(item, text):
     return None
 
 
+def empty_flows(item):
+    """The visible Flows under `item` with nothing in them: no height, and still a gap of spacing round each."""
+    found = []
+    for child in item.childItems():
+        if child.metaObject().className() == "QQuickFlow" and child.isVisible() and child.height() == 0:
+            found.append(child)
+        found += empty_flows(child)
+    return found
+
+
 def trouble(item):
     """What the Table says went wrong, from its commands and from its reads ("" when nothing did)."""
     return "\n".join(t for t in (item.property(name).toVariant()["text"] for name in ("error", "queryError")) if t)
@@ -563,6 +573,8 @@ def a_game_of_moves(item, panel, out, work, wait):
     item.open(json.dumps({"view": "table"}))
     wait(1500)
     panel.grabWindow().save(str(out / "table-ironsworn.png"))
+    if empty_flows(panel.contentItem()):
+        problems.append(f"the Ironsworn Table shows {len(empty_flows(panel.contentItem()))} empty rows of buttons")
 
     def state():
         return json.loads((game / "state.json").read_text())
