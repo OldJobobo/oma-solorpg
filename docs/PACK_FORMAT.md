@@ -277,7 +277,7 @@ Clock triggers: `time:<unit>`, `activity` (a command that took a stretch or more
 | `consequence` | `id`, `text`, `npc`, `at` (scene ids), `when` (a condition), `after` (game time), `status`: open, done, dropped |
 | `pc` | Tracks as `"+n"`/`"-n"` or a number to set; a negative number is a loss. `conditions`, `items`, `abilities` (what the hero has learned: heroic abilities, assets) and `spells`/`prepared` with `add`/`remove`, a name or a list. An ability that raises a track (Robust) raises it when added, and can be added again if it stacks. A track stops at its own range: momentum runs from `min` to what impacts leave of `max`; in an `action-roll` system an impact keeps its track from rising |
 | `clock` | Clocks by id, each `"+n"` or a number |
-| `time` | Game time that passes, in the system's units |
+| `time` | Game time that passes, in the system's units (`{"stretch": 1}`) or in seconds, minutes, hours and days; words like `"10 minutes"` are read too |
 | `clue` | Clue ids the hero found |
 | `chaos` | The chaos factor, `"+1"` or `"-1"` |
 | `learn` | `npc.wants`, `npc.fears`, `npc.<secret>` |

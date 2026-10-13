@@ -121,6 +121,9 @@ class DesignDocsTest(unittest.TestCase):
         section = text[text.index("## Commits (what the GM writes)"):text.index("## Format versions")]
         keys = set(re.findall(r"^\| `(\w+)` \|", section, re.M))
         self.assertEqual(keys, set(campaign._COMMIT_KEYS))
+        # A commit's time takes the clock's units as well as the system's.
+        time = re.search(r"^\| `time` \|(.*)$", section, re.M).group(1)
+        self.assertEqual([unit for unit in campaign._CLOCK if f"{unit}s" not in time], [])
 
 
 class RoadmapTest(unittest.TestCase):
