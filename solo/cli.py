@@ -417,6 +417,8 @@ def cmd_log(args):
 
 def cmd_strike(args):
     """The player's X-card: cut the GM's last message, and add a line or a veil from the same place."""
+    if os.environ.get("SOLO_BOOK"):
+        raise SoloError("the X-card is the player's: the GM can't strike its own messages")
     with _open(args) as c:
         event = c.strike(args.note)
         if args.line or args.veil:
@@ -804,8 +806,11 @@ def cmd_advance(args):
 
 
 def cmd_prefs(args):
+    changes = args.tone is not None or args.line or args.veil or args.clear
+    if changes and os.environ.get("SOLO_BOOK"):
+        raise SoloError("the table settings are the player's: the GM can read them, never change them")
     with _open(args) as c:
-        if args.tone is not None or args.line or args.veil or args.clear:
+        if changes:
             c.set_prefs(args.tone, args.line, args.veil, clear=args.clear)
         _json(c.state["prefs"])
 
@@ -905,6 +910,8 @@ def cmd_gm(args):
     from . import gm
     if args.action == "pace":
         # The player's, for every campaign: it needs none.
+        if args.text and os.environ.get("SOLO_BOOK"):
+            raise SoloError("the GM's pace is the player's to set: the GM can read it, never change it")
         _json({"pace": gm.set_pace(" ".join(args.text)) if args.text else gm.pace()})
     elif args.action == "budget":
         _budget(args)
@@ -922,7 +929,8 @@ def cmd_gm(args):
             print("stopped")
         elif args.action == "agent":
             agent = gm.default_agent()
-            _json({"agent": agent, "book": gm.supported(agent)})
+            why = gm.why_not(agent)
+            _json({"agent": agent, "book": gm.supported(agent), **({"why": why} if why else {})})
         else:
             _json(gm.status(root))
 
@@ -931,6 +939,9 @@ def _budget(args):
     """What a GM session may spend, the player's to see and raise (never the GM's: solo gm isn't a GM command).
     The limits are for every campaign; the count is the campaign's, and --reset starts it again."""
     from . import gm
+    if (args.text or args.turns or args.reset) and os.environ.get("SOLO_BOOK"):
+        # A Codex GM has no list of allowed commands, so the refusal is here.
+        raise SoloError("the GM's budget is the player's to set: the GM can read it, never raise or reset it")
     if args.text and not args.text[0].replace(".", "", 1).isdigit():
         raise SoloError(f"a budget is dollars, a number: solo gm budget 20 (or --turns 400), not {args.text[0]!r}")
     limit = gm.set_budget(usd=float(args.text[0]) if args.text else None, turns=args.turns) if args.text or args.turns else gm.budget()
@@ -1857,7 +1868,7 @@ def _parser(only=None):
     sub = command("track", cmd_track, "progress tracks (Ironsworn): add <name> --kind vow --rank dangerous, mark <id> [--times 2], set <id> [--ticks 8] [--rank epic], end <id> --how fulfilled, list")
     sub.add_argument("action", choices=["add", "mark", "set", "end", "list"])
     sub.add_argument("words", nargs="*", help="add: the track's name; mark, set, end: its id")
-    sub.add_argument("--kind", help="add: vow, journey or fight")
+    sub.add_argument("--kind", help="add: vow, journey or combat (a fight)")
     sub.add_argument("--rank", help="add, set: troublesome, dangerous, formidable, extreme or epic")
     sub.add_argument("--times", type=int, default=1, help="mark: how many marks (a foe's harm: one each)")
     sub.add_argument("--ticks", help="set: the ticks (a number sets them; +4 or -4 moves them)")

@@ -3,9 +3,10 @@
 #
 #   bin/ask-agent <folder> <prompt>
 #
-# The agent is $AGENT, else Omarchy's default agent, else claude. Claude Code and Codex take
-# the prompt on the command line and stay open for the rest of the conversation; any other
-# agent gets the prompt printed, to paste in.
+# The agent is $AGENT, else Omarchy's default agent, else claude if it is on PATH, else codex
+# if it is (the rule `solo gm` follows too). Claude Code and Codex take the prompt on the
+# command line and stay open for the rest of the conversation; any other agent gets the
+# prompt printed, to paste in.
 set -eu
 
 folder=$1
@@ -14,7 +15,14 @@ agent=${AGENT:-}
 if [ -z "$agent" ] && [ -r "$HOME/.config/omarchy/defaults/agent" ]; then
   agent=$(awk '{ print $1; exit }' "$HOME/.config/omarchy/defaults/agent")
 fi
-agent=${agent:-claude}
+if [ -z "$agent" ]; then
+  for found in claude codex; do
+    if command -v "$found" >/dev/null 2>&1; then
+      agent=$found
+      break
+    fi
+  done
+fi
 
 cd "$folder"
 case "$agent" in
@@ -22,6 +30,10 @@ case "$agent" in
     if command -v "$agent" >/dev/null 2>&1; then
       exec "$agent" "$prompt"
     fi
+    ;;
+  "")
+    printf '\nNo coding agent was found: install Claude Code or Codex, or choose one with: omarchy default agent <name>.\nThen open it in %s and give it this:\n\n%s\n\n' "$folder" "$prompt"
+    exit 0
     ;;
 esac
 printf '\n%s is not something this script can start with a prompt.\nOpen your agent in %s and give it this:\n\n%s\n\n' "$agent" "$folder" "$prompt"

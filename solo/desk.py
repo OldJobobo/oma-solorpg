@@ -189,6 +189,8 @@ def _border_now():
         return None
     colours = [f"rgba({c[2:]}{c[:2]})" for c in re.findall(r"\b([0-9a-fA-F]{8})\b", custom)]
     angle = re.search(r"(\d+)deg", custom)
+    if len(colours) == 1 and colours[0].lower() in COLOURS.values():
+        return None  # one of ours, left by an effect that couldn't put the border back: never the player's
     return {"colors": colours, "angle": int(angle.group(1)) if angle else 0} if colours else None
 
 
@@ -197,21 +199,25 @@ def _set_border(colour):
 
 
 def _apply_border(border):
+    """Whether Hyprland took the border."""
     colours = ", ".join(f'"{c}"' for c in border["colors"])
     value = f'"{border["colors"][0]}"' if len(border["colors"]) == 1 else f'{{ colors = {{ {colours} }}, angle = {int(border.get("angle", 0))} }}'
     lua = f"hl.config({{ general = {{ col = {{ active_border = {value} }} }} }})"
-    if _run(["hyprctl", "eval", lua]) is None:
-        # Hyprland from before the Lua config.
-        angle = f" {int(border.get('angle', 0))}deg" if len(border["colors"]) > 1 else ""
-        _run(["hyprctl", "keyword", "general:col.active_border", " ".join(border["colors"]) + angle])
+    if _run(["hyprctl", "eval", lua]) is not None:
+        return True
+    # Hyprland from before the Lua config.
+    angle = f" {int(border.get('angle', 0))}deg" if len(border["colors"]) > 1 else ""
+    return _run(["hyprctl", "keyword", "general:col.active_border", " ".join(border["colors"]) + angle]) is not None
 
 
 def _restore_border():
+    """Put the player's border back. What was saved is forgotten only once it is back: when hyprctl
+    fails, the next restore tries again, and nothing takes the effect's colour for the player's."""
     original = _saved("border")
-    if original:
-        _apply_border(original)
+    if original and _apply_border(original):
         _forget("border")
-    return bool(original)
+        return True
+    return False
 
 
 # The screen ----------------------------------------------------------------------------
@@ -381,10 +387,14 @@ def omen(text):
 
 
 def notify(title, text):
+    """A desktop notification. The text can be a pack's (an omen's words), and must never be taken for an
+    option: notify-send (GLib) stops reading options at "--"; omarchy-notification-send has no such mark
+    and knows its options by their exact names, so text that starts with a dash gets a zero-width space first."""
     if shutil.which("omarchy-notification-send"):
+        text = f"\u200b{text}" if text.startswith("-") else text
         return _run(["omarchy-notification-send", "--app-name", "oma-solorpg", "-g", GLYPH, title, text]) is not None
     elif shutil.which("notify-send"):
-        return _run(["notify-send", "--app-name", "oma-solorpg", title, text]) is not None
+        return _run(["notify-send", "--app-name", "oma-solorpg", "--", title, text]) is not None
     return False
 
 

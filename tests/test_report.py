@@ -86,7 +86,9 @@ class TurnTrace(CampaignTest):
         script = bin_dir / "claude"
         script.write_text("#!/usr/bin/env python3\nimport json, os\nprint(json.dumps({'type': 'result', 'subtype': 'success', 'session_id': 's', 'result': os.environ.get('SOLO_TRACE', 'none')}))\n")
         script.chmod(script.stat().st_mode | stat.S_IEXEC)
-        with unittest.mock.patch.dict(os.environ, {"PATH": f"{bin_dir}:{os.environ['PATH']}", "SOLO_AGENT": "claude"}):
+        # The turn reads the stand-in's --help and keeps the answer in XDG_CACHE_HOME: a throwaway one, not the player's.
+        with unittest.mock.patch.dict(os.environ, {"PATH": f"{bin_dir}:{os.environ['PATH']}", "AGENT": "claude",
+                                                   "XDG_CACHE_HOME": str(self.tmp / "cache")}):
             os.environ.pop("SOLO_TRACE", None)
             gm.turn(self.root, "Hi")
         with self.session() as c:
