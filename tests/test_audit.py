@@ -1,7 +1,9 @@
 import json
+import os
 import tempfile
 import textwrap
 import unittest
+import unittest.mock
 from pathlib import Path
 
 from test_cli import CliCase
@@ -471,6 +473,19 @@ class BookCheckTest(unittest.TestCase):
         write(self.pack / "spells" / "doom.toml", 'name = "Doom"\nschool = "elementalism"\nrank = 2\n')
         report = audit.audit(self.pack, "system")
         self.assertEqual(report["unclaimed"], ["spells/doom"])
+
+
+class ExtractPathTest(unittest.TestCase):
+    def test_an_extract_under_solo_home_is_kept_relative_to_it_so_the_inventory_is_the_same_everywhere(self):
+        with tempfile.TemporaryDirectory() as folder:
+            home = Path(folder) / "games"
+            with unittest.mock.patch.dict(os.environ, {"SOLO_HOME": str(home)}):
+                make_extract(home / "sources" / "crypt", {1: LONG, 2: LONG})
+                self.assertEqual(audit.scaffold(home / "systems" / "crypt", home / "sources" / "crypt")[0], "inventory.toml")
+                self.assertIn('extract = "sources/crypt"', (home / "systems" / "crypt" / "inventory.toml").read_text(encoding="utf-8"))
+                self.assertEqual(audit.load_inventory(home / "systems" / "crypt")["extract"], home / "sources" / "crypt")
+                # One anywhere else keeps its whole path.
+                self.assertEqual(audit.kept(Path(folder) / "elsewhere"), str((Path(folder) / "elsewhere").resolve()))
 
 
 class PriceAuditTest(unittest.TestCase):

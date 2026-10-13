@@ -24,7 +24,7 @@ import re
 import unicodedata
 from pathlib import Path
 
-from . import SoloError, dice, packs
+from . import SoloError, dice, library, packs
 from .extract import SCANNED_BELOW, chapter_level
 from .library import REPO
 
@@ -80,8 +80,16 @@ def load_inventory(pack):
         items[item_id] = {**item, "id": item_id, "name": item.get("name") or item_id.replace("_", " ").capitalize(),
                           "status": status, "pages": pages, "to": to, "note": item.get("note", "").strip(), "file": name}
     extract = data.get("extract")
-    return {"source": data.get("source", ""), "extract": Path(extract).expanduser() if extract else None,
+    # A relative extract is under SOLO_HOME (sources/<book>): the inventory reads the same on every machine.
+    return {"source": data.get("source", ""), "extract": library.home() / Path(extract).expanduser() if extract else None,
             "items": items, "problems": problems}
+
+
+def kept(folder):
+    """An extract's folder as an inventory keeps it: under SOLO_HOME, relative to it (sources/<book>), so the pack is the same file on
+    every machine; anywhere else, the whole path."""
+    folder, home = Path(folder).expanduser().resolve(), library.home().expanduser().resolve()
+    return folder.relative_to(home).as_posix() if home in folder.parents else str(folder)
 
 
 def parse_pages(value):
@@ -829,7 +837,7 @@ def scaffold(pack, folder, source=None):
         (pack / name).write_text("\n".join(lines), encoding="utf-8")
         written.append(name)
     header = [f"source  = {packs.toml_string(source or Path(manifest.get('source', 'book')).stem)}",
-              f"extract = {packs.toml_string(str(folder))}", "",
+              f"extract = {packs.toml_string(kept(folder))}", "",
               "# The items are in inventory/, a file per chapter. See docs/PACK_FORMAT.md.", ""]
     (pack / "inventory.toml").write_text("\n".join(header), encoding="utf-8")
     return ["inventory.toml", *written]

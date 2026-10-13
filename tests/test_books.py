@@ -1,6 +1,7 @@
 """The importers for a book (solo/books/): tables read from where their words sit, and the gear recipe
 on a made-up book that has the bookmarks of the real one and none of its words or numbers."""
 
+import os
 import tempfile
 import tomllib
 import types
@@ -400,6 +401,11 @@ class BuildTest(unittest.TestCase):
     def test_replace_builds_again_and_leaves_nothing_beside_the_pack(self):
         books.build(self.tmp / "extract", systems=self.systems, replace=True)
         self.assertEqual((self.built(), sorted(path.name for path in self.systems.iterdir())), (2, ["lanterns"]))
+
+    def test_the_inventory_keeps_an_extract_under_solo_home_relative_to_it(self):
+        with unittest.mock.patch.dict(os.environ, {"SOLO_HOME": str(self.tmp)}):
+            books.build(self.tmp / "extract", systems=self.systems, replace=True)
+        self.assertIn('extract = "extract"\n', (self.systems / "lanterns" / "inventory.toml").read_text(encoding="utf-8"))
 
     def test_a_build_that_fails_keeps_the_pack_that_was_there(self):
         self.stop = "a section the recipe expects isn't there"
