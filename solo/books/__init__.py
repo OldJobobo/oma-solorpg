@@ -79,8 +79,14 @@ def build(folder, out=None, replace=False, systems=None, adventures=None):
     else:
         pack = Pack(book, building, recipe.NAME, recipe.extends(target.parent))
     recipe.build(pack)
-    written = pack.write(folder)
-    problems = packs.validate(pack.system_pack, packs.load_adventure(building)) if kind == "adventure" else packs.validate(packs.load_system(building))
+    try:
+        written = pack.write(folder)
+        problems = packs.validate(pack.system_pack, packs.load_adventure(building)) if kind == "adventure" else packs.validate(packs.load_system(building))
+    except BaseException:
+        # A pack the engine can't even load goes too: the library would list what was half built beside the old one as a pack of its own.
+        if building != target:
+            shutil.rmtree(building, ignore_errors=True)
+        raise
     if problems:
         notes = [*book.notes, *pack.notes]
         if building != target:

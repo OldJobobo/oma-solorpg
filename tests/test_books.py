@@ -408,7 +408,7 @@ class BuildTest(unittest.TestCase):
         made.line(1, 80, "LANTERNS", style=HEADING)
         made.mark(1, "1. Lanterns")
         made.save()
-        self.builds, self.stop, self.playable = 0, None, True
+        self.builds, self.stop, self.playable, self.readable = 0, None, True, True
 
         def build(pack):
             self.builds += 1
@@ -416,6 +416,8 @@ class BuildTest(unittest.TestCase):
                 raise SoloError(self.stop)
             pack.system.update({"name": "Lanterns", "build": self.builds, **({"family": "d20-under"} if self.playable else {})})
             pack.item("lanterns", "Lanterns", "mechanic", [1], ["system.toml:build"])
+            if not self.readable:
+                pack.file("tables/wick.toml", "name = \n")
 
         recipe = types.SimpleNamespace(NAME="Lanterns", PACK="lanterns", recognizes=lambda book: True, extends=lambda folder: None, build=build)
         patch = unittest.mock.patch.object(books, "recipes", lambda: (recipe,))
@@ -445,6 +447,13 @@ class BuildTest(unittest.TestCase):
     def test_a_system_pack_the_engine_cant_play_is_refused_and_the_old_one_kept(self):
         self.playable = False
         with self.assertRaisesRegex(SoloError, r"lanterns was built, and the engine says it can't be played \(the pack that was there is kept\):\n  system: family"):
+            books.build(self.tmp / "extract", systems=self.systems, replace=True)
+        self.assertEqual((self.built(), sorted(path.name for path in self.systems.iterdir())), (1, ["lanterns"]))
+
+    def test_a_pack_the_engine_cant_even_load_leaves_nothing_half_built_beside_the_old_one(self):
+        # The library lists every folder of systems/ that has a system.toml: one left half built would show up as a pack of its own.
+        self.readable = False
+        with self.assertRaisesRegex(SoloError, r"can't parse .*wick\.toml"):
             books.build(self.tmp / "extract", systems=self.systems, replace=True)
         self.assertEqual((self.built(), sorted(path.name for path in self.systems.iterdir())), (1, ["lanterns"]))
 
