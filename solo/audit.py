@@ -542,11 +542,15 @@ def _paired(text, labels):
     """The values the pages give a stat by one of its labels: after it and a colon ("hp: 18"), or just
     before it ("with 20 hp"). None when the label is also followed by something other than a number
     ("armor: same as armor", "willpower points: -"): such a stat isn't always printed as a number
-    there, a recipe works it out, and the page's other values of it are no measure of this one."""
+    there, a recipe works it out, and the page's other values of it are no measure of this one. Empty
+    when no label has a colon and a number after it: a number just before a label is as likely the
+    value of the one above it (a sheet read top to bottom, "willpower points 13 hit points 15"), so it
+    only adds to what a colon gives."""
     if any(re.search(rf"(?<![a-z]){re.escape(label)}\s*:(?!\s*\d)", text) for label in labels):
         return None
+    labelled = {value for value, _, _ in _labelled(text, labels)}
     before = {int(at.group(1)) for label in labels for at in re.finditer(rf"(?<![\w.])(\d+)\s+{re.escape(label)}(?![a-z]|\s*:)", text)}
-    return {value for value, _, _ in _labelled(text, labels)} | before
+    return labelled | before if labelled else set()
 
 
 def _entry_problems(ref, data, text, words, where, tracks):

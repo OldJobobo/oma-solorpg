@@ -476,6 +476,16 @@ class BookCheckTest(unittest.TestCase):
         report = audit.audit(self.pack, "system")
         self.assertFalse(audit.failed(report), audit.render(report))
 
+    def test_a_sheets_value_read_just_before_the_next_label_is_not_that_labels(self):
+        # A hero's sheet read top to bottom: each value comes under its label, and so just before the next one ("13 HIT POINTS").
+        write(self.book / "pages" / "0004.txt", "SIGRID\nWILLPOWER POINTS\n13\nHIT POINTS\n15\n")
+        write(self.book / "manifest.json", json.dumps({"source": "made.pdf", "pages": 4}))
+        write(self.pack / "characters" / "sigrid.toml", 'name = "Sigrid"\n\n[tracks]\nhp = 15\nwp = 13\n')
+        write(self.pack / "inventory.toml", (self.pack / "inventory.toml").read_text(encoding="utf-8")
+              + '\n[items.sigrid]\nkind = "npc"\npages = [4]\nstatus = "mapped"\nto = ["characters/sigrid"]\n')
+        report = audit.audit(self.pack, "system")
+        self.assertFalse(audit.failed(report), audit.render(report))
+
     def test_a_spell_no_item_claims_is_unclaimed(self):
         write(self.pack / "spells" / "doom.toml", 'name = "Doom"\nschool = "elementalism"\nrank = 2\n')
         report = audit.audit(self.pack, "system")
