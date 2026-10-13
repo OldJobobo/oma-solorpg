@@ -53,11 +53,16 @@ def read(lines, glue, sides=None):
     heads = [line for line in lines if is_marker(line)]
     if not heads and sides is None:
         raise SoloError("no roll table here: a header with the die (D6, D20 ...) was not found")
-    sides = sides or faces(heads[0]["text"])
+    given, sides = sides, sides or faces(heads[0]["text"])
     small = [line for line in lines if line["size"] < 8.6 and line["font"].endswith("-Bold")]
     body = [line for line in lines if line["size"] <= _CELL_SIZE and line not in small]
-    return {"faces": sides, "headers": [line["text"].strip() for line in sorted(small, key=lambda l: (l["page"], l["x0"]))],
-            "rows": _rows(body, sides, glue)}
+    rows = _rows(body, sides, glue)
+    top = rows[-1]["high"] if rows else 0
+    if given is None and top < sides:
+        # The rows are read in order up to the first number missing: a table that stops short of its die has lost a row.
+        raise SoloError(f"the table under {heads[0]['text'].strip()!r} on p. {heads[0]['page']} has rows for 1-{top} and none for {top + 1}, "
+                        "short of its die; this may be another printing than the importer was written for")
+    return {"faces": sides, "headers": [line["text"].strip() for line in sorted(small, key=lambda l: (l["page"], l["x0"]))], "rows": rows}
 
 
 def _rows(pool, sides, glue):

@@ -98,12 +98,20 @@ class DiceTest(unittest.TestCase):
 
     def test_the_columns_of_a_row_are_its_cells_and_the_header_names_them(self):
         found = self.read([
-            cell_line(1, 100, "D6", 67, HEADER), cell_line(1, 100, "ANIMAL", 88, HEADER), cell_line(1, 100, "REQUIREMENT", 150, HEADER), cell_line(1, 100, "RATIONS", 230, HEADER),
+            cell_line(1, 100, "D2", 67, HEADER), cell_line(1, 100, "ANIMAL", 88, HEADER), cell_line(1, 100, "REQUIREMENT", 150, HEADER), cell_line(1, 100, "RATIONS", 230, HEADER),
             cell_line(1, 120, "1", 72), cell_line(1, 120, "Hare", 88), cell_line(1, 120, "Weapon or trap", 150), cell_line(1, 120, "1", 230),
             cell_line(1, 137, "2", 72), cell_line(1, 137, "Stag", 88), cell_line(1, 137, "Weapon", 150), cell_line(1, 137, "D6", 230),
         ])
-        self.assertEqual(found["headers"], ["D6", "ANIMAL", "REQUIREMENT", "RATIONS"])
+        self.assertEqual(found["headers"], ["D2", "ANIMAL", "REQUIREMENT", "RATIONS"])
         self.assertEqual([row["cells"] for row in found["rows"]], [["Hare", "Weapon or trap", "1"], ["Stag", "Weapon", "D6"]])
+
+    def test_a_table_whose_rows_stop_short_of_its_die_has_lost_a_row(self):
+        lines = [cell_line(4, 100, "D6 FEAR", 67, HEADER)] + [line for y, number, text in [(120, "1", "Shakes"), (137, "2", "Runs"), (154, "4", "Faints"), (171, "5-6", "Screams")]
+                                                             for line in (cell_line(4, y, number, 72), cell_line(4, y, text, 88))]
+        with self.assertRaisesRegex(Exception, r"the table under 'D6 FEAR' on p. 4 has rows for 1-2 and none for 3, short of its die; this may be another printing"):
+            self.read(lines)
+        # A table that goes on from another page has no die of its own here: it is read as far as it goes.
+        self.assertEqual([row["low"] for row in dice.read(lines[1:5], lambda text, part: text + part, 6)["rows"]], [1, 2])
 
     def test_a_table_without_its_die_is_no_table(self):
         with self.assertRaisesRegex(Exception, "no roll table"):
@@ -137,7 +145,7 @@ class TablesRecipeTest(unittest.TestCase):
         # Named columns, and a footnote under the table.
         made.line(2, 240, "HUNTING", x=250, style=BANNER)
         made.mark(2, "Table: Hunting")
-        for name, x in [("D4", 67), ("ANIMAL", 88), ("REQUIREMENT", 150), ("RATIONS", 230)]:
+        for name, x in [("D2", 67), ("ANIMAL", 88), ("REQUIREMENT", 150), ("RATIONS", 230)]:
             made.line(2, 260, name, x, HEADER)
         for y, cells in [(280, ["1", "Hare", "Weapon or trap", "1"]), (297, ["2", "Stag*", "Weapon", "D6"])]:
             for cell, x in zip(cells, [72, 88, 150, 230]):
