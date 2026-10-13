@@ -189,6 +189,15 @@ class CommitTest(CampaignTest):
                     c.commit(payload)
             self.assertEqual(len(c.events), count)
 
+    def test_a_consequence_set_more_than_a_year_ahead_is_told_what_to_do_instead(self):
+        # It was told to let the time pass a year at a time: advice for time passing, not for a consequence.
+        with self.session() as c:
+            with self.assertRaisesRegex(SoloError, "consequence the_heir_returns: after is more than a year of game time, "
+                                                   "the furthest ahead a consequence waits: leave after out, and bring it in yourself"):
+                c.commit({"consequence": {"text": "the heir returns", "after": {"day": 400}}})
+            c.commit({"consequence": {"text": "the heir returns", "after": {"day": 365}}})
+            self.assertEqual(c.state["consequences"]["the_heir_returns"]["due_at"], c.state["time"] + 365 * 86400)
+
     def test_removing_what_the_hero_lacks_warns_about_the_right_list(self):
         with self.session() as c:
             event = c.commit({"pc": {"abilities": {"remove": ["Veteran", "Berserker"]}, "items": {"remove": ["rope", "lantern"]}}})

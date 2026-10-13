@@ -2404,10 +2404,11 @@ class Campaign:
         triggers["activity"] = int(bool(minimum and after - before >= minimum))
         return +triggers
 
-    def _seconds(self, spent, what="time"):
+    def _seconds(self, spent, what="time", most="the most one step of the story passes: let it pass a year at a time, or say what happened in between"):
         """{ stretch = 2 } in seconds, in the system's own time units (plural as well: rounds, stretches), or in the
         clock's (minutes: a GM writes what it means). Words read the same: "2 stretches". Each amount is a number
-        from zero up (written as text, it reads as the number), and all of it together at most a year."""
+        from zero up (written as text, it reads as the number), and all of it together at most a year (`most` says
+        why, and what to do instead)."""
         units = {**_CLOCK, **self.system["time"]}
         plurals = {_plural(unit): unit for unit in units}
         if isinstance(spent, str):
@@ -2423,8 +2424,7 @@ class Campaign:
             elif number is None:
                 raise SoloError(f'{what}: {unit} is a number from zero up, like {{"{unit}": 2}}; not {amount!r}')
             elif number > _MOST_TIME or seconds + units[one] * number > _MOST_TIME:
-                raise SoloError(f"{what} is more than a year of game time, the most one step of the story passes: "
-                                "let it pass a year at a time, or say what happened in between")
+                raise SoloError(f"{what} is more than a year of game time, {most}")
             seconds += units[one] * number
         return int(seconds)
 
@@ -2728,7 +2728,8 @@ class Campaign:
                         "leave when out and give at, npc or after, or no trigger at all (a loose end you bring in)") from None
                 change["when"] = str(item["when"])
             if item.get("after"):
-                seconds = self._seconds(item["after"], what=f"consequence {consequence_id}: after")
+                seconds = self._seconds(item["after"], what=f"consequence {consequence_id}: after",
+                                        most="the furthest ahead a consequence waits: leave after out, and bring it in yourself when its time comes")
                 if seconds <= 0:
                     raise SoloError(f'consequence {consequence_id}: after is game time from now, like {{"shift": 1}}')
                 change["due_at"] = self.state["time"] + seconds
