@@ -1,5 +1,6 @@
 import copy
 import os
+import shutil
 import tempfile
 import time
 import tomllib
@@ -221,3 +222,36 @@ class UntrustedText(unittest.TestCase):
         warnings = packs.addresses_the_model(adventure)
         self.assertEqual(len(warnings), 2, warnings)
         self.assertTrue(all(w.startswith("scene gate:") for w in warnings))
+
+
+class LinksOutTest(unittest.TestCase):
+    """A shared pack whose files are links to somewhere else on the disk: the engine reads none of
+    them, so the GM can't print them (solo rule is a command it runs), and validate says so."""
+
+    def test_a_pack_reads_none_of_the_links_that_leave_it_and_validate_lists_them(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        outside, pack = Path(folder.name) / "outside", Path(folder.name) / "pack"
+        outside.mkdir()
+        (outside / "secret").write_text("# House\n\nThe secret.\n", encoding="utf-8")
+        (outside / "loot.toml").write_text('name = "Loot"\nformula = "1d6"\nresults = [{ range = [1, 6], text = "The secret." }]\n', encoding="utf-8")
+        (outside / "more.toml").write_text('[clocks.secret]\nlabel = "The secret"\nsegments = 2\n', encoding="utf-8")
+        shutil.copytree(RED_TUSK, pack)
+        (pack / "rules").mkdir()
+        (pack / "chapters").mkdir()
+        (pack / "rules" / "own.md").write_text("# Own\n\nThe pack's own page.\n", encoding="utf-8")
+        (pack / "rules" / "also_own.md").symlink_to("own.md")  # a link that stays inside is the pack's
+        (pack / "rules" / "house.md").symlink_to("../../outside/secret")
+        (pack / "tables" / "loot.toml").symlink_to(outside / "loot.toml")
+        (pack / "chapters" / "more.toml").symlink_to(outside / "more.toml")
+        (pack / "npcs").rename(pack / "people")
+        (pack / "npcs").symlink_to(outside)
+        adventure = packs.load_adventure(pack)
+        self.assertEqual(([p["title"] for p in packs.rule_pages([pack / "rules"])], packs.rule_matches([pack / "rules"], "house")), (["Own", "Own"], []))
+        self.assertNotIn("loot", adventure["tables"])
+        self.assertNotIn("secret", adventure["clocks"])
+        self.assertEqual(adventure["npcs"], {})
+        problems = packs.validate(packs.load_system(DRAGONBANE), adventure)
+        links = sorted(p.split(": ")[1].split(" is a link")[0] for p in problems if "outside the pack" in p)
+        self.assertEqual(links, ["chapters/more.toml", "npcs", "rules/house.md", "tables/loot.toml"])
+        self.assertIn("pack: rules/house.md is a link to ../../outside/secret, outside the pack, so the engine leaves it out", "\n".join(problems))
