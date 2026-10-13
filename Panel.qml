@@ -1568,10 +1568,19 @@ Item {
                 onClicked: root.chooseAdventure(modelData)
 
                 Line { text: modelData.title; font.bold: true }
+                // The system by name (the engine gives it; from the systems that loaded, before it did), and what
+                // the adventure waits for when it can't be played yet.
                 Line {
                   size: Commons.Style.font.caption
                   color: root.dim
-                  text: (root.library.systems.filter(s => s.id === modelData.system)[0] || { name: modelData.system || "no system named" }).name
+                  text: modelData.system_name
+                    || (root.library.systems.filter(s => s.id === modelData.system)[0] || { name: modelData.system || "no system named" }).name
+                }
+                Line {
+                  visible: modelData.ready === false && (modelData.why || "") !== ""
+                  size: Commons.Style.font.caption
+                  color: root.dim
+                  text: modelData.why || ""
                 }
                 Line { visible: modelData.summary !== ""; size: Commons.Style.font.bodySmall; text: modelData.summary }
               }
@@ -1594,7 +1603,8 @@ Item {
               visible: root.adventure !== null && root.system === null
               color: Commons.Color.urgent
               size: Commons.Style.font.bodySmall
-              text: "This adventure's system pack isn't installed, or its rules aren't built from your books yet (make dragonbane)."
+              text: root.adventure && root.adventure.why
+                ? root.adventure.why : "This adventure's system pack isn't installed, or its rules aren't built from your books yet (make dragonbane)."
             }
 
             Flow {

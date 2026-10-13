@@ -324,6 +324,7 @@ def main(out):
     errors += commands_wait_their_turn(item, panel, work, wait)
     errors += the_first_game(load, work, wait)
     errors += quiet_text_reads(engine, item, panel, out, wait)
+    errors += adventures_not_ready(item, panel, out, wait)
     print("bar tooltip:", bar.rootObject().tooltip())
     print("launched:")
     for command in LAUNCHED:
@@ -837,6 +838,29 @@ def quiet_text_reads(engine, item, panel, out, wait):
             panel.grabWindow().save(str(out / "table-light.png"))
     popups.setProperty("text", dark[0])
     popups.setProperty("background", dark[1])
+    return problems
+
+
+def adventures_not_ready(item, panel, out, wait):
+    """New adventure names an adventure's system, and says under it why the adventure can't be played yet, when
+    `solo library` says so (system_name, ready, why); an entry without them shows the system as before."""
+    item.show("new")
+    wait(2500)
+    library = item.property("library").toVariant()
+    why = "Dragonbane's rules aren't built from your books yet: make dragonbane BOOKS=<your PDFs>."
+    sunken = {"id": "sunken-keep", "title": "The Sunken Keep", "system": "dragonbane-2", "system_name": "Dragonbane, from your books",
+              "ready": False, "why": why, "summary": "A keep the lake took back.", "path": "/nowhere", "characters": []}
+    item.setProperty("library", {**library, "adventures": [sunken] + library["adventures"]})
+    wait(300)
+    panel.grabWindow().save(str(out / "new-not-ready.png"))
+    problems = []
+    for text in ("Dragonbane, from your books", why):
+        if labelled(panel.contentItem(), text) is None:
+            problems.append(f"New adventure doesn't show {text!r} for an adventure that isn't ready")
+    known = library["adventures"][0]
+    name = next((s["name"] for s in library["systems"] if s["id"] == known["system"]), None)
+    if known.get("system_name") is None and name and labelled(panel.contentItem(), name) is None:
+        problems.append(f"an adventure without a system_name no longer shows its system's name ({name!r})")
     return problems
 
 
