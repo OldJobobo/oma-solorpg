@@ -107,6 +107,33 @@ class DesignDocsTest(unittest.TestCase):
             self.assertGreater(len(links), 5, doc)
             self.assertEqual([link for link in links if link not in anchors(text)], [], doc)
 
+    def test_the_docs_name_every_button_a_dying_hero_has(self):
+        # With the solo rules the Table offers Save yourself and Rally beside the death roll.
+        panel = (ROOT / "Panel.qml").read_text(encoding="utf-8")
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        plan = (ROOT / "docs" / "PLAN.md").read_text(encoding="utf-8")
+        dying = [next(line for line in readme.splitlines() if "At 0 HP you're dying" in line),
+                 next(line for line in plan.splitlines() if line.startswith("| Dying |"))]
+        for label in ("Death roll", "Save yourself", "Rally"):
+            self.assertIn(f'text: "{label}"', panel)
+            for line in dying:
+                self.assertIn(label, line)
+
+    def test_ci_checks_the_pyside6_contributing_says_it_does(self):
+        workflow = (ROOT / ".github" / "workflows" / "test.yml").read_text(encoding="utf-8")
+        contributing = (ROOT / "CONTRIBUTING.md").read_text(encoding="utf-8")
+        checked = re.findall(r'PySide6-Essentials==(\d+\.\d+)\.\*', workflow)
+        self.assertEqual(len(checked), 1)
+        self.assertIn(f"CI checks it on {checked[0]}", contributing)
+        self.assertNotIn("6.11 and 6.12 are checked", contributing)
+
+    def test_the_roadmap_never_asks_for_a_scenario_that_exists(self):
+        roadmap = (ROOT / "ROADMAP.md").read_text(encoding="utf-8")
+        scenarios = ROOT / "tests" / "gm_eval" / "scenarios"
+        for name, words in (("bell-cheat", "add the cheat"), ("bell-table-settings", "lines-and-veils scenario")):
+            self.assertTrue((scenarios / f"{name}.toml").exists(), name)
+            self.assertNotIn(words, roadmap)
+
     def test_plan_says_what_is_true_now(self):
         plan = (ROOT / "docs" / "PLAN.md").read_text(encoding="utf-8")
         for stale in ("omarchy agent`", "the agent window", "GM window: omarchy agent", "Single-window mode: revisit",

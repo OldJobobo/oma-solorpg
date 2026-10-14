@@ -40,7 +40,7 @@ A second, rarer user is the author: the same person on another evening, importin
 | Rest | Round, stretch or shift rest buttons. Time passes, so hidden clocks may tick. The GM sees it in the log. | panel |
 | Ask the oracle | Type a yes/no question, pick the odds, Ask. The answer shows under the question and in the log, with a random event when one comes up. Meaning gives two words for open questions. | panel |
 | Fight | The GM starts it. The table shows initiative, the foes' HP and the hero's weapons. Pick a foe, click a weapon to attack. A foe's hit shows in red with Evade, Parry and Take it. | Book + panel |
-| Dying | At 0 HP the only roll left is Death roll, with the count toward rallying or dying. Death ends the campaign and the Home card says so. | panel |
+| Dying | At 0 HP the only roll left is Death roll, with the count toward rallying or dying; with the solo rules, Save yourself and Rally are beside it, and a hero who rallies acts again at 0 HP. Death ends the campaign and the Home card says so. | panel |
 | End a session | The GM asks the end-of-session questions and marks skills; Roll advancement (or the GM) rolls them. | Book + panel |
 | Resume | Home lists campaigns with the first line of the GM's last message. Click one: the table shows that message in full under Where you left off. Open the Book, and the story is there as it was left, for the GM's next turn to carry on from. In a terminal instead (Terminal), the GM's first message is that text, word for word, and a GM window already open gets focus instead of a second one. | panel |
 | Bring your own adventure | `solo import ...` plus the `solo-import` skill (terminal, agent). The adventure then appears on the New adventure screen. | terminal |

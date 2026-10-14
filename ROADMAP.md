@@ -60,7 +60,7 @@ Status: built (2026-09-30): the X-card (`solo strike`), hard limits on a GM turn
 
 Left:
 
-- Run `injected-scene` with a real GM, and add the cheat and lines-and-veils scenarios of item 5.
+- Run `injected-scene`, `bell-cheat` and `bell-table-settings` (item 5's safety scenarios) with a real GM.
 - A control for the budget on the Table, and a line in the Book when a session is close to its limit.
 - A Codex GM can still delete or rewrite `.solo/agent.json` (the session id the spending count is keyed to), and the next turn starts a fresh session whose count starts at zero. Closing it means keeping the session id outside the campaign folder too, which changes how the play-test harness starts a new session.
 - The Book's first prompt now puts the table and the adventure's text in a block marked as data (2026-10-13), and a resumed turn what happened at the table since its last message (2026-10-14). `injected-scene` hasn't been run against it.
