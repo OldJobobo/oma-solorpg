@@ -623,6 +623,11 @@ class ImportBookCliTest(CliCase):
         self.assertIn("scan.pdf: no importer knows this book, or this printing of it (it has 0 bookmarks, fingerprint e3b0c44298fc1c14). "
                       "3 of its 3 pages have no text, so it looks scanned: run ocrmypdf on the PDF and import it again.", out)
         self.assertIn("not every book became a pack: torn.pdf (it can't be read); lanterns (no importer knows it); scan (no importer knows it)", err)
+        # The docs that send such a book to an agent say what the import says of it: no section is named.
+        for doc in ("skills/solo-rules-import/SKILL.md", "docs/INGESTION.md"):
+            text = (library.REPO / doc).read_text(encoding="utf-8")
+            self.assertIn("bookmark count and fingerprint", text, doc)
+            self.assertNotIn("which section they couldn't find", text, doc)
 
     def test_an_importer_that_stops_on_a_page_it_doesnt_name_fails_that_book_and_the_others_are_built(self):
         def broken(pack):
