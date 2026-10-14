@@ -1465,6 +1465,18 @@ Item {
         focus: true
         Keys.onEscapePressed: root.close()
 
+        // What Tab reaches on the Table (a fold, a card, a field) is scrolled into view, so Enter or Space never
+        // acts out of sight on a screen too short for all of it.
+        readonly property Item focused: Window.activeFocusItem
+        onFocusedChanged: {
+          var up = focused
+          while (up && up !== contentItem) up = up.parent
+          if (!up) return
+          var top = focused.mapToItem(contentItem, 0, 0).y
+          if (top + focused.height > contentY + height) contentY = Math.max(0, Math.min(top + focused.height - height, contentHeight - height))
+          if (top < contentY) contentY = Math.max(0, top)
+        }
+
         ColumnLayout {
           id: column
           width: parent.width

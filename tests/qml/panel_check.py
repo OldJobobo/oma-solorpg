@@ -1087,6 +1087,7 @@ def by_keyboard(item, panel, wait):
     wait(100)
     if button(panel.contentItem(), "Borders") is not None:
         problems.append("Enter on an open fold didn't close it")
+    problems += tab_stays_in_sight(item, panel, fold, wait)
     item.show("new")
     wait(2500)
     card = cards(panel.contentItem(), "The Red Tusk Hall")
@@ -1100,6 +1101,38 @@ def by_keyboard(item, panel, wait):
         if item.property("pickedAdventure") != "red-tusk":
             problems.append(f"Space on an adventure's card didn't pick it: {item.property('pickedAdventure')!r}")
     return problems
+
+
+def tab_stays_in_sight(item, panel, last, wait):
+    """On a Table taller than the screen (a 1080p sidebar is about 1000 px), Tab from the oracle field down to `last`
+    (the Desktop effects fold, at the bottom) scrolls each thing it reaches into view."""
+    table = last
+    while table is not None and not table.inherits("QQuickFlickable"):
+        table = table.parentItem()
+    sidebar = table.parentItem().parentItem()
+    tall = sidebar.height()
+    sidebar.setProperty("height", 600)
+    wait(300)
+    table.setProperty("contentY", 0)
+    unseen, reached = [], False
+    try:
+        item.findChild(QObject, "question").forceActiveFocus()  # a click in the oracle field gives the Table the keyboard
+        for _ in range(60):
+            QTest.keyClick(panel, Qt.Key_Tab)
+            wait(30)
+            focused = panel.activeFocusItem()
+            top = focused.mapToItem(table, QPointF(0, 0)).y()
+            if top < -0.5 or top + focused.height() > table.height() + 0.5:
+                unseen.append(str(focused.property("text") or focused.metaObject().className()))
+            if focused == last:
+                reached = True
+                break
+    finally:
+        sidebar.setProperty("height", tall)
+        wait(300)
+    if not reached:
+        return ["Tab from the oracle field never reached the Desktop effects fold"]
+    return [f"on a short screen Tab reaches what is out of sight: {unseen}"] if unseen else []
 
 
 def cards(item, name):
