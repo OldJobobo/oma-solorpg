@@ -414,6 +414,7 @@ Item {
 
           ListView {
             id: storyView
+            objectName: "story"
             anchors.fill: parent
             clip: true
             spacing: 0
@@ -485,17 +486,22 @@ Item {
                 Timer { interval: 420; repeat: true; running: quill.visible; onTriggered: quill.dots = (quill.dots + 1) % 3 }
               }
 
-              Row {
+              // What went wrong, and "try again" after it: under it when the words fill the line, so a long error
+              // never pushes the link off the page.
+              Flow {
                 visible: book.turn.status === "error" || book.turn.status === "stopped"
+                width: parent.width
                 spacing: book.theme.body
                 Text {
+                  width: Math.min(implicitWidth, parent.width)
+                  wrapMode: Text.Wrap
                   textFormat: Text.PlainText
                   font.family: book.theme.mono
                   font.pixelSize: book.theme.small
                   color: book.turn.status === "error" ? book.theme.urgent : book.theme.dim
                   text: book.turn.status === "error" ? book.turn.error || "The GM ran into a problem." : "Stopped."
                 }
-                Link { text: "try again"; onClicked: book.retry() }
+                Link { objectName: "tryAgain"; text: "try again"; onClicked: book.retry() }
               }
             }
 

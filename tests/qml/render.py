@@ -16,7 +16,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
-from PySide6.QtCore import QMetaObject, QObject, QPoint, Q_ARG, Q_RETURN_ARG, Qt, QTimer, QUrl, SIGNAL  # noqa: E402
+from PySide6.QtCore import QMetaObject, QObject, QPoint, QPointF, Q_ARG, Q_RETURN_ARG, Qt, QTimer, QUrl, SIGNAL  # noqa: E402
 from PySide6.QtGui import QGuiApplication  # noqa: E402
 from PySide6.QtQuick import QQuickItem, QQuickView  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
@@ -182,6 +182,16 @@ def main(out):
     book.setProperty("actionError", "Ragna isn't carrying a torch")
     shot("refused", 700)
     book.setProperty("actionError", "")
+
+    # Words the GM never got: the reason can run past the end of a line, and "try again" stays on the page after it.
+    root.setProperty("turn", {"status": "error", "unsent": "I knock on the door.",
+                              "error": "no campaign at /home/you/Games/solo/campaigns/red-tusk (moved or deleted?). "
+                                       "The GM didn't start, and your words weren't recorded: try again to send them."})
+    shot("unsent", 500)
+    again, story = book.findChild(QObject, "tryAgain"), book.findChild(QObject, "story")
+    if again is None or not again.isVisible() or again.mapToScene(QPointF(again.width(), 0)).x() > story.mapToScene(QPointF(story.width(), 0)).x():
+        errors.append("after a long error, \"try again\" is off the page")
+    root.setProperty("turn", {"status": "idle"})
 
     # No default agent: the Book says how to set one up, and what "open the GM" did.
     book.setProperty("agent", {"agent": "", "book": False})
