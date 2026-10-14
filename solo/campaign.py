@@ -115,7 +115,7 @@ def create(root, system_path, adventure_path, character, title=None, prefs=None)
     system = packs.load_system(system_path)
     adventure = packs.load_adventure(adventure_path, drafts=False)
     problems = packs.validate(system, adventure)
-    if _begun(root):
+    if _taken(root):
         raise SoloError(f"{root} already holds a campaign")
     elif packs.missing(system):
         raise SoloError(packs.missing_text(system, packs.missing(system)))
@@ -148,14 +148,19 @@ def create(root, system_path, adventure_path, character, title=None, prefs=None)
         return root
 
 
-def _begun(root):
-    """Whether a folder holds a campaign already begun: a whole event in its log. A campaign.toml with none is a start that
-    stopped half way, begun again by `solo new`. Read only: a log another command is writing is never mended (see
-    _mend_tail) from outside its lock."""
+def _taken(root):
+    """Whether a folder holds a campaign `solo new` must leave alone: a whole event in its log, or a campaign.toml solo
+    didn't write (one without a system and an adventure). One solo wrote, with no events, is a start that stopped half
+    way, begun again. Read only: a log another command is writing is never mended (see _mend_tail) from outside its lock."""
+    toml = root / "campaign.toml"
     try:
+        if toml.exists() and not all(isinstance(packs.load_data(toml).get(key), str) for key in ("system", "adventure")):
+            return True
         return b"\n" in (root / "events.jsonl").read_bytes()
     except FileNotFoundError:
         return False
+    except (SoloError, OSError):  # a campaign.toml that isn't TOML, or a folder it can't read: not one to write over
+        return True
 
 
 def hero(root, name=None):
@@ -273,7 +278,7 @@ def session(root, new=None):
     root = Path(root)
     with open(root / ".lock", "w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        if new is not None and _begun(root):
+        if new is not None and _taken(root):
             raise SoloError(f"{root} already holds a campaign")
         elif new is not None:
             (root / "campaign.toml").write_text("".join(f"{k} = {packs.toml_string(v)}\n" for k, v in new.items()), encoding="utf-8")

@@ -531,6 +531,17 @@ class TornLogTest(CampaignTest):
         with self.assertRaisesRegex(SoloError, "already holds a campaign"):
             campaign.create(root, self.system, self.adventure, self.character)
 
+    def test_solo_new_never_writes_over_a_campaign_toml_it_didnt_write(self):
+        root = self.tmp / "notes"
+        root.mkdir()
+        for text in ('[world]\nname = "My homebrew notes"\nsessions = 14\n', "notes [half"):
+            with self.subTest(text=text):
+                (root / "campaign.toml").write_text(text)
+                with self.assertRaisesRegex(SoloError, "already holds a campaign"):
+                    campaign.create(root, self.system, self.adventure, self.character)
+                self.assertEqual((root / "campaign.toml").read_text(), text)
+        self.assertFalse((root / "events.jsonl").exists())
+
     def test_a_line_separator_in_a_message_stays_inside_its_event(self):
         # JSON keeps U+2028 and U+0085 as they are, and str.splitlines cuts at both: a pasted line read the whole log as damaged.
         text = "The bell tolls.\u2028Silence.\x85 What do you do?"
