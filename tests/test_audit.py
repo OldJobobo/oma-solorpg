@@ -458,6 +458,26 @@ class BookCheckTest(unittest.TestCase):
         self.assertIn('rules: tables/fear result 1 "Shakes and drops what they hold in a two-handed bear grip." isn\'t on p. 1 (no bear)',
                       self.change("tables/fear.toml", "two-handed grip", "two-handed bear grip"))
 
+    def test_a_results_numbers_dice_and_short_words_are_read_on_its_own_row(self):
+        # Each change below is on the page, on another row or under the table: only the result's own row tells it is wrong.
+        rows = {"Shakes and drops what they hold.": "Shakes and drops what they hold, losing 2 WP.",
+                "Runs away screaming into the night.": "Runs away screaming into the night and takes D6 damage. It can be shaken off.",
+                "Freezes on the spot for a round.": "Freezes, and must flee from the fight after a round."}
+        page, table = self.PAGES[1], (self.pack / "tables" / "fear.toml").read_text(encoding="utf-8")
+        for old, new in rows.items():
+            page, table = page.replace(old, new), table.replace(old, new)
+        write(self.book / "pages" / "0001.txt", page)
+        write(self.pack / "tables" / "fear.toml", table)
+        report = audit.audit(self.pack, "system")
+        self.assertFalse(audit.failed(report), audit.render(report))
+        for old, new, said in (("losing 2 WP", "losing 10 WP", "result 1 \"Shakes and drops what they hold, losing 10 WP.\" isn't what row 1 on p. 1 says (no 10)"),
+                               ("losing 2 WP", "losing 2 HP", "result 1 \"Shakes and drops what they hold, losing 2 HP.\" isn't what row 1 on p. 1 says (no hp)"),
+                               ("takes D6 damage", "takes D4 damage", "takes D4 damage....\" isn't what row 2 on p. 1 says (no d4)"),
+                               ("can be shaken", "can't be shaken", "isn't what row 2 on p. 1 says (no can't)"),
+                               ("must flee", "must not flee", "result 3-6 \"Freezes, and must not flee from the fight after a round.\" isn't what row 3-6 on p. 1 says (no not)")):
+            self.assertIn(said, self.change("tables/fear.toml", old, new))
+            write(self.pack / "tables" / "fear.toml", table)
+
     def test_a_row_that_fits_several_results_proves_none_of_them_swapped(self):
         # Two results alike: the row they both fit can't say which one moved, and each is judged against its own row.
         found = self.change("tables/fear.toml", '"Shakes and drops what they hold."', '"Runs away screaming into the night."')

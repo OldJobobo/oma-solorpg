@@ -729,7 +729,9 @@ def _said(result):
 # looked for on the page, as before. Where the PDF wrote each row's words before its number, a
 # number on a line of its own has its row above it. And a row that wraps before a number
 # ("...shaken and" / "2 WP are lost") goes on over it: a line starts a row only where its range
-# isn't started again on the next one, and goes on from the row before rather than back.
+# isn't started again on the next one, and goes on from the row before rather than back. A row
+# that holds a result's words holds its numbers, dice and short words as well: "4 WP" for "2 WP",
+# "D4" for "D6", or a "not" put in is on the page, but on another row or none.
 
 _ROW_LINES = 6
 # A range at the start of a line: "3", "3-6", "3 to 6", "6+", and "00" for a hundred.
@@ -842,10 +844,14 @@ def _row_problems(at, rows, page_words, where):
     row = rows[at]
     if not row["words"] or any(found["own"] and not any(re.search(r"[a-z]", text) for text, _ in found["own"]) for found in rows):
         return []
-    if any(_fits(words, row["words"]) for _, words in row["own"]):
+    fitting = [text for text, words in row["own"] if _fits(words, row["words"])]
+    if fitting:
         missing = list(dict.fromkeys(w for said in row["said"] for joined in [_joined(said)] for w in _tokens(said)
                                      if not _has(page_words, w) and not _has(page_words, joined.get(w, w))))
-        return [f"isn't on {where} (no {', '.join(missing[:4])})"] if missing else []
+        if missing:
+            return [f"isn't on {where} (no {', '.join(missing[:4])})"]
+        off = [found for found in (_off(row["said"], text) for text in fitting) if found is not None]
+        return [f"isn't what row {row['label']} on {where} says (no {', '.join(off[0][:4])})"] if off and all(off) else []
     # Another range's row is this result's when it fits this result alone: a row that fits other results of the table as
     # well (results that share their words, or a row run on into the title of the table below it) proves nothing.
     theirs = [span for span, _, words in row["other"] if _fits(words, row["words"])
@@ -859,6 +865,39 @@ def _row_problems(at, rows, page_words, where):
         said = [text for text, _ in row["own"] if _tokens(text)]
         return [f"isn't what row {row['label']} on {where} says (\"{_short(said[0], 40)}\")"] if said else []
     return [f"has no row {row['label']} on {where}: the page doesn't print that range"]
+
+
+def _off(said, text):
+    """What of a result's words, numbers and dice its own row doesn't print ("4" of "4 WP" on the row "2 WP", "hp" for "wp", "can't" for
+    "can"): the page has them, but on other rows. None for a row that lacks some of the result's long words, which may have been cut off
+    before the rest; and what comes after the last of them is only asked of a row that goes on past it."""
+    row = _norm(text).replace("\u2019", "'")
+    order = re.findall(r"[a-z0-9]+(?:'[a-z]+)?", row)
+    words = _words(row) | set(order)
+    numbers = words | {found.group(1) for found in map(re.compile(r"(\d+)[a-z]+").fullmatch, list(words)) if found}
+    off = []
+    for each in said:
+        clean = re.sub(r"\([^)]*\)|[a-z]+:", " ", _norm(re.sub(r"\{[^}]*\}", "", str(each))).replace("\u2019", "'"))
+        joined = _joined(clean)
+
+        def on(word):
+            if _DICE.fullmatch(word):
+                return all(_dice_on(dice, row) for dice in _dice_in(word))
+            if word.isdigit():
+                return _says_number(int(word), row, numbers)
+            return _has(words, word) or _has(words, joined.get(word, word))
+
+        if not all(map(on, _tokens(clean))):
+            return None
+        said_words = re.findall(r"[a-z0-9]+(?:'[a-z]+)?", clean)
+        longs = [at for at, word in enumerate(said_words) if _tokens(word)]
+        if not longs:
+            continue
+        last = _tokens(said_words[longs[-1]])[0]
+        ends = [at for at, word in enumerate(order) if any(_has({part}, last) for part in re.findall(r"[a-z]+", word))]
+        upto = len(said_words) if ends and ends[-1] < len(order) - 1 else longs[-1] + 1
+        off += [word for word in said_words[:upto] if not on(word)]
+    return list(dict.fromkeys(off))
 
 
 def _formula_problems(table, where):
