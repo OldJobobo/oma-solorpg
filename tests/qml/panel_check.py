@@ -446,7 +446,15 @@ def an_x_card(item, panel, out, work, wait):
         wait(300)
         if book.property("canCut"):
             break
+    # Something else clicked in the Book was refused first: that is said beside the page, and the X-card's panel,
+    # opened after it, doesn't give it as why a cut didn't go through.
+    item.act(["death-roll"], "book", None, None)
+    wait(1500)
     book.setProperty("cutting", True)
+    wait(100)
+    why = book.findChild(QObject, "cutError")
+    if not book.property("actionError") or why is None or why.property("visible"):
+        problems.append(f"the X-card's panel gives what was refused before it as why the cut failed: {why and why.property('text')!r}")
     item.findChild(QObject, "cutInput").setProperty("text", "-mothers")
     solo = work / "plugin" / "bin"
     solo.unlink()
@@ -459,8 +467,8 @@ def an_x_card(item, panel, out, work, wait):
         solo.symlink_to(REPO / "bin")
     if not book.property("cutting") or item.findChild(QObject, "cutInput").property("text") != "-mothers":
         problems.append("a cut that didn't go through closed the panel, or lost the player's words")
-    if "couldn't run" not in book.property("actionError"):
-        problems.append(f"a cut that didn't go through didn't say why in the Book: {book.property('actionError')!r}")
+    if "couldn't run" not in (book.property("cutError") or "") or why is None or not why.property("visible"):
+        problems.append(f"a cut that didn't go through didn't say why in the X-card's panel: {book.property('cutError')!r}")
     QMetaObject.invokeMethod(book, "cutIt", Q_ARG("QVariant", "veil"))  # and again, with solo back
     wait(2500)
     state = json.loads((game / "state.json").read_text())

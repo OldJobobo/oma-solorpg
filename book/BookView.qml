@@ -18,6 +18,7 @@ Item {
   property var agent: ({ agent: "", book: true })
   property string campaign: ""     // the campaign's folder: another one starts the Book over
   property string actionError: ""  // why the last thing clicked here (light a torch) was refused
+  property string cutError: ""     // why the last cut didn't go through
   property string actionNote: ""   // what the last thing clicked here said it did (open the GM)
   property bool active: true       // the window is showing
   property bool codexOpen: false
@@ -309,7 +310,7 @@ Item {
           }
 
           Text {
-            visible: book.actionError !== "" && !cutPanel.visible
+            visible: book.actionError !== ""
             width: side.width
             wrapMode: Text.Wrap
             textFormat: Text.PlainText
@@ -608,16 +609,18 @@ Item {
               Link { text: "keep it"; onClicked: book.cutting = false }
             }
 
-            // Why the cut didn't go through: the panel stays open with the words, to try again.
+            // Why the cut didn't go through: the panel stays open with the words, to try again. The cut's own
+            // reason only: a torch refused, or the GM's status unread, is said beside the page as ever.
             Text {
+              objectName: "cutError"
               Layout.fillWidth: true
-              visible: book.actionError !== ""
+              visible: book.cutError !== ""
               wrapMode: Text.Wrap
               textFormat: Text.PlainText
               font.family: book.theme.mono
               font.pixelSize: book.theme.small
               color: book.theme.urgent
-              text: book.actionError
+              text: book.cutError
             }
           }
         }
@@ -756,7 +759,7 @@ Item {
   }
 
   // The table's answer to a cut. Done, the panel closes and the composer has the keyboard
-  // again; refused, it stays open with the player's words and says why (actionError).
+  // again; refused, it stays open with the player's words and says why (cutError).
   function cutDone(ok) {
     cutSent = false
     if (ok) {

@@ -212,7 +212,7 @@ Item {
   function cut(note, line, veil) {
     var asked = root.campaign
     root.act(["strike"].concat(note !== "" ? ["--note=" + note] : []).concat(line !== "" ? ["--line=" + line] : [])
-               .concat(veil !== "" ? ["--veil=" + veil] : []), "book",
+               .concat(veil !== "" ? ["--veil=" + veil] : []), "cut",
              () => {
                bookView.cutDone(true)
                if (root.campaign === asked) root.speak("")
@@ -1042,6 +1042,7 @@ Item {
       agent: root.agentInfo
       campaign: root.campaign
       actionError: root.errorsAt("book")
+      cutError: root.errorsAt("cut")
       actionNote: root.notice.place === "book" ? root.notice.text : ""
       active: bookWindow.visible
       onSend: text => root.speak(text)
