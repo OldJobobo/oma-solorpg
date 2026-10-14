@@ -70,17 +70,30 @@ def trace_lines(root, limit):
     return lines
 
 
+def turn_note(root):
+    """What the last GM turn noted for the player (it ran with their own Claude Code settings), or "". Only a
+    note the engine writes: turn.json is in the campaign folder, where a Codex GM can write anything."""
+    from . import gm
+    try:
+        note = json.loads((Path(root) / ".solo" / "turn.json").read_text(encoding="utf-8")).get("note")
+    except (OSError, ValueError, AttributeError):
+        return ""
+    return note if note in gm.NOTES else ""
+
+
 def report(c, events=25, messages=6, commands=40):
     """The report, as Markdown."""
     formats = [f"{root.name} {fmt if fmt is not None else 'none'}" for root, fmt in c.system.get("formats", [])]
     said = [e for e in c.events if e["type"] == "said"]
     trace = trace_lines(c.root, commands)
+    note = turn_note(c.root)
     lines = [
         "# oma-solorpg report", "",
         f"Written {datetime.now().isoformat(timespec='minutes')}. It shows what happened by ids, numbers and dice, and leaves out "
         "rules pages, tables' words, scene text and every free-text field of an event."
         + (" **The last messages below are the story as it was told: read them before you post.**" if messages else ""), "",
-        "## Engine", f"- oma-solorpg {commit()}", f"- Python {platform.python_version()} on {platform.system()} {platform.machine()}", "",
+        "## Engine", f"- oma-solorpg {commit()}", f"- Python {platform.python_version()} on {platform.system()} {platform.machine()}",
+        *([f"- the last GM turn: {note}"] if note else []), "",
         "## Packs",
         f"- system {c.system.get('name', '?')}, family {c.system.get('family', '?')}; pack format of each layer, base first: {', '.join(formats) or 'none'}",
         f"- adventure {Path(c.adventure['dir']).name}, format {c.adventure.get('format', 'none')}", "",

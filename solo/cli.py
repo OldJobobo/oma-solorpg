@@ -160,11 +160,17 @@ def _write_agent_files(root):
     rewritten, so older campaigns get the current protocol; settings.json is merged, so
     anything the player added there stays."""
     root = Path(root)
-    skill = str(REPO / "skills" / "solo-gm" / "SKILL.md")
-    (root / "AGENTS.md").write_text((REPO / "templates" / "AGENTS.md").read_text(encoding="utf-8").replace("{{skill}}", skill), encoding="utf-8")
-    # Claude Code reads CLAUDE.md, which pulls in AGENTS.md.
+    (root / "AGENTS.md").write_text(agents_md(), encoding="utf-8")
+    # A Claude Code opened here reads CLAUDE.md, which pulls in AGENTS.md. A Book turn's Claude Code reads no
+    # settings files, CLAUDE.md among them, and is handed agents_md() itself (gm.Claude).
     (root / "CLAUDE.md").write_text("@AGENTS.md\n", encoding="utf-8")
     _merge_settings(root / ".claude" / "settings.json")
+
+
+def agents_md():
+    """A campaign's AGENTS.md: the GM's protocol in short, and where its skill is."""
+    skill = str(REPO / "skills" / "solo-gm" / "SKILL.md")
+    return (REPO / "templates" / "AGENTS.md").read_text(encoding="utf-8").replace("{{skill}}", skill)
 
 
 def _merge_settings(path):
@@ -345,16 +351,10 @@ def _preflight(skill_dirs):
         lines.append(("ok", "hyprctl, for the desktop effects"))
     else:
         lines.append(("optional", "hyprctl not found, so no desktop effects: they need Hyprland, and the game plays without them"))
+    # In the Book's own words (`solo gm agent`), so the two never disagree about the agent or what to do.
     agent = gm.default_agent()
-    if not agent:
-        lines.append(("todo", "no default agent: choose Claude Code or Codex with omarchy default agent, or set AGENT=claude"))
-    elif not shutil.which(agent):
-        lines.append(("todo", f"the default agent is {agent}, and {agent} isn't on PATH: install it, or choose another with omarchy default agent"))
-    elif gm.supported(agent):
-        lines.append(("ok", f"the GM is {agent}, which the Book runs"))
-    else:
-        lines.append(("todo", f"the default agent is {agent}, which the Book can't run: it opens in a terminal instead (solo play --terminal), "
-                              "or choose Claude Code or Codex with omarchy default agent"))
+    why = gm.why_not(agent)
+    lines.append(("ok", f"the GM is {agent}, which the Book runs") if why is None else ("todo", why))
     if not skill_dirs:
         lines.append(("todo", "no agent found (claude, codex or pi), so no skills were linked: install one and run make install again"))
     if importlib.util.find_spec("pymupdf"):
@@ -900,7 +900,10 @@ def cmd_say(args):
     else:
         text = sys.stdin.read() if args.text == ["-"] else " ".join(args.text)
         root = campaign.find(args.campaign)
-        if not args.player and _recorded_for_the_gm(root):
+        if args.player and os.environ.get("SOLO_BOOK"):
+            # `solo gm turn` records what the player wrote; anything else would be the GM's words under their name.
+            raise SoloError("the player's words are theirs: the Book records them as they send them, and the GM can't add to them")
+        elif not args.player and _recorded_for_the_gm(root):
             # A GM that records a draft and then sends something else leaves two replies in the story.
             print("not recorded: your final message is recorded for you here, so just send it")
             return
@@ -984,7 +987,8 @@ def cmd_gm(args):
             text = sys.stdin.read() if args.text == ["-"] else " ".join(args.text)
             _write_agent_files(root)
             result = gm.turn(root, text or None, agent=args.agent)
-            _json({k: result[k] for k in ("status", "error") if result.get(k)})
+            # The note is for the player too (the turn ran with their own Claude Code settings), here as in the Book.
+            _json({k: result[k] for k in ("status", "error", "note") if result.get(k)})
             if result["status"] == "error":
                 raise SoloError(result["error"])
         elif args.action == "stop":
@@ -1003,7 +1007,8 @@ def _budget(args):
     The limits are for every campaign; the count is the campaign's, and --reset starts it again."""
     from . import gm
     if (args.text or args.turns or args.reset) and os.environ.get("SOLO_BOOK"):
-        # A Codex GM has no list of allowed commands, so the refusal is here.
+        # Claude Code's GM may not run `solo gm` at all. A Codex GM has no list of allowed commands, so it is refused
+        # here; it could clear SOLO_BOOK, which is why the limits and the count are kept out of the campaign folder.
         raise SoloError("the GM's budget is the player's to set: the GM can read it, never raise or reset it")
     if args.text and not args.text[0].replace(".", "", 1).isdigit():
         raise SoloError(f"a budget is dollars, a number: solo gm budget 20 (or --turns 400), not {args.text[0]!r}")

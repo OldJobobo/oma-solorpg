@@ -41,15 +41,15 @@ Campaigns and commits:
 
 The GM:
 
-- Claude Code runs the GM with `--restricted` and `--permission-mode dontAsk` when it has them, so the player's own Claude Code settings, allow rules and permission mode never reach a GM turn.
-- The GM can no longer strike a message, change the table settings, or set its own budget or pace: those commands refuse inside a Book turn. What a session has spent is counted in `~/.local/state/solo`, out of the campaign folder.
-- A new session's first prompt puts the table and the adventure's text in a block marked as data, never instructions.
+- Claude Code runs the GM with `--restricted` and `--permission-mode dontAsk` when it has them, so the player's own Claude Code settings, allow rules and permission mode never reach a GM turn. Those flags keep the campaign's CLAUDE.md out too, so the GM is handed AGENTS.md with its system prompt.
+- The GM can no longer strike a message, change the table settings, set its own budget or pace, or record words as the player's (`solo say --player`): those commands refuse inside a Book turn. Under Codex, which has no list of allowed commands and can write the campaign folder, that refusal stops a slip, not a GM set on it. What a session has spent is counted in `~/.local/state/solo`, out of the campaign folder.
+- A new session's first prompt puts the table and the adventure's text in a block marked as data, never instructions, and so does every resumed turn with what happened at the table since (a table's result, a clock's note). The player's table settings and cuts in it are theirs to respect, not data.
 - A turn ended by the quiet limit, the clock or Stop is charged an estimate (the session's dearest turn, or 50 cents) instead of nothing. Only an agent's own lost-session messages start a fresh session.
 - Stop works while the agent is still starting, and only ever ends this campaign's agent. After a stopped turn the GM is told its reply never reached the player, and its rolls aren't passed off as the player's.
-- GM narration that says "commit" or "the player" no longer disappears from the Book. Commands Claude Code's permissions refused show in `solo report`, `solo review` and play tests.
-- The Book and the make targets pick the agent the same way (`AGENT`, then Omarchy's default, then claude, then codex), and `solo gm agent` says why when there is none. `SOLO_AGENT` is now `AGENT`.
-- A desktop border that couldn't be restored no longer stays red after later effects, and an omen's words can't be read as notify-send options. `SOLO_GM_*` limits ignore zero, negative and non-numeric values.
-- `tests/gm_eval/compare.py` compares scenario by scenario with a permutation test corrected for the number of metrics; play tests record the model the GM ran on and keep their report when the judge can't start.
+- GM narration that says "commit", "the player", "narrated" or "your first solo journey" no longer disappears from the Book. Commands Claude Code's permissions refused show in `solo report`, `solo review` and play tests.
+- The Book and the make targets pick the agent the same way (`AGENT`, then Omarchy's default, read past blank lines, then claude, then codex), and `solo gm agent` says why when there is none or it can't run, in the words `solo setup` uses too, naming `AGENT` when that chose it. `SOLO_AGENT` is now `AGENT`.
+- A desktop border that couldn't be restored no longer stays red after later effects, and a screen shader that couldn't be restored is put back by the next restore instead of lost for good; an omen's words can't be read as notify-send options. `SOLO_GM_*` limits ignore zero, negative and non-numeric values.
+- `tests/gm_eval/compare.py` compares scenario by scenario with a permutation test corrected for the number of metrics, and says the runs are too few only when they are; play tests record the model they asked for and, apart from it, the one the GM ran on, and keep their report when the judge can't start.
 
 The Table and the Book:
 
