@@ -686,6 +686,14 @@ def magic_and_dragons(item, panel, out, work, wait):
     item.setProperty("power", 2)
     item.cast(next(s for s in item.ready().toVariant() if s["name"] == "Ember"), False)
     wait(1500)
+    with campaign.session(game) as c:
+        # The cast's own dice came up a Demon (1 in 20), and its mishap drained willpower on top of the cost: given
+        # back, so what is checked here and below is what the Table paid.
+        drained = sum(e["changes"]["pc"]["tracks_was"]["wp"] - e["changes"]["pc"]["tracks"]["wp"]
+                      for e in c.events if e["type"] == "spell_effect" and "wp" in e["changes"].get("pc", {}).get("tracks", {}))
+        if drained:
+            c.commit({"pc": {"wp": f"+{drained}"}})
+    wait(1000)
     cast = [e for e in state()["log"] if e["type"] == "spell"]
     if trouble(item) or not cast or wp() != 7:
         problems.append(f"the Table's cast didn't cost two levels of Ember: {trouble(item) or wp()}")
