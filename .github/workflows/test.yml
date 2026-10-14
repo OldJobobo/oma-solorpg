@@ -30,7 +30,11 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y glslang-tools
       - run: python -m pip install pymupdf
       - run: python --version
+      # The key the book fingerprints are read with (tests/test_no_book_text.py): a pull request from a fork doesn't get it, and is checked by
+      # book-text.yml instead.
       - run: make test
+        env:
+          SOLO_FINGERPRINT_KEY: ${{ secrets.SOLO_FINGERPRINT_KEY }}
 
   qml:
     runs-on: ubuntu-latest

@@ -70,7 +70,7 @@ Imports and the audit:
 - A changed layout names the book, table and page instead of "something went wrong" (a cell with more than its number in it too), and an importer that stops some other way fails only its own book; a grip written "1-handed" is still a weapon, and one the importer can't read ("1H/2H") is named instead of making the weapon plain gear; a roll table whose rows stop short of its die fails the import; what an importer leaves out, it says in its notes.
 - No importer writes into the repository. An inventory keeps its extract relative to `SOLO_HOME`, so a built pack is the same on every machine.
 - `solo new` on rules that aren't built says so before asking for a hero, and `solo library` gives each adventure `ready`, `why` and `system_name`.
-- `tests/test_no_book_text.py` can check every pull request against salted fingerprints of the maintainer's books, tables included, once the maintainer generates them.
+- `tests/test_no_book_text.py` can check every pull request against fingerprints of the maintainer's books, tables included, once the maintainer generates them. They are keyed with a secret kept out of the repository (`SOLO_FINGERPRINT_KEY`, an Actions secret), so the committed file can't be worked back into a book's rows or read on from a known sentence; a pull request from a fork is checked by the base branch's own test, which reads its files and runs none of them.
 
 Install and docs:
 
