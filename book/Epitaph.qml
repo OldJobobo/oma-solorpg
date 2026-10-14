@@ -63,10 +63,13 @@ Item {
   MouseArea { anchors.fill: parent; onClicked: epitaph.dismissed() }
 
   // The keyboard and a screen reader put it away as a click does. It has the keyboard while
-  // it is up, so nothing typed goes to the page under it.
+  // it is up, so nothing typed goes to the page under it, and Tab doesn't move on to the
+  // links there.
   Keys.onPressed: event => {
     if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space || event.key === Qt.Key_Escape) {
       epitaph.dismissed()
+      event.accepted = true
+    } else if (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab) {
       event.accepted = true
     }
   }

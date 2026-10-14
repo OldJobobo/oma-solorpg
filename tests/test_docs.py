@@ -88,6 +88,16 @@ class ReadmeTest(unittest.TestCase):
         for section in ("## Install", "## Update", "## Uninstall", "## Troubleshooting", "## Dragonbane"):
             self.assertIn(f"\n{section}\n", text)
 
+    def test_what_the_readme_says_a_dying_hero_is_offered_is_what_the_table_offers(self):
+        # The Table's buttons at 0 HP (Panel.qml's Flow under "is dying"), named as the README names them; and the fight
+        # goes on around a dying hero, so the death roll is never the only button.
+        dying = next(line for line in self.readme().splitlines() if "At 0 HP" in line)
+        panel = (ROOT / "Panel.qml").read_text(encoding="utf-8")
+        offered = re.findall(r'text: "([^"]+)"', panel[panel.index("visible: root.atZero"):panel.index('ErrorLine { place: "dying" }')])
+        self.assertEqual(offered, ["Death roll", "Save yourself", "Rally"])
+        self.assertEqual([button for button in offered if button not in dying], [])
+        self.assertNotIn("only button", dying)
+
 
 def anchors(text):
     """The anchors GitHub gives a Markdown file's headings: lower case, punctuation dropped, spaces as hyphens."""

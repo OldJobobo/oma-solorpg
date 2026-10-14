@@ -16,6 +16,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -23,7 +24,7 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
 sys.path.insert(0, str(HERE))
 
-from PySide6.QtCore import Property, QFileSystemWatcher, QMetaObject, QObject, QPointF, Q_ARG, QSize, Qt, QTimer, QUrl, Signal, Slot  # noqa: E402
+from PySide6.QtCore import Property, QCoreApplication, QEventLoop, QFileSystemWatcher, QMetaObject, QObject, QPointF, Q_ARG, QSize, Qt, QTimer, QUrl, Signal, Slot  # noqa: E402
 from PySide6.QtGui import QColor, QGuiApplication  # noqa: E402
 from PySide6.QtQml import QQmlEngine, qmlRegisterModule, qmlRegisterSingletonInstance, qmlRegisterType  # noqa: E402
 from PySide6.QtQuick import QQuickItem, QQuickView, QQuickWindow  # noqa: E402
@@ -138,6 +139,10 @@ class Process(QObject):
             self._running = False
             self.runningChanged.emit()
             return
+        # Quickshell's event loop turns while a command runs, and solo writes state.json some milliseconds before
+        # it ends: the FileViews have read what it wrote by the time its exit comes, so a Repeater's delegate that
+        # ran the command (a parry, gone with the blow it answered) may be gone too.
+        settle()
         for stream, text in ((self.stdout, done.stdout), (self.stderr, done.stderr)):
             if stream is not None:
                 stream.text = text
@@ -146,6 +151,13 @@ class Process(QObject):
         self._running = False
         self.exited.emit(done.returncode, 0)
         self.runningChanged.emit()
+
+
+def settle():
+    """What the files a command wrote have to say (the watchers' news, and the reads it sets off) is heard now."""
+    end = time.monotonic() + 0.05
+    while time.monotonic() < end:
+        QCoreApplication.processEvents(QEventLoop.AllEvents, 10)
 
 
 def release():
@@ -325,6 +337,7 @@ def main(out):
     wait(1500)
     errors += begin_and_ask(item, panel, out, work, wait)
     errors += an_x_card(item, panel, out, work, wait)
+    errors += a_cut_while_another_is_picked(item, work, wait)
     errors += a_turn_that_never_starts(item, panel, out, work, wait)
     errors += no_agent_yet(item, work, wait)
     errors += desk_moments(item, panel, out, work, wait)
@@ -333,6 +346,8 @@ def main(out):
     errors += magic_and_dragons(item, panel, out, work, wait)
     errors += errors_by_source(item, work, wait)
     errors += commands_wait_their_turn(item, panel, work, wait)
+    errors += a_parry_and_what_waits(item, panel, work, wait)
+    errors += a_push_with_nothing_to_pay(item, panel, work, wait)
     errors += the_first_game(load, work, wait)
     errors += quiet_text_reads(engine, item, panel, out, wait)
     errors += by_keyboard(item, panel, wait)
@@ -361,6 +376,9 @@ def begin_and_ask(item, panel, out, work, wait):
     item.setProperty("heroName", "-Brokk")
     item.setProperty("tone", "-grim, and quiet")
     name = next(f for f in panel.contentItem().findChildren(QQuickItem) if str(f.property("placeholderText") or "").startswith("Name"))
+    # Begin opens the Book, here where omarchy-shell isn't there for `solo new --play` to bring it up (as with no
+    # agent set up, or one that runs in a terminal), so its word on the GM is read.
+    item.setProperty("bookOpen", False)
     panel.requestActivate()  # the shell gives the Table the keyboard when a field is clicked
     wait(100)
     name.forceActiveFocus()
@@ -368,6 +386,8 @@ def begin_and_ask(item, panel, out, work, wait):
     wait(3000)
     if trouble(item):
         return [f"Begin failed: {trouble(item)}"]
+    if not item.property("bookOpen"):
+        problems.append("Begin didn't open the Book when `solo new --play` didn't")
     game = Path((work / "state" / "solo" / "current").read_text().strip())
     state = json.loads((game / "state.json").read_text())
     if (state["pc"]["name"], state["prefs"]["tone"]) != ("-Brokk", "-grim, and quiet"):
@@ -429,7 +449,15 @@ def an_x_card(item, panel, out, work, wait):
         wait(300)
         if book.property("canCut"):
             break
+    # Something else clicked in the Book was refused first: that is said beside the page, and the X-card's panel,
+    # opened after it, doesn't give it as why a cut didn't go through.
+    item.act(["death-roll"], "book", None, None)
+    wait(1500)
     book.setProperty("cutting", True)
+    wait(100)
+    why = book.findChild(QObject, "cutError")
+    if not book.property("actionError") or why is None or why.property("visible"):
+        problems.append(f"the X-card's panel gives what was refused before it as why the cut failed: {why and why.property('text')!r}")
     item.findChild(QObject, "cutInput").setProperty("text", "-mothers")
     solo = work / "plugin" / "bin"
     solo.unlink()
@@ -442,13 +470,58 @@ def an_x_card(item, panel, out, work, wait):
         solo.symlink_to(REPO / "bin")
     if not book.property("cutting") or item.findChild(QObject, "cutInput").property("text") != "-mothers":
         problems.append("a cut that didn't go through closed the panel, or lost the player's words")
-    if "couldn't run" not in book.property("actionError"):
-        problems.append(f"a cut that didn't go through didn't say why in the Book: {book.property('actionError')!r}")
+    if "couldn't run" not in (book.property("cutError") or "") or why is None or not why.property("visible"):
+        problems.append(f"a cut that didn't go through didn't say why in the X-card's panel: {book.property('cutError')!r}")
     QMetaObject.invokeMethod(book, "cutIt", Q_ARG("QVariant", "veil"))  # and again, with solo back
     wait(2500)
     state = json.loads((game / "state.json").read_text())
     if len(state["struck"]) != 2 or state["prefs"]["veils"] != ["-mothers"] or book.property("cutting"):
         problems.append(f"the cut tried again didn't go through: {trouble(item) or state['struck']}, {state['prefs']}")
+    item.setProperty("turn", {"status": "idle"})
+    return problems
+
+
+def a_cut_while_another_is_picked(item, work, wait):
+    """The X-card's cut, waiting behind a command that picks another campaign (a card on Home clicked just before):
+    it cuts the message it was asked to, where it was asked, and the campaign picked meanwhile isn't asked to carry
+    on from a cut it never had."""
+    from solo import campaign
+    problems = []
+    game = Path((work / "state" / "solo" / "current").read_text().strip())
+    other = work / "games" / "campaigns" / "elsewhere"
+    subprocess.run([str(REPO / "bin" / "solo"), "new", "red-tusk", "--dir", str(other)], check=True, capture_output=True)
+    campaign.set_current(game)
+    with campaign.session(game) as c:
+        c.say("The rope bridge creaks under you.")
+    item.setProperty("turn", {"status": "idle"})
+    book = item.findChild(QObject, "book")
+    for _ in range(20):
+        wait(300)
+        if book.property("canCut") and item.property("campaign") == str(game):
+            break
+    struck = len(json.loads((game / "state.json").read_text())["struck"])
+    book.setProperty("cutting", True)
+    LAUNCHED.clear()
+    Process.hold = True
+    try:
+        item.useCampaign(str(other))
+        wait(100)
+        QMetaObject.invokeMethod(book, "cutIt", Q_ARG("QVariant", ""))
+        wait(100)
+    finally:
+        release()
+    for _ in range(20):
+        wait(300)
+        if not item.property("busy"):
+            break
+    if len(json.loads((game / "state.json").read_text())["struck"]) != struck + 1 or item.property("campaign") != str(other):
+        problems.append(f"the cut waiting behind another campaign picked didn't cut where it was asked: {trouble(item)}")
+    turns = [" ".join(str(a) for a in command[1:]) for command in LAUNCHED if "turn" in command]
+    if turns:
+        problems.append(f"the campaign picked while a cut waited was asked to carry on from it: {turns}")
+    campaign.set_current(game)
+    item.useCampaign(str(game))
+    wait(1500)
     item.setProperty("turn", {"status": "idle"})
     return problems
 
@@ -521,10 +594,14 @@ def no_agent_yet(item, work, wait):
     wait(100)
     if hint.property("text") != "Omarchy has no default agent yet.":
         problems.append(f"the Book doesn't give the engine's reason for having no GM: {hint.property('text')!r}")
+    # solo's link went (a first run, an agent installed since): `solo play` links it again, and says so to a terminal.
+    (work / "home" / ".local" / "bin" / "solo").unlink(missing_ok=True)
     QMetaObject.invokeMethod(book, "openTerminal")
     wait(2500)
     if not book.property("actionNote") or book.property("actionError"):
         problems.append(f"open the GM said nothing of what it did: {book.property('actionNote')!r} {book.property('actionError')!r}")
+    if "\n" in book.property("actionNote") or "linked" in book.property("actionNote"):
+        problems.append(f"open the GM says more than what it did: {book.property('actionNote')!r}")
     item.setProperty("agentInfo", {"agent": "claude", "book": True})
     return problems
 
@@ -568,9 +645,14 @@ def desk_moments(item, panel, out, work, wait):
                if button(panel.contentItem(), text) is not None]
     if offered:
         problems.append(f"a dying hero is still offered {offered}")
+    # Nor does the Book offer the torch the hero carries.
+    book = item.findChild(QObject, "book")
+    if not book.property("carriesLight") or item.property("game").toVariant().get("light"):
+        problems.append("the dying hero has no unlit torch, so the Book's torch link isn't checked")
+    elif labelled(book, "→ light a torch") is not None:
+        problems.append("the Book offers a dying hero a torch to light")
     # Dying, the Book's page beats and breathes; shut, it runs nothing (the plugin stays loaded with the Book shut).
     from render import running
-    book = item.findChild(QObject, "book")
     book.window().grabWindow().save(str(out / "book-dying.png"))
     if not running(book):
         problems.append("nothing runs on the open Book of a dying hero: the check of the shut Book would prove nothing")
@@ -868,10 +950,89 @@ def commands_wait_their_turn(item, panel, work, wait):
     return problems
 
 
+def a_parry_and_what_waits(item, panel, work, wait):
+    """A parry clicked on the Table, and a question asked while it runs. By the time the parry ends its button is gone
+    with the blow it answered (state.json was read again first), and what comes after it still runs: the question
+    waiting behind it is asked, and the Table is free again."""
+    from helpers import Dice
+    from solo import campaign
+    problems = []
+    game = Path((work / "state" / "solo" / "current").read_text().strip())
+
+    def state():
+        return json.loads((game / "state.json").read_text())
+
+    with campaign.session(game) as c:
+        c.fight(["cultist"], rng=Dice(1, 2))
+        c.enemy("cultist", rng=Dice(2))  # the dagger hits, and waits for the hero's answer
+    wait(1500)
+    parry = button(panel.contentItem(), "Parry: ")
+    if parry is None or not parry.property("enabled"):
+        return ["the Table offers no parry against the blow coming"]
+    Process.hold = True
+    try:
+        QTest.mouseClick(panel, Qt.LeftButton, Qt.NoModifier, parry.mapToScene(QPointF(parry.width() / 2, parry.height() / 2)).toPoint())
+        wait(100)
+        item.act(["ask", "--likely", "even", "--", "do more come?"], "oracle", None, None)
+        wait(100)
+    finally:
+        release()
+    for _ in range(20):
+        wait(300)
+        if not item.property("busy"):
+            break
+    log = state()["log"]
+    if ((state()["last_check"] or {}).get("defend") or {}).get("how") != "parry" or (state()["combat"] or {}).get("incoming"):
+        problems.append(f"the Table's parry didn't answer the blow: {trouble(item) or log[-1]}")
+    if not any(e["type"] == "oracle" and '"do more come?"' in e["text"] for e in log):
+        problems.append(f"the question asked while the parry ran never ran ({trouble(item)})")
+    if item.property("busy") or item.property("queue").toVariant():
+        problems.append(f"the Table stayed busy after the parry: {item.property('queue').toVariant()}")
+    with campaign.session(game) as c:
+        if c.state["combat"]:
+            c.end_fight()
+    wait(1000)
+    return problems
+
+
+def a_push_with_nothing_to_pay(item, panel, work, wait):
+    """A failed roll whose push costs a condition, when the hero has every condition already and no Sole Survivor to
+    pay with instead: the Table doesn't offer the push, rather than say "Push the roll:" over nothing."""
+    from helpers import DRAGONBANE, RAGNA, RED_TUSK, Dice
+    from solo import campaign
+    pointer = work / "state" / "solo" / "current"
+    kept = pointer.read_text()
+    game = work / "games" / "campaigns" / "spent"
+    campaign.create(game, DRAGONBANE, RED_TUSK, RAGNA)
+    with campaign.session(game) as c:
+        c.commit({"pc": {"conditions": {"add": list(c.system["conditions"])}}})
+        c.check("awareness", rng=Dice(18, 18, 18))
+    problems = []
+    try:
+        campaign.set_current(game)
+        item.open(json.dumps({"view": "table"}))
+        wait(1500)
+        if not item.property("lastCheck").toVariant()["outcome"]["pushable"]:
+            return ["the roll with every condition taken isn't a failure the rules push"]
+        offered = [text for text in ("Push the roll:", "Push the roll by taking a condition:") if labelled(panel.contentItem(), text) is not None]
+        if offered or empty_flows(panel.contentItem()):
+            problems.append(f"with every condition taken the Table still offers the push: {offered}, {len(empty_flows(panel.contentItem()))} empty rows")
+    finally:
+        pointer.write_text(kept)
+        item.open(json.dumps({"view": "table"}))
+        wait(1500)
+    return problems
+
+
+def shown(a, b):
+    """A QColor as it shows on the background `b` (a translucent one blended with it)."""
+    alpha = a.alphaF()
+    return QColor.fromRgbF(*(x * alpha + y * (1 - alpha) for x, y in zip((a.redF(), a.greenF(), a.blueF()), (b.redF(), b.greenF(), b.blueF()))))
+
+
 def contrast(a, b):
     """WCAG's contrast between a QColor and the background `b` it is drawn on (a translucent one as it shows there)."""
-    alpha = a.alphaF()
-    a = QColor.fromRgbF(*(x * alpha + y * (1 - alpha) for x, y in zip((a.redF(), a.greenF(), a.blueF()), (b.redF(), b.greenF(), b.blueF()))))
+    a = shown(a, b)
 
     def luminance(c):
         def channel(v):
@@ -885,7 +1046,8 @@ def quiet_text_reads(engine, item, panel, out, wait):
     """Dim text (the Table's captions, the Book's asides) keeps WCAG AA's 4.5:1 and stays quieter than the body, and
     faint (rules, borders, blanks) 3:1 and quieter than dim, on a dark theme (Tokyo Night) and a light one (Catppuccin
     Latte), where darkening the text had made dim louder than the body. Both hold on the Book's panels too (the
-    composer, the X-card, the codex, the fight), whose surface is a shade toward the text."""
+    composer, the X-card, the codex, the fight), whose surface is a shade toward the text, and dim does on a Table's
+    card with the keyboard or the mouse on it (an adventure's system, under its title)."""
     from PySide6.QtQml import QQmlComponent
     holder = QQmlComponent(engine)
     holder.setData(b"import QtQuick\nimport qs.Commons as Commons\nQtObject { property QtObject colors: Commons.Color }", QUrl())
@@ -893,7 +1055,8 @@ def quiet_text_reads(engine, item, panel, out, wait):
     theme = item.findChild(QObject, "book").property("theme")
     problems = []
     dark = (popups.property("text"), popups.property("background"))
-    for name, text, background in (("Tokyo Night", *dark), ("Catppuccin Latte", QColor("#4c4f69"), QColor("#eff1f5"))):
+    themes = (("Tokyo Night", *dark), ("Catppuccin Latte", QColor("#4c4f69"), QColor("#eff1f5")))
+    for name, text, background in themes:
         popups.setProperty("text", text)
         popups.setProperty("background", background)
         wait(100)
@@ -906,8 +1069,28 @@ def quiet_text_reads(engine, item, panel, out, wait):
             problems.append(f"on {name}'s panels dim reads {dim:.2f}:1 and faint {faint:.2f}:1")
         if name != "Tokyo Night":
             panel.grabWindow().save(str(out / "table-light.png"))
+    item.show("new")
+    wait(2500)
+    card = cards(panel.contentItem(), "The Red Tusk Hall")
+    panel.requestActivate()
+    wait(100)
+    if card is not None:
+        card.forceActiveFocus()
+        wait(100)
+    if card is None or not card.property("activeFocus"):
+        problems.append("no adventure's card has the keyboard, to read dim on")
+    else:
+        for name, text, background in themes:
+            popups.setProperty("text", text)
+            popups.setProperty("background", background)
+            wait(100)
+            dim = contrast(item.property("dim"), shown(card.property("color"), background))
+            if dim < 4.5:
+                problems.append(f"on {name} dim reads {dim:.2f}:1 on a card with the keyboard")
     popups.setProperty("text", dark[0])
     popups.setProperty("background", dark[1])
+    item.show("table")
+    wait(1500)
     return problems
 
 
@@ -933,6 +1116,7 @@ def by_keyboard(item, panel, wait):
     wait(100)
     if button(panel.contentItem(), "Borders") is not None:
         problems.append("Enter on an open fold didn't close it")
+    problems += tab_stays_in_sight(item, panel, fold, wait)
     item.show("new")
     wait(2500)
     card = cards(panel.contentItem(), "The Red Tusk Hall")
@@ -948,6 +1132,38 @@ def by_keyboard(item, panel, wait):
     return problems
 
 
+def tab_stays_in_sight(item, panel, last, wait):
+    """On a Table taller than the screen (a 1080p sidebar is about 1000 px), Tab from the oracle field down to `last`
+    (the Desktop effects fold, at the bottom) scrolls each thing it reaches into view."""
+    table = last
+    while table is not None and not table.inherits("QQuickFlickable"):
+        table = table.parentItem()
+    sidebar = table.parentItem().parentItem()
+    tall = sidebar.height()
+    sidebar.setProperty("height", 600)
+    wait(300)
+    table.setProperty("contentY", 0)
+    unseen, reached = [], False
+    try:
+        item.findChild(QObject, "question").forceActiveFocus()  # a click in the oracle field gives the Table the keyboard
+        for _ in range(60):
+            QTest.keyClick(panel, Qt.Key_Tab)
+            wait(30)
+            focused = panel.activeFocusItem()
+            top = focused.mapToItem(table, QPointF(0, 0)).y()
+            if top < -0.5 or top + focused.height() > table.height() + 0.5:
+                unseen.append(str(focused.property("text") or focused.metaObject().className()))
+            if focused == last:
+                reached = True
+                break
+    finally:
+        sidebar.setProperty("height", tall)
+        wait(300)
+    if not reached:
+        return ["Tab from the oracle field never reached the Desktop effects fold"]
+    return [f"on a short screen Tab reaches what is out of sight: {unseen}"] if unseen else []
+
+
 def cards(item, name):
     """The visible card under `item` called `name`."""
     for child in item.childItems():
@@ -959,26 +1175,50 @@ def cards(item, name):
     return None
 
 
+def texts(item, part):
+    """The visible texts under `item` that hold `part`."""
+    found = []
+    for child in item.childItems():
+        text = child.property("text")
+        if isinstance(text, str) and part in text and child.isVisible():
+            found.append(text)
+        found += texts(child, part)
+    return found
+
+
 def adventures_not_ready(item, panel, out, wait):
     """New adventure names an adventure's system, and says under it why the adventure can't be played yet, when
-    `solo library` says so (system_name, ready, why); an entry without them shows the system as before."""
+    `solo library` says so (system_name, ready, why); an entry without them shows the system as before. As on a
+    fresh install, the system it plays on is also under `problems`, in the engine's words for a terminal: the why is
+    said once (under the card, or under Hero once the adventure is picked), and without the Markdown round a command."""
     item.show("new")
     wait(2500)
     library = item.property("library").toVariant()
-    why = "Dragonbane's rules aren't built from your books yet: make dragonbane BOOKS=<your PDFs>."
+    names = "Dragonbane has only its names so far. Its rules come from your own book: build them with `make dragonbane BOOKS=<folder of your PDFs>` (see the README)"
     sunken = {"id": "sunken-keep", "title": "The Sunken Keep", "system": "dragonbane-2", "system_name": "Dragonbane, from your books",
-              "ready": False, "why": why, "summary": "A keep the lake took back.", "path": "/nowhere", "characters": []}
-    item.setProperty("library", {**library, "adventures": [sunken] + library["adventures"]})
+              "ready": False, "why": names + ".", "summary": "A keep the lake took back.", "path": "/nowhere", "characters": []}
+    item.setProperty("library", {**library, "adventures": [sunken] + library["adventures"], "problems": [f"system dragonbane-2: {names}"]})
     wait(300)
     panel.grabWindow().save(str(out / "new-not-ready.png"))
     problems = []
-    for text in ("Dragonbane, from your books", why):
+    for text in ("Dragonbane, from your books", names.replace("`", "") + "."):
         if labelled(panel.contentItem(), text) is None:
             problems.append(f"New adventure doesn't show {text!r} for an adventure that isn't ready")
     known = library["adventures"][0]
     name = next((s["name"] for s in library["systems"] if s["id"] == known["system"]), None)
     if known.get("system_name") is None and name and labelled(panel.contentItem(), name) is None:
         problems.append(f"an adventure without a system_name no longer shows its system's name ({name!r})")
+    picked = item.property("pickedAdventure")
+    for when in ("listed", "picked"):
+        if when == "picked":
+            item.chooseAdventure(sunken)
+            wait(300)
+        said = texts(panel.contentItem(), "has only its names so far")
+        if len(said) != 1 or texts(panel.contentItem(), "`"):
+            problems.append(f"New adventure, the adventure {when}, says why it can't begin {len(said)} times, or with Markdown: {said}")
+    item.setProperty("pickedAdventure", picked)
+    item.setProperty("library", library)
+    wait(300)
     return problems
 
 
@@ -1037,6 +1277,20 @@ def a_campaign_gone(item, panel, out, work, wait):
         wait(1000)
         if item.property("view") != "home":
             problems.append(f"opened on a campaign that is gone, the Table shows {item.property('view')!r}")
+        # Words sent from the Book, open on it still: no turn is started that can't be, and the Book says the
+        # campaign went and offers the Table, where another is picked, not "try again", which can never work.
+        item.setProperty("bookOpen", True)
+        book = item.findChild(QObject, "book")
+        LAUNCHED.clear()
+        QMetaObject.invokeMethod(book, "send", Q_ARG(str, "I knock on the door."))
+        wait(300)
+        turn = item.property("turn").toVariant()
+        again, table = book.findChild(QObject, "tryAgain"), book.findChild(QObject, "pickAnother")
+        if (turn.get("status") != "error" or "moved or deleted" not in turn.get("error", "") or any("turn" in c for c in LAUNCHED)
+                or again is None or again.property("visible") or table is None or not table.property("visible")):
+            problems.append(f"the Book sends words to a campaign that went, or offers to try again: {turn}, {again and again.property('visible')}")
+        item.setProperty("bookOpen", False)
+        item.setProperty("turn", {"status": "idle"})
     finally:
         pointer.write_text(kept)
         wait(1500)

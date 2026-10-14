@@ -126,7 +126,12 @@ Item {
   readonly property var momentum: labels.momentum || null
   readonly property var progressSpec: labels.progress || null
   readonly property var lastCheck: game && game.last_check ? game.last_check : null
-  readonly property bool canPush: !dead && !dying && lastCheck !== null && lastCheck.type === "check" && lastCheck.outcome.pushable === true
+  // The push ability (Sole Survivor), when the hero has it: a push paid with willpower instead of a condition.
+  readonly property bool pushAbility: pc !== null && !!labels.push_ability && (pc.abilities || []).indexOf(labels.push_ability.name) >= 0
+  // A failed roll that can still be pushed, and something to pay for it: a condition not taken yet where that is the
+  // cost (the engine refuses a push with every one taken), or the push ability.
+  readonly property bool canPush: !dead && !dying && pc !== null && lastCheck !== null && lastCheck.type === "check" && lastCheck.outcome.pushable === true
+    && (labels.push !== "condition" || labels.conditions.some(c => pc.conditions.indexOf(c) === -1) || pushAbility)
   // Bindings update in no fixed order when state.json reloads, so pc is checked
   // here even though canPush already implies a game.
   readonly property var pushChoices: canPush && pc && labels.push === "condition"
@@ -153,9 +158,13 @@ Item {
 
   readonly property color textColor: Commons.Color.popups.text
   // Captions and asides: as quiet as WCAG AA lets small text be (4.5:1), on light themes as on dark. Measured
-  // on the Book's panels (theme.surface, a shade toward the text), where it reads least; on the page it reads more.
+  // on the Book's panels and the Table's hovered cards (theme.surface, a shade toward the text), where it reads
+  // least; on the page it reads more.
   readonly property color dim: Common.fade(Commons.Color.popups.text, theme.surface, 4.6, 0.5)
   readonly property color faint: Qt.rgba(textColor.r, textColor.g, textColor.b, 0.15)
+  // The panels' shade (theme.surface) as a fill over the Table, for what holds text: a hovered card. Faint is for
+  // rails and borders only; on it dim would read under 4:1.
+  readonly property color shade: Qt.rgba(textColor.r, textColor.g, textColor.b, 0.05)
 
   function open(payloadJson) {
     var payload = {}
@@ -200,6 +209,11 @@ Item {
   // in on stdin, by way of the environment, never as an argument: the process list is
   // anyone's to read, a process's environment only its owner's.
   function speak(text) {
+    // A campaign whose folder went has no GM to hear them: said at once, not after waiting on a turn that can't start.
+    if (root.lost !== "") {
+      root.turn = { status: "error", gone: true, error: root.gone(root.lost) }
+      return
+    }
     root.turn = { status: "thinking", player: text, text: "", doing: "reading the table" }
     speaker.command = ["sh", "-c", 'printf %s "$SOLO_SAY" | exec "$@"', "speak", root.solo, "-C", root.campaign, "gm", "turn", "--", "-"]
     speaker.environment = { SOLO_SAY: text }
@@ -207,6 +221,20 @@ Item {
     watchdog.said = text
     watchdog.waiting = true
     watchdog.restart()
+  }
+
+  // The X-card: cut the GM's last message (a line or a veil too, if the player made it one), then the GM carries on without it.
+  // What the player typed goes as --flag=value, so words that start with a dash stay words. The cut is in the campaign it
+  // was asked in; when another is current by the time it is done (one picked while the cut waited, or from a terminal),
+  // that one's GM isn't asked to carry on from a cut it never had.
+  function cut(note, line, veil) {
+    var asked = root.campaign
+    root.act(["strike"].concat(note !== "" ? ["--note=" + note] : []).concat(line !== "" ? ["--line=" + line] : [])
+               .concat(veil !== "" ? ["--veil=" + veil] : []), "cut",
+             () => {
+               bookView.cutDone(true)
+               if (root.campaign === asked) root.speak("")
+             }, () => bookView.cutDone(false))
   }
 
   // A turn writes turn.json as soon as it starts, and the Book waits on it. One that never
@@ -368,19 +396,30 @@ Item {
   }
 
   // A command has ended: `said` is what to tell the player ("" for nothing), `ok` whether it went through.
+  // `done` and `failed` are made here on root, never in a delegate: state.json is read again before the
+  // exit comes, and a delegate whose model changed is gone, and its functions with it. Whatever they do,
+  // the next command waiting runs.
   function ran(said, ok) {
     var job = action.job
     action.job = null
     currentFile.reload()
     if (said !== "") root.error = { text: said, place: job.place }
-    if (ok && job.done) job.done(action.out)
-    else if (!ok && job.failed) job.failed()
-    root.next()
+    try {
+      if (ok && job.done) job.done(action.out)
+      else if (!ok && job.failed) job.failed()
+    } finally {
+      root.next()
+    }
+  }
+
+  function setPace(pace) {
+    root.run(["gm", "pace", pace], "pace", () => root.ask("pace", ["gm", "pace"]))
   }
 
   // The GM in a terminal of its own (or its window brought forward): what solo did about it is said where it was asked.
+  // That is its last line; the ones before it are for a terminal (each link `solo play` made for solo and the skills).
   function openTerminal(place) {
-    root.run(["play", root.campaign, "--terminal"], place, said => root.notice = { text: said.trim(), place: place })
+    root.run(["play", root.campaign, "--terminal"], place, said => root.notice = { text: said.trim().split("\n").pop(), place: place })
   }
 
   function act(args, place, done, failed) {
@@ -516,10 +555,31 @@ Item {
     watchdog.waiting = false
     if (status && (status.status === "thinking" || status.status === "writing")) {
       root.turn = status
+    } else if (root.turn.status === "thinking" && root.lost !== "") {
+      // The campaign's folder went after the words were sent: trying again would never get them heard.
+      root.turn = { status: "error", gone: true, error: root.gone(root.lost) }
     } else if (root.turn.status === "thinking") {
       root.turn = { status: "error", unsent: watchdog.said,
-                    error: (why !== "" ? why.replace(/\.$/, "") + ". " : "") + "The GM didn't start, and your words weren't recorded: try again to send them." }
+                    error: (why !== "" ? (/[.?!]$/.test(why) ? why : why + ".") + " " : "") + "The GM didn't start, and your words weren't recorded: try again to send them." }
     }
+  }
+
+  // Why a campaign whose folder was moved or deleted (its state.json can't be read) can't be played: Home and the Book say it.
+  function gone(folder) {
+    return "The campaign in " + folder + " can't be read: its folder was moved or deleted. Pick another, or begin a new one."
+  }
+
+  // Home: another campaign picked, or one deleted for good.
+  function useCampaign(path) {
+    root.run(["use", path], "home", () => root.show("table"))
+  }
+
+  function deleteCampaign(path, wasCurrent) {
+    root.run(["delete", path, "--yes"], "home", () => {
+      root.deleting = ""
+      if (wasCurrent) root.bookOpen = false
+      root.show("home")
+    })
   }
 
   // New adventure ---------------------------------------------------------------------
@@ -578,14 +638,30 @@ Item {
     if (root.tone.trim() !== "") args.push("--tone=" + root.tone.trim())
     root.split(root.lines).forEach(line => args.push("--line=" + line))
     root.split(root.veils).forEach(veil => args.push("--veil=" + veil))
+    // `solo new --play` brings the Book up itself when the GM writes in it; with no agent set up, or one in a
+    // terminal, it doesn't, and the Book opened here says why and how to set one up.
     root.run(args, "begin", () => {
       root.heroName = ""
       root.show("table")
+      root.openBook()
     })
   }
 
   function split(text) {
     return text.split(",").map(t => t.trim()).filter(t => t !== "")
+  }
+
+  // The engine's words for a terminal mark a command `like this`; the panel shows them as plain text.
+  function plain(text) {
+    return (text || "").replace(/`/g, "")
+  }
+
+  // Packs that didn't load, but for a system an adventure on the list already says why it can't begin
+  // (under its card): that is said once, there.
+  function notLoaded() {
+    if (!root.library) return []
+    var told = root.library.adventures.filter(a => a.ready === false && (a.why || "") !== "").map(a => "system " + a.system + ":")
+    return (root.library.problems || []).filter(p => !told.some(t => p.startsWith(t)))
   }
 
   // Table ------------------------------------------------------------------------------
@@ -727,6 +803,10 @@ Item {
       root.banes = 0
       root.spent("attack", "")
     })
+  }
+
+  function parry(weapon) {
+    root.act(["defend", "parry", "--with", weapon].concat(root.useArgs("defend", "parry")), "fight", () => root.spent("defend", "parry"))
   }
 
   // Abilities. Those that go with a roll are switched on first (`riders`) and paid for when it is made.
@@ -1049,20 +1129,18 @@ Item {
       agent: root.agentInfo
       campaign: root.campaign
       actionError: root.errorsAt("book")
+      cutError: root.errorsAt("cut")
       actionNote: root.notice.place === "book" ? root.notice.text : ""
       active: bookWindow.visible
       onSend: text => root.speak(text)
       onStop: Quickshell.execDetached([root.solo, "-C", root.campaign, "gm", "stop"])
       onRetry: root.speak(root.turn.unsent || "")
-      // The X-card: cut the GM's last message (a line or a veil too, if the player made it one), then the GM carries on without it.
-      // What the player typed goes as --flag=value, so words that start with a dash stay words.
-      onCut: (note, line, veil) => root.act(["strike"].concat(note !== "" ? ["--note=" + note] : []).concat(line !== "" ? ["--line=" + line] : [])
-                                              .concat(veil !== "" ? ["--veil=" + veil] : []), "book",
-                                            () => { bookView.cutDone(true); root.speak("") }, () => bookView.cutDone(false))
+      onCut: (note, line, veil) => root.cut(note, line, veil)
       onAct: args => root.act(args, "book")
+      // The Table, or Home when the campaign's folder went (where it says so, and another is picked).
       onOpenTable: {
         root.opened = true
-        root.show("table")
+        root.show(root.lost !== "" ? "home" : "table")
       }
       onOpenTerminal: root.openTerminal("book")
     }
@@ -1229,9 +1307,10 @@ Item {
     Layout.fillWidth: true
     implicitHeight: cardColumn.implicitHeight + Commons.Style.space(16)
     radius: Commons.Style.cornerRadius
-    color: card.clickable && (cardMouse.containsMouse || card.activeFocus) ? root.faint : "transparent"
-    border.width: selected ? 2 : 1
-    border.color: selected ? Commons.Color.accent : root.faint
+    // Hovered or with the keyboard, it takes the shade dim is measured on; the keyboard's card is ringed in the text colour.
+    color: card.clickable && (cardMouse.containsMouse || card.activeFocus) ? root.shade : "transparent"
+    border.width: selected || card.activeFocus ? 2 : 1
+    border.color: card.activeFocus ? root.textColor : selected ? Commons.Color.accent : root.faint
     activeFocusOnTab: clickable
     Keys.onPressed: event => {
       if (card.clickable && (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space)) {
@@ -1470,6 +1549,18 @@ Item {
         focus: true
         Keys.onEscapePressed: root.close()
 
+        // What Tab reaches on the Table (a fold, a card, a field) is scrolled into view, so Enter or Space never
+        // acts out of sight on a screen too short for all of it.
+        readonly property Item focused: Window.activeFocusItem
+        onFocusedChanged: {
+          var up = focused
+          while (up && up !== contentItem) up = up.parent
+          if (!up) return
+          var top = focused.mapToItem(contentItem, 0, 0).y
+          if (top + focused.height > contentY + height) contentY = Math.max(0, Math.min(top + focused.height - height, contentHeight - height))
+          if (top < contentY) contentY = Math.max(0, top)
+        }
+
         ColumnLayout {
           id: column
           width: parent.width
@@ -1520,8 +1611,7 @@ Item {
               visible: root.lost !== ""
               color: Commons.Color.urgent
               size: Commons.Style.font.bodySmall
-              text: root.lostWhy !== "" ? root.lostWhy
-                : "The campaign in " + root.lost + " can't be read: its folder was moved or deleted. Pick another, or begin a new one."
+              text: root.lostWhy !== "" ? root.lostWhy : root.gone(root.lost)
             }
 
             Line {
@@ -1539,7 +1629,7 @@ Item {
                 name: modelData.title
                 selected: modelData.current
                 clickable: root.deleting !== modelData.path
-                onClicked: modelData.current ? root.reopen() : root.run(["use", modelData.path], "home", () => root.show("table"))
+                onClicked: modelData.current ? root.reopen() : root.useCampaign(modelData.path)
 
                 Line { text: modelData.title; font.bold: true }
                 Line {
@@ -1589,14 +1679,7 @@ Item {
                   Act {
                     text: action.job !== null && action.job.place === "home" ? "Deleting…" : "Delete for good"
                     foreground: Commons.Color.urgent
-                    onClicked: {
-                      var wasCurrent = modelData.current
-                      root.run(["delete", modelData.path, "--yes"], "home", () => {
-                        root.deleting = ""
-                        if (wasCurrent) root.bookOpen = false
-                        root.show("home")
-                      })
-                    }
+                    onClicked: root.deleteCampaign(modelData.path, modelData.current)
                   }
                   Choice {
                     text: "Keep it"
@@ -1676,7 +1759,7 @@ Item {
 
                 Line { text: modelData.title; font.bold: true }
                 // The system by name (the engine gives it; from the systems that loaded, before it did), and what
-                // the adventure waits for when it can't be played yet.
+                // the adventure waits for when it can't be played yet (picked, that is said under Hero instead).
                 Line {
                   size: Commons.Style.font.caption
                   color: root.dim
@@ -1684,10 +1767,10 @@ Item {
                     || (root.library.systems.filter(s => s.id === modelData.system_id)[0] || { name: modelData.system || "no system named" }).name
                 }
                 Line {
-                  visible: modelData.ready === false && (modelData.why || "") !== ""
+                  visible: modelData.ready === false && (modelData.why || "") !== "" && (root.adventure === null || root.adventure.id !== modelData.id)
                   size: Commons.Style.font.caption
                   color: root.dim
-                  text: modelData.why || ""
+                  text: root.plain(modelData.why)
                 }
                 Line { visible: modelData.summary !== ""; size: Commons.Style.font.bodySmall; text: modelData.summary }
               }
@@ -1695,12 +1778,12 @@ Item {
 
             // Packs of your own that didn't load (half-built from a book, say), and why.
             Repeater {
-              model: root.library ? root.library.problems || [] : []
+              model: root.notLoaded()
               delegate: Line {
                 required property string modelData
                 size: Commons.Style.font.caption
                 color: root.dim
-                text: "Not loaded: " + modelData
+                text: "Not loaded: " + root.plain(modelData)
               }
             }
 
@@ -1711,7 +1794,7 @@ Item {
               color: Commons.Color.urgent
               size: Commons.Style.font.bodySmall
               text: root.adventure && root.adventure.why
-                ? root.adventure.why : "This adventure's system pack isn't installed, or its rules aren't built from your books yet."
+                ? root.plain(root.adventure.why) : "This adventure's system pack isn't installed, or its rules aren't built from your books yet."
             }
 
             Flow {
@@ -2349,7 +2432,7 @@ Item {
               }
 
               Act {
-                visible: !!root.labels.push_ability && !!root.pc && (root.pc.abilities || []).indexOf(root.labels.push_ability.name) >= 0
+                visible: root.pushAbility
                 text: root.labels.push_ability ? root.labels.push_ability.name + " (" + root.labels.push_ability.cost + ")" : ""
                 tooltipText: "Push without a condition"
                 onClicked: root.act(["push", "--sole-survivor"], "roll")
@@ -2456,7 +2539,7 @@ Item {
                   tooltipText: modelData.condition === "broken" ? "Broken: mend it first" : ""
                   enabled: modelData.condition !== "broken" && !root.busy
                   opacity: enabled ? 1 : 0.4
-                  onClicked: root.act(["defend", "parry", "--with", modelData.id].concat(root.useArgs("defend", "parry")), "fight", () => root.spent("defend", "parry"))
+                  onClicked: root.parry(modelData.id)
                 }
               }
 
@@ -3046,7 +3129,7 @@ Item {
                     normal: "The GM thinks a little before it answers",
                     careful: "The GM thinks longer about the rules: slower, and more tokens",
                   })[modelData[0]]
-                  onClicked: root.run(["gm", "pace", modelData[0]], "pace", () => root.ask("pace", ["gm", "pace"]))
+                  onClicked: root.setPace(modelData[0])
                 }
               }
             }

@@ -18,6 +18,7 @@ Item {
   property var agent: ({ agent: "", book: true })
   property string campaign: ""     // the campaign's folder: another one starts the Book over
   property string actionError: ""  // why the last thing clicked here (light a torch) was refused
+  property string cutError: ""     // why the last cut didn't go through
   property string actionNote: ""   // what the last thing clicked here said it did (open the GM)
   property bool active: true       // the window is showing
   property bool codexOpen: false
@@ -42,6 +43,8 @@ Item {
   readonly property var story: game && game.story ? game.story : []
   readonly property bool busy: turn && (turn.status === "thinking" || turn.status === "writing")
   readonly property bool dead: pc !== null && pc.dead === true
+  // At zero HP and helpless (a hero who rallied themselves acts again): the engine refuses what the dying can't do.
+  readonly property bool dying: pc !== null && !!pc.dying && !pc.dying.rallied
   // There is a GM message to cut, and the GM isn't in the middle of writing another.
   readonly property bool canCut: !busy && !dead && agent.book !== false && story.some(b => b.kind === "gm")
   readonly property bool carriesLight: pc !== null && pc.items.some(i => /(^|\s)torch(es)?$/i.test(i))
@@ -301,13 +304,13 @@ Item {
           }
 
           Link {
-            visible: !!book.game && !book.game.light && book.carriesLight && !book.dead
+            visible: !!book.game && !book.game.light && book.carriesLight && !book.dead && !book.dying
             text: "→ light a torch"
             onClicked: book.act(["light", "torch"])
           }
 
           Text {
-            visible: book.actionError !== "" && !cutPanel.visible
+            visible: book.actionError !== ""
             width: side.width
             wrapMode: Text.Wrap
             textFormat: Text.PlainText
@@ -504,7 +507,9 @@ Item {
                   color: book.turn.status === "error" ? book.theme.urgent : book.theme.dim
                   text: book.turn.status === "error" ? book.turn.error || "The GM ran into a problem." : "Stopped."
                 }
-                Link { objectName: "tryAgain"; text: "try again"; onClicked: book.retry() }
+                // A campaign whose folder went can't be tried again: another is picked on the Table.
+                Link { objectName: "tryAgain"; visible: !book.turn.gone; text: "try again"; onClicked: book.retry() }
+                Link { objectName: "pickAnother"; visible: !!book.turn.gone; text: "the Table"; onClicked: book.openTable() }
               }
 
               // What the engine has to tell the player about the turn: a Claude Code too old to be kept from
@@ -606,16 +611,18 @@ Item {
               Link { text: "keep it"; onClicked: book.cutting = false }
             }
 
-            // Why the cut didn't go through: the panel stays open with the words, to try again.
+            // Why the cut didn't go through: the panel stays open with the words, to try again. The cut's own
+            // reason only: a torch refused, or the GM's status unread, is said beside the page as ever.
             Text {
+              objectName: "cutError"
               Layout.fillWidth: true
-              visible: book.actionError !== ""
+              visible: book.cutError !== ""
               wrapMode: Text.Wrap
               textFormat: Text.PlainText
               font.family: book.theme.mono
               font.pixelSize: book.theme.small
               color: book.theme.urgent
-              text: book.actionError
+              text: book.cutError
             }
           }
         }
@@ -754,7 +761,7 @@ Item {
   }
 
   // The table's answer to a cut. Done, the panel closes and the composer has the keyboard
-  // again; refused, it stays open with the player's words and says why (actionError).
+  // again; refused, it stays open with the player's words and says why (cutError).
   function cutDone(ok) {
     cutSent = false
     if (ok) {

@@ -186,6 +186,12 @@ def main(out):
     face = QAccessible.queryAccessibleInterface(stone) if stone is not None else None
     if stone is None or not stone.property("activeFocus") or face is None or face.role() != QAccessible.Button:
         errors.append(f"the gravestone isn't a button with the keyboard: {stone and stone.property('activeFocus')}, {face and face.role()}")
+    # Tab, either way, doesn't take the keyboard to the links under it (codex, table, terminal), where Enter would act unseen.
+    for key in (Qt.Key_Tab, Qt.Key_Backtab):
+        QTest.keyClick(view, key)
+        if stone is not None and not stone.property("activeFocus"):
+            errors.append(f"{'Tab' if key == Qt.Key_Tab else 'Shift+Tab'} took the keyboard from the gravestone to the page under it")
+            stone.forceActiveFocus()
     QTest.keyClick(view, Qt.Key_Escape)
     if book.property("epitaphShown") or not book.findChild(QObject, "composer").property("activeFocus"):
         errors.append(f"Escape didn't put the gravestone away for the composer (shown {book.property('epitaphShown')})")
@@ -203,13 +209,21 @@ def main(out):
     book.setProperty("actionError", "")
 
     # Words the GM never got: the reason can run past the end of a line, and "try again" stays on the page after it.
+    # The words the plugin says when it couldn't run its own solo (Panel.qml's unstarted and unheard).
     root.setProperty("turn", {"status": "error", "unsent": "I knock on the door.",
-                              "error": "no campaign at /home/you/Games/solo/campaigns/red-tusk (moved or deleted?). "
-                                       "The GM didn't start, and your words weren't recorded: try again to send them."})
+                              "error": "The plugin couldn't run /home/you/.config/omarchy/plugins/cabral.oma-solorpg/bin/solo. Is the plugin's "
+                                       "folder complete? The GM didn't start, and your words weren't recorded: try again to send them."})
     shot("unsent", 500)
     again, story = book.findChild(QObject, "tryAgain"), book.findChild(QObject, "story")
     if again is None or not again.isVisible() or again.mapToScene(QPointF(again.width(), 0)).x() > story.mapToScene(QPointF(story.width(), 0)).x():
         errors.append("after a long error, \"try again\" is off the page")
+    # The campaign's folder went: trying again can't work, so the Book offers the Table, where another is picked.
+    root.setProperty("turn", {"status": "error", "gone": True, "error": "The campaign in /home/you/Games/solo/campaigns/red-tusk can't be "
+                              "read: its folder was moved or deleted. Pick another, or begin a new one."})
+    shot("gone", 500)
+    table = book.findChild(QObject, "pickAnother")
+    if again.isVisible() or table is None or not table.isVisible() or table.mapToScene(QPointF(table.width(), 0)).x() > story.mapToScene(QPointF(story.width(), 0)).x():
+        errors.append("a campaign whose folder went offers to try again, or not the Table")
     # A turn's note is the engine's word to the player (a Claude Code that ran with their own settings); most turns have none.
     note = "This Claude Code's help names neither --restricted nor --setting-sources, so the GM's turn ran with your own Claude Code settings. Update Claude Code."
     root.setProperty("turn", {"status": "done", "text": "The door holds.", "note": note})
