@@ -101,9 +101,11 @@ class DeskTest(CampaignTest):
         self.assertFalse(saver.with_name("screensaver.txt.solo-play").exists())
 
     def remembering(self):
-        """A hyprctl that keeps the border it is given, and fails every call while a file says so."""
-        border, failing = self.tmp / "border", self.tmp / "failing"
+        """A hyprctl that keeps the border and the screen shader it is given (the shader in self.tmp / "shader"), and
+        fails every call while a file says so."""
+        border, failing, shader = self.tmp / "border", self.tmp / "failing", self.tmp / "shader"
         border.write_text("ee33ccff ee00ff99 45deg")
+        shader.write_text("/home/me/vibrance.frag")
         (self.bin / "hyprctl").write_text(textwrap.dedent(f"""\
             #!/usr/bin/env python3
             import json, os, re, sys
@@ -113,7 +115,9 @@ class DeskTest(CampaignTest):
             if args[:2] == ["getoption", "general:col.active_border"]:
                 print(json.dumps({{"custom": open({str(border)!r}).read()}}))
             elif args[:2] == ["getoption", "decoration:screen_shader"]:
-                print(json.dumps({{"str": "[[EMPTY]]"}}))
+                print(json.dumps({{"str": open({str(shader)!r}).read() or "[[EMPTY]]"}}))
+            elif args[0] == "eval" and "screen_shader" in args[1]:
+                open({str(shader)!r}, "w").write(json.loads(args[1].split("screen_shader = ", 1)[1].rsplit(" }}", 2)[0]))
             elif args[0] == "eval" and "active_border" in args[1]:
                 colours = re.findall(r"rgba\\(([0-9a-f]{{6}})([0-9a-f]{{2}})\\)", args[1])
                 angle = re.search(r"angle = (\\d+)", args[1])
@@ -132,6 +136,27 @@ class DeskTest(CampaignTest):
         desk.flash("dragon")
         self.assertEqual(border.read_text(), "ee33ccff ee00ff99 45deg")
         self.assertIsNone(desk._saved("border"))
+
+    def test_a_restore_that_failed_keeps_the_players_shader_for_the_next(self):
+        # The saved shader was forgotten even when hyprctl failed: the dying rim stayed up, the next effect saved it as
+        # the player having none, and their own shader never came back.
+        self.remembering()
+        shader, failing = self.tmp / "shader", self.tmp / "failing"
+        desk.dying(True)
+        self.assertIn("/shaders/dying-", shader.read_text())
+        failing.write_text("yes")
+        self.assertEqual(desk.restore()["screen"], False)
+        failing.unlink()
+        desk.flash("hit")
+        self.assertEqual(shader.read_text(), "/home/me/vibrance.frag")
+        self.assertIsNone(desk._saved("shader"))
+        # Taken down while hyprctl fails, then put back by the restore the plugin runs when it loads.
+        desk.dying(True)
+        failing.write_text("yes")
+        desk.dying(False)
+        failing.unlink()
+        self.assertEqual(desk.restore()["screen"], True)
+        self.assertEqual(shader.read_text(), "/home/me/vibrance.frag")
 
     def test_an_effects_own_colour_is_never_kept_as_the_players(self):
         border, _ = self.remembering()

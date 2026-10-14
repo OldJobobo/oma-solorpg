@@ -264,11 +264,14 @@ def _settle_screen():
 
 
 def _restore_shader():
+    """Put the player's shader (or none) back. What was saved is forgotten only once it is back, as with the
+    border: when hyprctl fails, the next restore tries again, and the next moment doesn't take the effect's
+    shader still up for the player having none."""
     original = _saved("shader")
-    if original is not None:
-        _set_shader(original["path"])
+    if original is not None and _set_shader(original["path"]):
         _forget("shader")
-    return original is not None
+        return True
+    return False
 
 
 def _steps(rise, hold, fall):
@@ -312,10 +315,12 @@ def _shader_now():
 
 
 def _set_shader(path):
+    """Whether Hyprland took the shader."""
     lua = f"hl.config({{ decoration = {{ screen_shader = {_lua_string(path)} }} }})"
-    if _run(["hyprctl", "eval", lua]) is None:
-        # Hyprland from before the Lua config.
-        _run(["hyprctl", "keyword", "decoration:screen_shader", path or "[[EMPTY]]"])
+    if _run(["hyprctl", "eval", lua]) is not None:
+        return True
+    # Hyprland from before the Lua config.
+    return _run(["hyprctl", "keyword", "decoration:screen_shader", path or "[[EMPTY]]"]) is not None
 
 
 def _lua_string(text):
