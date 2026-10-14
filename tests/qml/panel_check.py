@@ -27,6 +27,7 @@ from PySide6.QtCore import Property, QFileSystemWatcher, QMetaObject, QObject, Q
 from PySide6.QtGui import QColor, QGuiApplication  # noqa: E402
 from PySide6.QtQml import QQmlEngine, qmlRegisterModule, qmlRegisterSingletonInstance, qmlRegisterType  # noqa: E402
 from PySide6.QtQuick import QQuickItem, QQuickView, QQuickWindow  # noqa: E402
+from PySide6.QtTest import QTest  # noqa: E402
 
 LAUNCHED = []
 
@@ -334,6 +335,7 @@ def main(out):
     errors += commands_wait_their_turn(item, panel, work, wait)
     errors += the_first_game(load, work, wait)
     errors += quiet_text_reads(engine, item, panel, out, wait)
+    errors += by_keyboard(item, panel, wait)
     errors += adventures_not_ready(item, panel, out, wait)
     errors += a_campaign_gone(item, panel, out, work, wait)
     print("bar tooltip:", bar.rootObject().tooltip())
@@ -356,7 +358,11 @@ def begin_and_ask(item, panel, out, work, wait):
     panel.grabWindow().save(str(out / "new.png"))
     item.setProperty("heroName", "-Brokk")
     item.setProperty("tone", "-grim, and quiet")
-    item.begin()
+    name = next(f for f in panel.contentItem().findChildren(QQuickItem) if str(f.property("placeholderText") or "").startswith("Name"))
+    panel.requestActivate()  # the shell gives the Table the keyboard when a field is clicked
+    wait(100)
+    name.forceActiveFocus()
+    QTest.keyClick(panel, Qt.Key_Return)  # Enter in the hero's name begins
     wait(3000)
     if trouble(item):
         return [f"Begin failed: {trouble(item)}"]
@@ -398,7 +404,7 @@ def an_x_card(item, panel, out, work, wait):
             break
     if book is None or not book.property("canCut"):
         return [f"the Book doesn't offer the cut with the GM's message on the page (found: {book is not None}"
-                + (f", agent {book.property('agent').toVariant()}, busy {book.property('busy')}, dead {book.property('dead')})" if book is not None else ")")]
+                + (f", agent {book.property('agent')}, busy {book.property('busy')}, dead {book.property('dead')})" if book is not None else ")")]
     book.setProperty("cutting", True)
     item.findChild(QObject, "cutInput").setProperty("text", "-spiders")
     LAUNCHED.clear()
@@ -786,7 +792,6 @@ def errors_by_source(item, work, wait):
 def commands_wait_their_turn(item, panel, work, wait):
     """While a command runs the Table is busy and its buttons that run one wait, so a double click on STR rolls once;
     what is asked for meanwhile (from the Book, or Enter in a field) runs after it, in the order asked, none lost."""
-    from PySide6.QtTest import QTest
     problems = []
     game = Path((work / "state" / "solo" / "current").read_text().strip())
 
@@ -864,6 +869,54 @@ def quiet_text_reads(engine, item, panel, out, wait):
     popups.setProperty("text", dark[0])
     popups.setProperty("background", dark[1])
     return problems
+
+
+def by_keyboard(item, panel, wait):
+    """The Table's own clickables (folds, cards, the move groups' headings) are reached with Tab and worked with Enter
+    or Space, and a screen reader knows them by name, as a button."""
+    from PySide6.QtGui import QAccessible
+    problems = []
+    fold = labelled(panel.contentItem(), "▸ Desktop effects")
+    if fold is None:
+        return ["no Desktop effects to fold open"]
+    face = QAccessible.queryAccessibleInterface(fold)
+    if face is None or face.role() != QAccessible.Button or face.text(QAccessible.Name) != "Desktop effects":
+        problems.append(f"a screen reader doesn't know the fold as a button called Desktop effects: {face and (face.role(), face.text(QAccessible.Name))}")
+    panel.requestActivate()
+    wait(100)
+    fold.forceActiveFocus()
+    QTest.keyClick(panel, Qt.Key_Space)
+    wait(100)
+    if button(panel.contentItem(), "Borders") is None:
+        problems.append("Space on a fold didn't open it")
+    QTest.keyClick(panel, Qt.Key_Return)
+    wait(100)
+    if button(panel.contentItem(), "Borders") is not None:
+        problems.append("Enter on an open fold didn't close it")
+    item.show("new")
+    wait(2500)
+    card = cards(panel.contentItem(), "The Red Tusk Hall")
+    face = QAccessible.queryAccessibleInterface(card) if card is not None else None
+    if face is None or face.role() != QAccessible.Button or face.text(QAccessible.Name) != "The Red Tusk Hall":
+        problems.append(f"a screen reader doesn't know the adventure's card by its title: {face and (face.role(), face.text(QAccessible.Name))}")
+    if card is not None:
+        card.forceActiveFocus()
+        QTest.keyClick(panel, Qt.Key_Space)
+        wait(300)
+        if item.property("pickedAdventure") != "red-tusk":
+            problems.append(f"Space on an adventure's card didn't pick it: {item.property('pickedAdventure')!r}")
+    return problems
+
+
+def cards(item, name):
+    """The visible card under `item` called `name`."""
+    for child in item.childItems():
+        if child.property("name") == name and child.property("clickable") is not None and child.isVisible():
+            return child
+        found = cards(child, name)
+        if found is not None:
+            return found
+    return None
 
 
 def adventures_not_ready(item, panel, out, wait):

@@ -141,7 +141,10 @@ def main(out):
     QObject.connect(book, SIGNAL("cut(QString,QString,QString)"), lambda note, line, veil: cuts.append((note, line, veil)))
     if not book.property("canCut"):
         errors.append("the cut link should show when the GM has spoken and isn't writing")
-    book.setProperty("cutting", True)
+    book.findChild(QObject, "cutLink").forceActiveFocus()
+    QTest.keyClick(view, Qt.Key_Space)  # the keyboard reaches the Book's links
+    if not book.property("cutting"):
+        errors.append("Space on the cut link didn't open the X-card")
     shot("cut", 500)
     cut_input = book.findChild(QObject, "cutInput")
     cut_input.setProperty("text", "no fire")
@@ -156,6 +159,9 @@ def main(out):
     QMetaObject.invokeMethod(book, "cutDone", Q_ARG("QVariant", True))
     if len(cuts) != 2 or book.property("cutting") or cut_input.property("text") != "":
         errors.append(f"a cut tried again gave {cuts}, and the panel {'stayed open' if book.property('cutting') else 'closed'}")
+    composer = book.findChild(QObject, "composer")
+    if composer is None or not composer.property("activeFocus"):
+        errors.append("after the cut the composer doesn't have the keyboard back")
     root.setProperty("turn", {"status": "writing", "text": "..."})
     if book.property("canCut"):
         errors.append("nothing to cut while the GM is writing")

@@ -161,13 +161,24 @@ Item {
     color: book.theme.background
   }
 
+  // A link of the page's own: the mouse, Tab and Enter or Space, and a screen reader all reach it.
   component Link: Text {
     id: link
     signal clicked()
     textFormat: Text.PlainText
     font.family: book.theme.mono
     font.pixelSize: book.theme.small
-    color: !enabled ? book.theme.faint : linkMouse.containsMouse ? book.theme.accent : book.theme.dim
+    color: !enabled ? book.theme.faint : linkMouse.containsMouse || activeFocus ? book.theme.accent : book.theme.dim
+    activeFocusOnTab: true
+    Keys.onPressed: event => {
+      if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
+        link.clicked()
+        event.accepted = true
+      }
+    }
+    Accessible.role: Accessible.Link
+    Accessible.name: text
+    Accessible.onPressAction: link.clicked()
     MouseArea {
       id: linkMouse
       anchors.fill: parent
@@ -612,6 +623,7 @@ Item {
 
               TextEdit {
                 id: input
+                objectName: "composer"
                 width: inputFlick.width
                 wrapMode: TextEdit.Wrap
                 textFormat: TextEdit.PlainText
@@ -704,13 +716,14 @@ Item {
     cut(text, as === "line" ? text : "", as === "veil" ? text : "")
   }
 
-  // The table's answer to a cut. Done, the panel closes; refused, it stays open with the
-  // player's words and says why (actionError).
+  // The table's answer to a cut. Done, the panel closes and the composer has the keyboard
+  // again; refused, it stays open with the player's words and says why (actionError).
   function cutDone(ok) {
     cutSent = false
     if (ok) {
       cutInput.text = ""
       cutting = false
+      input.forceActiveFocus()  // back to writing to the GM
     }
   }
 

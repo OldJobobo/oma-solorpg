@@ -1073,20 +1073,33 @@ Item {
     text: root.errorsAt(place)
   }
 
-  // A heading that folds its section away. Click it to open or close.
+  // A heading that folds its section away. Click it, or Enter or Space on it, to open or close.
   component Fold: Heading {
     id: fold
     property string label: ""
     property bool open: false
+    // What opening or closing it does; a fold whose state is kept elsewhere (a move group) says so.
+    property var toggle: () => fold.open = !fold.open
     text: (open ? "▾ " : "▸ ") + label
-    color: foldMouse.containsMouse ? root.textColor : root.dim
+    color: foldMouse.containsMouse || activeFocus ? root.textColor : root.dim
+    activeFocusOnTab: true
+    Keys.onPressed: event => {
+      if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
+        fold.toggle()
+        event.accepted = true
+      }
+    }
+    Accessible.role: Accessible.Button
+    Accessible.name: label
+    Accessible.description: open ? "Open: click to fold it away" : "Folded: click to open it"
+    Accessible.onPressAction: fold.toggle()
 
     MouseArea {
       id: foldMouse
       anchors.fill: parent
       hoverEnabled: true
       cursorShape: Qt.PointingHandCursor
-      onClicked: fold.open = !fold.open
+      onClicked: fold.toggle()
     }
   }
 
@@ -1139,18 +1152,30 @@ Item {
     verticalPadding: Commons.Style.space(8)
   }
 
+  // A card that can be clicked is a button to the keyboard (Tab to it, Enter or Space) and to a screen reader, by `name`.
   component Card: Rectangle {
     id: card
     property bool selected: false
     property bool clickable: true
+    property string name: ""
     signal clicked()
     default property alias content: cardColumn.data
     Layout.fillWidth: true
     implicitHeight: cardColumn.implicitHeight + Commons.Style.space(16)
     radius: Commons.Style.cornerRadius
-    color: card.clickable && cardMouse.containsMouse ? root.faint : "transparent"
+    color: card.clickable && (cardMouse.containsMouse || card.activeFocus) ? root.faint : "transparent"
     border.width: selected ? 2 : 1
     border.color: selected ? Commons.Color.accent : root.faint
+    activeFocusOnTab: clickable
+    Keys.onPressed: event => {
+      if (card.clickable && (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space)) {
+        card.clicked()
+        event.accepted = true
+      }
+    }
+    Accessible.role: clickable ? Accessible.Button : Accessible.Grouping
+    Accessible.name: name
+    Accessible.onPressAction: if (card.clickable) card.clicked()
 
     // Under the content, so a button inside a card takes its own clicks.
     MouseArea {
@@ -1444,6 +1469,7 @@ Item {
               model: root.library ? root.library.campaigns : []
               delegate: Card {
                 required property var modelData
+                name: modelData.title
                 selected: modelData.current
                 clickable: root.deleting !== modelData.path
                 onClicked: modelData.current ? root.show("table") : root.run(["use", modelData.path], "home", () => root.show("table"))
@@ -1525,6 +1551,7 @@ Item {
               model: root.library ? root.library.fallen || [] : []
               delegate: Card {
                 required property var modelData
+                name: modelData.name
                 clickable: false
 
                 RowLayout {
@@ -1576,6 +1603,7 @@ Item {
               model: root.library ? root.library.adventures : []
               delegate: Card {
                 required property var modelData
+                name: modelData.title
                 selected: root.adventure !== null && root.adventure.id === modelData.id
                 onClicked: root.chooseAdventure(modelData)
 
@@ -1686,6 +1714,7 @@ Item {
                 placeholderText: root.preview ? "Name: " + root.preview.name : "Name"
                 text: root.heroName
                 onTextEdited: root.heroName = text
+                onAccepted: if (beginButton.enabled) root.begin()  // Enter: the hero is named, begin
               }
 
               Choice {
@@ -1769,6 +1798,7 @@ Item {
             }
 
             Primary {
+              id: beginButton
               text: action.job !== null && action.job.place === "begin" ? "Starting…" : "Begin adventure"
               enabled: root.adventure !== null && root.preview !== null && !root.busy
               opacity: enabled ? 1 : 0.5
@@ -2049,17 +2079,10 @@ Item {
                 Layout.fillWidth: true
                 spacing: Commons.Style.space(2)
 
-                Heading {
-                  text: (root.openGroups[group.modelData.name] ? "▾ " : "▸ ") + group.modelData.name
-                  color: groupMouse.containsMouse ? root.textColor : root.dim
-
-                  MouseArea {
-                    id: groupMouse
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: root.toggleGroup(group.modelData.name)
-                  }
+                Fold {
+                  label: group.modelData.name
+                  open: !!root.openGroups[group.modelData.name]
+                  toggle: () => root.toggleGroup(group.modelData.name)
                 }
 
                 Flow {
@@ -2287,6 +2310,7 @@ Item {
                 required property int index
                 readonly property string modelData: root.foeIds[index] || ""
                 readonly property var foe: root.fight && root.fight.foes[modelData] ? root.fight.foes[modelData] : ({ name: "", hp: 0, max: 1, armor: 0, down: true })
+                name: foe.name
                 clickable: !foe.down
                 selected: !foe.down && root.aimedAt() === modelData
                 opacity: foe.down ? 0.5 : 1
@@ -2553,6 +2577,7 @@ Item {
                 id: trackCard
                 required property var modelData
                 readonly property bool ranked: !!root.progressSpec && !!root.progressSpec.kinds[modelData.kind]
+                name: modelData.name
                 clickable: false
 
                 Line {
