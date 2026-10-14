@@ -61,7 +61,7 @@ def runs(rows, commit, scenario=None, model=None, effort=None, dirty=False):
 def permutation_p(groups, seed=SEED):
     """(p, floor) for the gap between the B runs' mean and the A runs', each group being (A values, B values)
     of one scenario. p is the share of the ways of relabelling the runs, within each group, that give a gap at
-    least as wide either way; floor is the smallest p these runs could give at all."""
+    least as wide either way; floor is the smallest p this many runs could give at all, whatever their values."""
     pooled = [(xs + ys, len(xs)) for xs, ys in groups]
     size_a = sum(k for _, k in pooled)
     size_b = sum(len(values) - k for values, k in pooled)
@@ -75,8 +75,11 @@ def permutation_p(groups, seed=SEED):
     ways = math.prod(math.comb(len(values), k) for values, k in pooled)
     if ways <= SPLITS:
         gaps = [abs(gap(c)) for c in itertools.product(*(itertools.combinations(range(len(values)), k) for values, k in pooled))]
-        widest = max(gaps)
-        return (sum(g >= observed - 1e-9 for g in gaps) / ways, sum(g >= widest - 1e-9 for g in gaps) / ways)
+        # At best only the runs as they fell give the widest gap, and their mirror (every label swapped) when each
+        # scenario has as many runs of A as of B. Not the widest gap of these values: a score every run gave alike
+        # (refused 0, a fixed cost), or all but one, gives the same gap every way, and that isn't too few runs.
+        mirrored = all(len(values) == 2 * k for values, k in pooled)
+        return sum(g >= observed - 1e-9 for g in gaps) / ways, (2 if mirrored else 1) / ways
     rng = random.Random(seed)
     hits = sum(abs(gap([rng.sample(range(len(values)), k) for values, k in pooled])) >= observed - 1e-9 for _ in range(SPLITS))
     return (hits + 1) / (SPLITS + 1), 1 / (SPLITS + 1)
@@ -127,12 +130,15 @@ def render(a_name, b_name, sections):
             p = f"{line['p']:.4f}" if "p" in line else "-"
             lines.append(f"{column:{width}}  {line['mean_a']:>12.2f}  {line['mean_b']:>12.2f}  {p:>7}  {line['verdict']}")
         lines.append("")
-    if level is not None:
+    every = [line for _, _, _, result in sections for line in result.values()]
+    # Only when a comparison was made: with none, there is no level to give.
+    if level is not None and any(line["verdict"] != "too few runs" for line in every):
+        made = round(ALPHA / level)
         lines.append(f"better and worse are for {b_name} against {a_name}, and count only when a permutation test gives p below "
-                     f"{level:.4g}: {ALPHA:g} shared out over the {round(ALPHA / level)} comparisons made (Bonferroni).")
-    if any(line["verdict"] == "too few runs" for _, _, _, result in sections for line in result.values()):
+                     f"{level:.4g}: {ALPHA:g} shared out over the {made} comparison{'s' if made != 1 else ''} made (Bonferroni).")
+    if any(line["verdict"] == "too few runs" for line in every):
         lines.append(f"Some have too few runs to say anything: play each commit with --repeat {FEWEST} or more.")
-    if any(line.get("floor", 0) >= line["level"] for _, _, _, result in sections for line in result.values()):
+    if any(line.get("floor", 0) >= line["level"] for line in every):
         lines.append("Some have too few runs for any difference to count, however large: same there means not shown, not equal. "
                      "Play more runs of each commit.")
     return "\n".join(lines).rstrip()

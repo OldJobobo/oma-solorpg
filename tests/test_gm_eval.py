@@ -206,7 +206,26 @@ class Comparing(unittest.TestCase):
     def test_fewer_than_three_runs_of_either_says_too_few(self):
         result = compare.compare(self.rows("aaa", [2, 2]), self.rows("bbb", [5, 5, 5]))
         self.assertEqual(result["rules"]["verdict"], "too few runs")
-        self.assertIn("--repeat 3", compare.render("aaa", "bbb", [("s", [1, 1], [1, 1, 1], result)]))
+        text = compare.render("aaa", "bbb", [("s", [1, 1], [1, 1, 1], result)])
+        self.assertIn("--repeat 3", text)
+        # No comparison was made, so there is no level shared out over "the 1 comparisons made".
+        self.assertNotIn("Bonferroni", text)
+        path = self.results(self.rows("aaa", [2]) + self.rows("bbb", [5]))
+        self.assertNotIn("Bonferroni", self.run_compare("aaa", "bbb", "--results", path)[1])
+
+    def test_a_score_every_run_gave_alike_isnt_called_too_few_runs(self):
+        # refused 0 and a fixed cost in every run: every way of splitting them gives the same gap, none, so the smallest p
+        # they could give is 1. That was read as "too few runs for any difference to count", at any number of runs.
+        # The floor is what this many runs could give at best: 2 of the 924 ways to split twelve, 1 of the 35 to split 3 and 4.
+        self.assertEqual(compare.permutation_p([([5, 5, 5, 5, 5, 4], [5] * 6)]), (1.0, 2 / 924))
+        self.assertEqual(compare.permutation_p([([0, 0, 0], [0, 0, 0, 0])]), (1.0, 1 / 35))
+        result = compare.compare(self.rows("aaa", [3] * 6), self.rows("bbb", [5] * 6))
+        self.assertEqual((result["rules"]["verdict"], result["refused"]["verdict"]), ("better", "same"))
+        text = compare.render("aaa", "bbb", [("s", [1] * 6, [1] * 6, result)])
+        self.assertNotIn("too few runs", text)
+        self.assertIn("0.05 shared out over the 5 comparisons made", text)
+        one = compare.compare(self.rows("aaa", [3] * 6), self.rows("bbb", [5] * 6), comparisons=1)
+        self.assertIn("over the 1 comparison made", compare.render("aaa", "bbb", [("s", [1] * 6, [1] * 6, one)]))
 
     def test_expectations_read_as_a_ratio_and_blanks_are_left_out(self):
         self.assertEqual(compare.number({"expectations": "3/4"}, "expectations"), 0.75)
