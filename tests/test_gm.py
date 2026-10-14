@@ -757,13 +757,24 @@ class Notes(unittest.TestCase):
     def test_notes_are_told_by_what_only_notes_hold_never_by_a_word_a_story_uses(self):
         from solo.gm import drop_notes
         for note in ("Committed the gate fact with `solo commit`.", "Ran solo move gate; the scene text says the yard is empty.",
-                     "Done with the bookkeeping. Narrating the climb now.", "The engine says the clock ticked."):
+                     "Done with the bookkeeping. Narrating the climb now.", "The engine says the clock ticked.",
+                     "Solo check sneaking failed, so the guard turns.", "Rolled solo act face_danger and it held.",
+                     "The roll is in: solo act face_danger --stat edge gave a weak hit."):
             with self.subTest(note):
                 self.assertEqual(drop_notes(f"{note}\n\nYou reach the ledge. What now?"), "You reach the ledge. What now?")
+        # "narrated", "narrating" and "narrates" were taken for notes, and "solo" before a command's name after any word
+        # but "a", "the" or a possessive: the Book lost these paragraphs, and the log with it.
         for story in ("You commit to the climb, fingers numb on the wet stone.\n\nThe ledge holds. What now?",
                       "The player of the harp looks up as you come in.\n\nShe smiles. What do you say?",
                       "Your solo journey ends at the gate, where the warden waits.\n\nWhat do you do?",
-                      "The commits of old kings are carved here.\n\nWhat do you read first?"):
+                      "The commits of old kings are carved here.\n\nWhat do you read first?",
+                      "The old sage narrated the fall of the tower to anyone who would listen.\n\nWhat do you ask him?",
+                      "Inside, the old skald is narrating the saga of the drowned king.\n\nHe falls silent as you enter. What do you do?",
+                      "The herald narrates your deeds to the hall.\n\nWhat do you do?",
+                      "Your first solo journey began at dawn, three days ago.\n\nWhat now?",
+                      "The bard's solo voice rises over the crowd.\n\nWhat do you do?",
+                      "This solo act of defiance will be remembered.\n\nWhat now?",
+                      "One solo voice answers from the dark.\n\nWhat do you say?"):
             with self.subTest(story):
                 self.assertEqual(drop_notes(story), story)
 

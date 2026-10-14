@@ -277,11 +277,14 @@ def _not_shown(root, folder, agent, session, unseen, began):
     (folder / "agent.json").write_text(json.dumps({"agent": agent, "session": session, "unseen": turns}) + "\n", encoding="utf-8")
 
 
-# What only a GM's notes to itself hold: backticks, its own work named (narrate, the engine, scene text, GM
-# text), or a solo command (but "your solo journey" is a story's). Never words a story uses too: "You commit
-# to the climb" and "the player of the harp" are narration.
-_NOTES = (r"`|\b(narrat(e|es|ed|ing|ion)|the engine|scene text|GM text)\b"
-          r"|(?<!\ba )(?<!\bthe )(?<!\byour )(?<!\bmy )(?<!\bhis )(?<!\bher )(?<!\btheir )\bsolo ({commands})(?![\w-])")
+# What only a GM's notes to itself hold: backticks, its own work named (narrate, narration, a sentence that opens
+# "Narrating", the engine, scene text, GM text), or a solo command where a note puts one: opening a sentence, after
+# a verb of the GM's own work ("Ran solo move gate"), or before its arguments ("solo act face_danger --stat edge").
+# Never words a story uses too: "You commit to the climb", "the player of the harp", "the skald is narrating the
+# saga" and "your first solo journey" are narration.
+_NOTES = (r"`|\b(narrate|narration|the engine|scene text|GM text)\b|(^|[.!?]\s+)narrating\b"
+          r"|(^|[.!?;:]\s+|\b(ran|run|runs|running|rolled|rolling|called|calling|used|using|via|with|then)\s+)solo ({commands})(?![\w-])"
+          r"|\bsolo ({commands})\s+(-|[\"'{{\d]|\w+_)")
 
 
 _FENCE = re.compile(r"^:::[ \t]*gm\b.*?(^:::[ \t]*$|\Z)", re.S | re.M | re.I)
@@ -293,7 +296,7 @@ def drop_notes(text):
     `::: gm` block into it as if the Book would hide it. Both are dropped: the fenced
     blocks wherever they are, the leading notes as long as narration follows them."""
     from .cli import command_names
-    notes = re.compile(_NOTES.format(commands="|".join(map(re.escape, command_names()))), re.I)
+    notes = re.compile(_NOTES.format(commands="|".join(map(re.escape, command_names()))), re.I | re.M)
     text = _FENCE.sub("", text)
     paragraphs = [p for p in re.split(r"\n\s*\n", text) if p.strip()]
     while len(paragraphs) > 1 and notes.search(paragraphs[0]):
