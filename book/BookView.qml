@@ -78,6 +78,9 @@ Item {
   }
   // A new hero took up the story: the next death gets its gravestone too.
   onDeadChanged: if (!dead) epitaphDismissed = false
+  // The gravestone had the keyboard while it was up. Gone (put away, another campaign, a new
+  // hero), it goes back to the composer: an epilogue, or the next words to the GM.
+  onEpitaphShownChanged: if (!epitaphShown) input.forceActiveFocus()
 
   // New story beats since the last look: a new scene gets its title card, a new roll its
   // moment. The first load only remembers where the story is. It reads game.story, not
@@ -787,10 +790,7 @@ Item {
     theme: book.theme
     gpu: book.gpu
     game: book.game
-    onDismissed: {
-      book.epitaphDismissed = true
-      input.forceActiveFocus()  // the epilogue, if the player wants one
-    }
+    onDismissed: book.epitaphDismissed = true
   }
 
   TitleCard {
