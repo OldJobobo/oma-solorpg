@@ -327,6 +327,7 @@ solo/                       engine package, standard library only
   commits.py                what a commit says, checked against the packs and the state
   foundry.py                Foundry export importer
   cli.py                    commands and output
+  digest.py                 what the GM reads: the scene, where the table stopped, a person, recall, history
 packs/dragonbane/           hand-written system pack, creation tables, pre-made heroes
 packs/ironsworn/            a whole game: hand-written system.toml, creation and heroes; generated moves, tables, assets (CC BY, credited)
 examples/red-tusk/          a small original adventure, bundled and playable (Dragonbane)
