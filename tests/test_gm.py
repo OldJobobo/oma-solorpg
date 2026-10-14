@@ -856,8 +856,9 @@ class SkillFacts(CliCase):
 
 
 class PlayersOwn(CliCase):
-    """What only the player may change. Claude Code's GM has a list of the commands it may run, and a Codex GM
-    has none, so a Book turn (SOLO_BOOK) is refused these by the commands themselves."""
+    """What only the player may change. Claude Code's GM has a list of the commands it may run, and a Codex GM has
+    none, so a Book turn (SOLO_BOOK) is refused these by the commands themselves: under Codex a guard against a slip
+    or a pack's say-so, not a wall, since a Codex GM could clear the variable, and can write the campaign folder."""
 
     def test_a_gm_turn_cant_strike_change_the_table_settings_or_raise_its_own_budget(self):
         self.new_game()
@@ -877,6 +878,15 @@ class PlayersOwn(CliCase):
         # The Panel runs them without SOLO_BOOK, as the player.
         self.assertEqual(self.solo("-C", self.game, "strike")[0], 0)
         self.assertEqual(json.loads(self.solo("gm", "pace", "careful")[1]), {"pace": "careful"})
+
+    def test_the_readme_says_the_refusal_is_only_as_strong_as_the_variable_under_codex(self):
+        # The docs said these refuse inside every Book turn; a Codex GM, with no list of allowed commands, clears
+        # SOLO_BOOK in the same command (or writes the log itself).
+        self.new_game()
+        with unittest.mock.patch.dict(os.environ, {"SOLO_BOOK": ""}):
+            self.assertEqual(self.solo("-C", self.game, "prefs", "--line", "spiders")[0], 0)
+        readme = " ".join((cli.REPO / "README.md").read_text(encoding="utf-8").split())
+        self.assertIn("Under Codex they refuse by an environment variable the GM could clear", readme)
 
     def test_a_gm_turn_cant_put_words_in_the_players_mouth(self):
         # `solo gm turn` records what the player wrote. A GM's `solo say --player` would show in the Book as the

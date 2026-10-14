@@ -1011,7 +1011,8 @@ def _budget(args):
     The limits are for every campaign; the count is the campaign's, and --reset starts it again."""
     from . import gm
     if (args.text or args.turns or args.reset) and os.environ.get("SOLO_BOOK"):
-        # A Codex GM has no list of allowed commands, so the refusal is here.
+        # Claude Code's GM may not run `solo gm` at all. A Codex GM has no list of allowed commands, so it is refused
+        # here; it could clear SOLO_BOOK, which is why the limits and the count are kept out of the campaign folder.
         raise SoloError("the GM's budget is the player's to set: the GM can read it, never raise or reset it")
     if args.text and not args.text[0].replace(".", "", 1).isdigit():
         raise SoloError(f"a budget is dollars, a number: solo gm budget 20 (or --turns 400), not {args.text[0]!r}")
