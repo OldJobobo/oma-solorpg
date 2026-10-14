@@ -325,6 +325,14 @@ class LicenseTest(unittest.TestCase):
         self.assertEqual(datasworn._clean("Roll on {{table:classic/oracles/left/out}}.", {}), "Roll on .")
         self.assertIn("A link to a table that wasn't imported is removed", notice)
         self.assertIn("Datasworn", notice)
+        # The credit that travels with the pack lists the same changes, every one.
+        def changes(text):
+            return text[text.index("`solo import datasworn` made these changes to the text:"):text.index("Apart from that, the book's text is kept as written.")]
+        pack = (ROOT / "packs" / "ironsworn" / "NOTICE.md").read_text(encoding="utf-8")
+        self.assertIn(credit, pack)
+        self.assertEqual(changes(pack), changes(notice))
+        for change in ("named after the group first", "the row loses the link, and the importer lists it"):
+            self.assertIn(change, changes(pack))
 
     def test_the_dragonbane_license_has_one_name_outside_the_notice_it_recommends(self):
         # Free League's license is the Dragonbane Third-Party Tabletop Module License. The notice it
