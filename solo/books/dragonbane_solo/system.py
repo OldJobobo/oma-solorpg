@@ -45,7 +45,7 @@ def _oracle(pack, section):
 
 def _threats(section):
     counter = find(section, r"D(\d+) as a counter, starting at (\w+)", "the die a threat is counted on")
-    return {"segments": int(counter.group(1)), "start": count(counter.group(2)), "advance": ["activity"], "table": "threats"}
+    return {"segments": int(counter.group(1)), "start": count(counter.group(2), section), "advance": ["activity"], "table": "threats"}
 
 
 def _search(section):
@@ -85,13 +85,14 @@ def _abilities(root):
         cards = re.search(r"draw (\w+) initiative cards and keep both", text)
         cost = re.search(r"Willpower Points: (\d+)", text)
         if cards:
-            spec["initiative"] = count(cards.group(1))
+            spec["initiative"] = count(cards.group(1), ability)
         elif cost and re.search(r"push a roll without suffering a condition", text):
             spec["push"] = {"wp": int(cost.group(1))}
         found[packs.slug(name)] = spec
         names.append(name)
-    more = find(root.find("Introduction"), r"you gain (\w+) additional heroic ability", "how many more heroic abilities a lone hero has")
-    return found, {"count": count(more.group(1)), "from": names}
+    introduction = root.find("Introduction")
+    more = find(introduction, r"you gain (\w+) additional heroic ability", "how many more heroic abilities a lone hero has")
+    return found, {"count": count(more.group(1), introduction), "from": names}
 
 
 def _tend(section):

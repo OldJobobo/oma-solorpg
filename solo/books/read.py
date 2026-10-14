@@ -28,11 +28,15 @@ def says(section, pattern):
     return re.search(pattern, section.text(), re.I | re.S) is not None
 
 
-def count(word):
+def count(word, section=None):
+    """A count as a book writes it ("6", "six"), found in `section`: one the importer doesn't know is an error that says which part of which
+    book, as `changed` does."""
     if word.isdigit() or word.lower() in _COUNTS:
         return int(word) if word.isdigit() else _COUNTS[word.lower()]
-    raise SoloError(f"the importer reads {word!r} where it expects a number, and doesn't know it as one (it knows the digits and {', '.join(_COUNTS)}); "
-                    "this may be another printing than the importer was written for")
+    what = f"the importer reads {word!r} where it expects a number, and doesn't know it as one (it knows the digits and {', '.join(_COUNTS)})"
+    if section is not None:
+        raise changed(section, what)
+    raise SoloError(f"{what}; this may be another printing than the importer was written for")
 
 
 def roll(text):

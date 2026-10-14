@@ -112,6 +112,9 @@ class DiceTest(unittest.TestCase):
                                                              for line in (cell_line(4, y, number, 72), cell_line(4, y, text, 88))]
         with self.assertRaisesRegex(Exception, r"the table under 'D6 FEAR' on p. 4 has rows for 1-2 and none for 3, short of its die; this may be another printing"):
             self.read(lines)
+        for rows, said in ((lines[1:3] + lines[5:], "a row for 1 and none for 2"), (lines[5:], "no row the importer can read")):
+            with self.assertRaisesRegex(Exception, rf"the table under 'D6 FEAR' on p. 4 has {said}, short of its die"):
+                self.read([lines[0], *rows])
         # A table that goes on from another page has no die of its own here: it is read as far as it goes.
         self.assertEqual([row["low"] for row in dice.read(lines[1:5], lambda text, part: text + part, 6)["rows"]], [1, 2])
 
@@ -133,6 +136,16 @@ class CountTest(unittest.TestCase):
         self.assertEqual((read.count("Three"), read.count("12")), (3, 12))
         with self.assertRaisesRegex(SoloError, r"the importer reads 'eleven' where it expects a number, and doesn't know it as one"):
             read.count("eleven")
+
+    def test_a_count_the_importer_doesnt_know_names_the_section_it_is_in(self):
+        from solo.books.dragonbane_core import system
+        with tempfile.TemporaryDirectory() as folder:
+            made = FakeBook(Path(folder) / "extract")
+            made.section(1, 80, 1, "Encumbrance", "You can carry as many items as equal to half your STR, and up to several weapons at hand.")
+            made.save()
+            book = Book(Path(folder) / "extract")
+            with self.assertRaisesRegex(SoloError, r"Test Book.pdf, 'Encumbrance' \(p. 1\): the importer reads 'several' where it expects a number"):
+                system._encumbrance(book, book.find("Encumbrance"))
 
 
 class TablesRecipeTest(unittest.TestCase):

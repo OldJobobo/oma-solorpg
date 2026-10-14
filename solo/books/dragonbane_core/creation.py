@@ -24,8 +24,8 @@ def build(pack):
     creation.update(_numbers(chapter, [int(scale.group(1)), int(scale.group(2))]))
     movement, ratings = _ratings(book, chapter.find("Derived Ratings"), int(scale.group(2)))
     creation["ratings"] = ratings
-    train = count(find(chapter.find("Skills", "Starting Skill Levels"), r"(\w+) of your trained skills must be selected",
-                       "how many trained skills come from the profession").group(1))
+    levels = chapter.find("Skills", "Starting Skill Levels")
+    train = count(find(levels, r"(\w+) of your trained skills must be selected", "how many trained skills come from the profession").group(1), levels)
     known = arms.known(pack.system)
     crafts, schools = {}, {}
     choose = {"kin": _kin(book, chapter.find("Kin"), movement), "profession": _professions(book, chapter.find("Profession"), train, known, crafts, schools)}
@@ -123,7 +123,7 @@ def _professions(book, section, train, known, crafts, schools):
         magic = next((child for child in page.children if child.title.startswith("Sidebar:") and "newly created" in child.text(own=True)), None)
         start = re.search(r"newly created mage.*?choose (\w+) rank (\d+) spells and (\w+) magic tricks", " ".join(magic.text(own=True).split())) if magic else None
         if start:
-            option["spells"] = {"count": count(start.group(1)), "rank": int(start.group(2)), "tricks": count(start.group(3))}
+            option["spells"] = {"count": count(start.group(1), magic), "rank": int(start.group(2)), "tricks": count(start.group(3), magic)}
         kits, gear = _kits([row["text"] for row in dice.read(page.find("Table: Gear").lines(own=True), book.glue)["rows"]], known)
         options[packs.slug(row["text"])] = {**option, "kits": kits, "gear": gear}
     return {"label": "Profession", "roll": dice.formula(table["faces"]), "options": options}

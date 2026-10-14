@@ -48,7 +48,7 @@ def _start(pack, chapter, school):
     agent = re.sub(r"(?<=ch)es$|(?<=[^s])s$", "", found.group(1))
     listed = [item.strip() for item in found.group(3).split(",")]
     own = next((item for item in listed if packs.slug(item) == school), listed[0])
-    return agent, {"label": own, "always": [own], "skills": listed, "train": count(found.group(2))}
+    return agent, {"label": own, "always": [own], "skills": listed, "train": count(found.group(2), sidebar)}
 
 
 def _ingredients(pack, chapter):
