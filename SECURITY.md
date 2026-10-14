@@ -21,4 +21,4 @@ The GM getting a rule wrong, forgetting a fact or leaking an adventure's secret 
 
 ## Which versions
 
-Fixes go on `main` and into the next release. The README's install line pins a commit; a security fix moves that pin, and the release notes in [CHANGELOG.md](CHANGELOG.md) say so.
+Fixes go on `main` and into the next release. The README's install line pins a release's commit and moves when the next one is tagged, so a security fix reaches it with its release, and that release's notes in [CHANGELOG.md](CHANGELOG.md) say so. Until then the fix is on `main` only: 0.4.0's, for one, aren't in the commit the README pins until 0.4.0 is tagged.

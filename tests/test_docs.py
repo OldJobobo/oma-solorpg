@@ -222,6 +222,39 @@ class ReleaseTest(unittest.TestCase):
         self.assertIn("your own copy", manifest["description"])
         self.assertIn("\n## Update\n", (ROOT / "README.md").read_text(encoding="utf-8"))
 
+    def test_the_install_pins_the_version_the_readme_says_it_does(self):
+        import json
+        import subprocess
+        version = json.loads((ROOT / "manifest.json").read_text(encoding="utf-8"))["version"]
+        changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        site = (ROOT / "site" / "index.html").read_text(encoding="utf-8")
+        pin = re.search(r"git checkout --detach ([0-9a-f]{40})", readme).group(1)
+        versions = re.findall(r"\n## (\d+\.\d+\.\d+)", changelog)
+        if f"\n## {version} (not yet tagged)\n" in changelog:
+            # Until this version is tagged the pin is the one before it, and the README and the site say
+            # so instead of describing it as what the reader installs.
+            pinned = versions[versions.index(version) + 1]
+            for text in (readme, site):
+                self.assertIn(f"one from before {version}", text)
+        else:
+            pinned = version
+            self.assertNotIn(f"from before {version}", readme)
+
+        def git(*args):
+            try:
+                return subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True, timeout=60)
+            except OSError:
+                self.skipTest("git isn't installed")
+        shown = git("show", f"{pin}:manifest.json")
+        if shown.returncode != 0:
+            self.skipTest("the pinned commit isn't in this clone (a shallow one, or a tarball)")
+        self.assertEqual(json.loads(shown.stdout)["version"], pinned, "the README pins a commit of another version")
+        self.assertEqual(git("merge-base", "--is-ancestor", pin, "HEAD").returncode, 0, "the pinned commit is in this branch's history")
+        tag = git("rev-parse", "-q", "--verify", f"refs/tags/{pinned}^{{commit}}")
+        if tag.returncode == 0:
+            self.assertEqual(tag.stdout.strip(), pin, f"the README pins the commit tagged {pinned}")
+
 
 class RepositoryTest(unittest.TestCase):
     def test_ci_installs_what_the_skipping_tests_need_and_loads_the_qml(self):

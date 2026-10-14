@@ -77,6 +77,7 @@ Install and docs:
 - `solo` on a Python older than 3.11 says so in a sentence. `solo setup` and `solo play` link skills only for the agents you have, and setup says what playing needs.
 - `make uninstall` puts the desktop back first. A premise with backticks or `$( )` reaches `solo` as typed and runs nothing.
 - PyMuPDF is installed with pacman on Omarchy, wherever the docs say how. The website installs the way the README does.
+- The README, the website and SECURITY.md say the commit the install line pins is one from before 0.4.0 until 0.4.0 is tagged, instead of calling it the latest release, and a test holds the pin to the version they name.
 - The website shows no screenshot of a pack built from a book. Those of The Sinking Tower and Alone in Deepfall Breach had the books' numbers in frame, and the codex the book's lines about its people, so they came out of `site/`.
 
 ## 0.3.0

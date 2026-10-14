@@ -34,6 +34,8 @@ git checkout --detach 26048dee18cc6d139fb4281b17f16b4a01faf805   # a fixed commi
 make install                                              # links solo, the GM skills and the plugin, and enables it
 ```
 
+0.4.0 isn't tagged yet, so that commit is still one from before 0.4.0, and has none of what [CHANGELOG.md](CHANGELOG.md) lists under it: its security fixes, and the check `make install` prints after the links, among them. The rest of this README describes 0.4.0. The pin moves to 0.4.0's commit when it is tagged; to run it before then, check out `main` instead of the commit, and read it first.
+
 Then click the d20 in the bar, choose New adventure, pick The Bell Under the Hill and Begin. That is Ironsworn, and it needs nothing else: no book, no import.
 
 For Dragonbane, see [Dragonbane](#dragonbane). If something didn't work, `make install` printed what is missing, and [Troubleshooting](#troubleshooting) says what to do.
@@ -48,7 +50,7 @@ For Dragonbane, see [Dragonbane](#dragonbane). If something didn't work, `make i
 
 It only ever creates symlinks, and never replaces a real file: one in the way is skipped, and the line says so. Running it again is harmless. After the links it prints a short check, a line each for Python, PATH, Omarchy and its shell, `hyprctl` (the desktop effects), your agent and PyMuPDF (only the imports need it), each saying ok or what to do.
 
-The clone is pinned to a commit on purpose. The commit in [Quick start](#quick-start) is the latest release at the time of writing, and `make install` links this folder into your desktop and your agents' skill folders, so what runs is what you checked out and read. To move to a newer one, see [Update](#update).
+The clone is pinned to a commit on purpose: `make install` links this folder into your desktop and your agents' skill folders, so what runs is what you checked out and read. When a version is tagged, the commit in [Quick start](#quick-start) moves to it (until 0.4.0 is, it is one from before 0.4.0, as it says there). To move to a newer one, see [Update](#update).
 
 `make` alone lists every target. `AGENT=codex make rules ...` picks the agent for the targets that use one; the default is Omarchy's default agent.
 

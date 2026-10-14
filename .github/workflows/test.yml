@@ -23,7 +23,10 @@ jobs:
       matrix:
         python: ["3.11", "3.x"]
     steps:
+      # The whole history and its tags, so tests/test_docs.py can read the commit the README pins.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
