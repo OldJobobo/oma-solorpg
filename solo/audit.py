@@ -333,9 +333,7 @@ def _checked(item, pack, loaded, book, lines):
         # A scanned page has no words, and nothing the pack says can be read back against it.
         return [f"{item['id']}: p. {spans(pages)} has no text to read the pack against (a scanned page has none): run ocrmypdf on the PDF and "
                 f"extract it again, or write what the page's picture says in picture/{pages[0]:04d}.txt in the extract"]
-    words = set(re.findall(r"[a-z0-9]+", text))
-    # A number with its unit set close after it ("2H", "10m") is the number too.
-    words |= {found.group(1) for found in map(re.compile(r"(\d+)[a-z]+").fullmatch, list(words)) if found}
+    words = _number_words(text)
     cited = [line for page in pages for line in lines.get(page, [])]
     found = []
     for ref in item["to"]:
@@ -383,6 +381,8 @@ def _checked(item, pack, loaded, book, lines):
     for ref in _prices_apart([(r, d) for r, d in entries if isinstance(d, dict)], text, {*money.get("coins", {}), *money.get("aliases", {})}):
         entry = dict(entries)[ref]
         found.append(f"{item['id']}: {ref} prices {entry['name']} at {entry['price']}, and {where} never puts that price beside its name")
+    found += [f"{item['id']}: {ref} gives {path} {value}, and {where} never puts it beside {name}"
+              for ref, path, value, name in _arms_apart(_arms(item["to"], pack, loaded), text, loaded.get("gear") or {})]
     return found[:_CHECKS_SHOWN] + ([f"{item['id']}: and {len(found) - _CHECKS_SHOWN} more like these"] if len(found) > _CHECKS_SHOWN else [])
 
 
@@ -528,6 +528,12 @@ def _track_dice(entry, tracks, prefix=""):
     return found
 
 
+def _number_words(text):
+    """The words and numbers of a text, a number with its unit set close after it ("2H", "10m") as the number too."""
+    words = set(re.findall(r"[a-z0-9]+", text))
+    return words | {found.group(1) for found in map(re.compile(r"(\d+)[a-z]+").fullmatch, list(words)) if found}
+
+
 def _says_number(number, text, words):
     """Whether the pages have a number: as digits (with a unit after them, "2H", too: see _checked), in
     words ("two", "twice"), or (meters) in kilometers."""
@@ -669,6 +675,64 @@ def _prices_apart(entries, text, coins):
     if max(after, before) * 2 < len(sides):
         return []
     return [ref for ref, found in sides.items() if not found[way]]
+
+
+# A weapon's and an armor's numbers are read beside its name the same way: the STR, range,
+# durability, damage or rating of the row above or below is on the page too. Its numbers are those
+# between its name and the next thing's (or the one before it), whichever way explains most of a
+# table's entries; a table neither way explains isn't judged. A number the page has nowhere is
+# said once, by the check of every number above.
+
+
+def _arms(refs, pack, loaded):
+    """[(ref, [names], [(path, number or dice)])] of the weapons and armor that references point at in the pack's own files: a weapon's
+    numbers and dice, an armor's rating. Its names: its label, the name of the gear it is, and its id in words."""
+    found, gear = [], loaded.get("gear") or {}
+    for ref in refs:
+        path, _, key = ref.partition(":")
+        section, _, one = key.partition(".")
+        own = _own(ref, pack) if path == "system.toml" and section in ("weapons", "armor") else None
+        for name, entry in ({one: own} if one else own if isinstance(own, dict) else {}).items():
+            prefix = "" if one else f"{name}."
+            if isinstance(entry, dict):
+                said = [(f"{prefix}{at}", number) for at, _, number in _numbers(entry)] + [(f"{prefix}damage", rolled) for rolled in _dice_in(entry.get("damage"))]
+            else:
+                said = [(name, entry)] if _whole(entry) and abs(entry) > 1 else []
+            names = [entry.get("label") if isinstance(entry, dict) else None, (gear.get(name) or {}).get("name"), name.replace("_", " ")]
+            if said:
+                found.append((ref, list(dict.fromkeys(_norm(n) for n in names if isinstance(n, str) and n.strip())), said))
+    return found
+
+
+def _arms_apart(arms, text, gear):
+    """[(ref, path, value, name)] of the numbers and dice of `arms` (see _arms) that the pages have, but not beside its name (see above)."""
+    def spots(name):
+        return [(at.start(), at.end()) for at in re.finditer(rf"(?<![a-z]){re.escape(name)}(?![a-z])", text)]
+
+    names = {*(_norm(entry["name"]) for entry in gear.values() if isinstance(entry, dict) and isinstance(entry.get("name"), str) and entry["name"].strip()),
+             *(name for _, found, _ in arms for name in found)}
+    marks = [spot for name in names for spot in spots(name)]
+    sides = {}
+    for at, (ref, found, said) in enumerate(arms):
+        nowhere = _unsaid(said, text)
+        said = [value for value in said if value not in nowhere]
+        places = [spot for name in found for spot in spots(name)]
+        if not said or not places:
+            continue
+        after = [text[end:min([start for start, _ in marks if start >= end] + [end + _NEAR])] for _, end in places]
+        before = [text[max([end for _, end in marks if end <= start] + [start - _NEAR, 0]):start] for start, _ in places]
+        sides[at] = [min((_unsaid(said, part) for part in parts), key=len) for parts in (after, before)]
+    after, before = (sum(not side[way] for side in sides.values()) for way in (0, 1))
+    if max(after, before) * 2 < len(sides) or not sides:
+        return []
+    way = 0 if after >= before else 1
+    return [(arms[at][0], *side[way][0], arms[at][1][0]) for at, side in sides.items() if side[way]]
+
+
+def _unsaid(said, text):
+    """What of [(path, number or dice)] a text doesn't have."""
+    words = _number_words(text)
+    return [(path, value) for path, value in said if not (_dice_on(value, text) if isinstance(value, str) else _says_number(value, text, words))]
 
 
 _STOP = {"with", "that", "this", "from", "your", "they", "their", "them", "have", "into", "when", "which", "will", "were", "been"}

@@ -366,6 +366,18 @@ class GearRecipeTest(unittest.TestCase):
         # Every weapon's numbers are on its table's page: a grip of 2 is the page's "2H".
         self.assertEqual(report["unverified"], [])
 
+    def test_a_weapons_or_an_armors_number_from_another_row_is_not_beside_its_name(self):
+        self.pack.write(self.tmp / "extract")
+        system = self.tmp / "out" / "system.toml"
+        built = system.read_text(encoding="utf-8")
+        # Each is on the page, as the long bow's STR, its durability, its damage, and the helmet's rating.
+        for old, new, said in (("str = 9", "str = 12", "gear_melee_weapons: system.toml:weapons.long_sword gives str 12, and p. 3 never puts it beside sword, long"),
+                               ("durability = 14", "durability = 5", "system.toml:weapons.long_sword gives durability 5, and p. 3 never puts it beside sword, long"),
+                               ('damage = "2d6"', 'damage = "1d12"', "system.toml:weapons.long_sword gives damage d12, and p. 3 never puts it beside sword, long"),
+                               ("plate_armor = 5", "plate_armor = 2", "gear_armor_and_helmets: system.toml:armor gives plate_armor 2, and p. 3 never puts it beside plate armor")):
+            system.write_text(built.replace(old, new, 1), encoding="utf-8")
+            self.assertIn(said, "\n".join(audit.audit(self.tmp / "out", "system")["unverified"]))
+
 
 class ChangedGearTableTest(unittest.TestCase):
     """A weapons table set otherwise than the printing the recipe knows: the import says where, and how."""
