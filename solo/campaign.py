@@ -73,6 +73,9 @@ _STORY_SIZE = 150
 # those events are the same bytes (their crc32) and the packs and the engine are the ones it was made from,
 # and it is kept again once the log has grown this many events past it.
 _KEEP_EVERY = 50
+# What the story going on is, after a roll: a commit, a move, time passing in a rest or on the road, a torch lit,
+# a fight begun, gone on a round or ended. The roll before it stands as it fell, and can't be pushed any more.
+_GOES_ON = ("commit", "move", "rest", "journey", "light", "fight", "round", "fight_end")
 # The campaigns open in this process, the innermost last (see session): a command's dice fixed by
 # SOLO_SEED are seeded by the event it writes first (next_seq).
 _OPEN = []
@@ -112,8 +115,7 @@ def create(root, system_path, adventure_path, character, title=None, prefs=None)
     system = packs.load_system(system_path)
     adventure = packs.load_adventure(adventure_path, drafts=False)
     problems = packs.validate(system, adventure)
-    # campaign.toml is written before the first event: one without events is a start that stopped half way, begun again here.
-    if (root / "campaign.toml").exists() and _read_events(root / "events.jsonl")[0]:
+    if _taken(root):
         raise SoloError(f"{root} already holds a campaign")
     elif packs.missing(system):
         raise SoloError(packs.missing_text(system, packs.missing(system)))
@@ -131,8 +133,7 @@ def create(root, system_path, adventure_path, character, title=None, prefs=None)
             "system": str(Path(system_path).resolve()),
             "adventure": str(Path(adventure_path).resolve()),
         }
-        (root / "campaign.toml").write_text("".join(f"{k} = {packs.toml_string(v)}\n" for k, v in config.items()), encoding="utf-8")
-        with session(root, new=True) as campaign:
+        with session(root, new=config) as campaign:
             event = campaign.append("created", format=FORMAT, title=config["title"], pc=pc, scene=adventure["start"],
                                     past=past or None, facts=carried or None, kept=kept or None)
             campaign._follow([f"scene:{adventure['start']}"], cause=event["seq"])
@@ -145,6 +146,21 @@ def create(root, system_path, adventure_path, character, title=None, prefs=None)
         (root / ".solo" / "turn.json").write_text('{"status": "idle"}\n', encoding="utf-8")
         set_current(root)
         return root
+
+
+def _taken(root):
+    """Whether a folder holds a campaign `solo new` must leave alone: a whole event in its log, or a campaign.toml solo
+    didn't write (one without a system and an adventure). One solo wrote, with no events, is a start that stopped half
+    way, begun again. Read only: a log another command is writing is never mended (see _mend_tail) from outside its lock."""
+    toml = root / "campaign.toml"
+    try:
+        if toml.exists() and not all(isinstance(packs.load_data(toml).get(key), str) for key in ("system", "adventure")):
+            return True
+        return b"\n" in (root / "events.jsonl").read_bytes()
+    except FileNotFoundError:
+        return False
+    except (SoloError, OSError):  # a campaign.toml that isn't TOML, or a folder it can't read: not one to write over
+        return True
 
 
 def hero(root, name=None):
@@ -252,19 +268,25 @@ def character_sheet(data, system):
 
 
 @contextmanager
-def session(root, new=False):
+def session(root, new=None):
     """Open a campaign under an exclusive lock, so the agent and the panel never write
     at the same time. state.json is rewritten on the way out if anything changed, or if it
-    was behind the log, and a command that went through keeps the replay for the next one
-    when it has fallen behind. `new`: the campaign being created, whose log is still empty."""
+    was behind the log or made by another engine or other packs, and a command that went
+    through keeps the replay for the next one when it has fallen behind. `new`: the
+    campaign.toml of a campaign being created, written here under the lock, unless a
+    campaign has begun in the folder meanwhile."""
     root = Path(root)
     with open(root / ".lock", "w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        campaign = Campaign(root, new=new)
+        if new is not None and _taken(root):
+            raise SoloError(f"{root} already holds a campaign")
+        elif new is not None:
+            (root / "campaign.toml").write_text("".join(f"{k} = {packs.toml_string(v)}\n" for k, v in new.items()), encoding="utf-8")
+        campaign = Campaign(root, new=new is not None)
         count = len(campaign.events)
-        # A crash between an event's write and state.json's leaves state.json behind the log:
-        # any command brings it up to date, one that only reads too.
-        behind = _saved_seq(root / "state.json") != campaign.state["seq"]
+        # A crash between an event's write and state.json's leaves state.json behind the log, and an update
+        # to the engine or the packs leaves it made by the old ones: any command brings it up to date, one that only reads too.
+        behind = _saved(root / "state.json") != (campaign.state["seq"], campaign.made_from)
         _OPEN.append(campaign)
         try:
             yield campaign
@@ -284,10 +306,14 @@ def session(root, new=False):
             if len(campaign.events) != count or behind:
                 try:
                     campaign.save()
-                except OSError:
+                except OSError as error:
+                    # state.json is made from the log, which stands: a disk that refuses it (a full one) fails no command, one
+                    # that only reads included, and a command whose events are written isn't one to run again. The next
+                    # command catches it up. The disk that refused the log refuses state.json too, and has said so already.
                     if not campaign.unwritten:
-                        raise
-                    # The disk that refused the log refuses state.json too: the next command rebuilds it.
+                        print(f"solo: couldn't write {root / 'state.json'} ({error.strerror or error}): the log has everything, and the next "
+                              "command brings state.json up to date once the disk takes it (until then the Table shows the campaign as it was)",
+                              file=sys.stderr)
         campaign.keep()
 
 
@@ -307,6 +333,9 @@ class Campaign:
         self.opened = len(self.events)
         # The error of a write to the log that failed: the command stops there, and nothing more is written.
         self.unwritten = None
+        # What the state is made from (this Python, the engine, the packs as read), as a kept replay and state.json record it.
+        self.key = _replay_key(self)
+        self.made_from = zlib.crc32(json.dumps(self.key).encode())
         # The state after every event, and the chronology: from the replay kept for a long
         # campaign while it stands, and the events since, else from the start.
         kept = _read_kept(self, log) if len(self.events) >= _KEEP_EVERY else None
@@ -336,7 +365,7 @@ class Campaign:
         seed = dice.fixed_seed()
         if seed is not None:
             event["seed"] = seed
-        line = (json.dumps(event, ensure_ascii=False) + "\n").encode("utf-8")
+        line = _line(event)
         # Applied before it is written: an event the state can't take is refused, never left
         # in the log for every later replay to trip over.
         _advance(self.state, self.entries, event, self.adventure, strict=True)
@@ -357,7 +386,7 @@ class Campaign:
         """Keep the replay for the next command, once the log has grown _KEEP_EVERY events past the one kept."""
         if len(self.events) - self.kept >= _KEEP_EVERY:
             log = (self.root / "events.jsonl").read_bytes()
-            kept = {"key": _replay_key(self), "count": len(self.events), "size": len(log), "crc": zlib.crc32(log), "state": self.state,
+            kept = {"key": self.key, "count": len(self.events), "size": len(log), "crc": zlib.crc32(log), "state": self.state,
                     "entries": [{k: v for k, v in entry.items() if k != "event"} for entry in self.entries]}
             path = self.root / ".solo" / "replay.marshal"
             try:
@@ -388,6 +417,8 @@ class Campaign:
             reason = error if isinstance(error, SoloError) else f"{type(error).__name__}: {error}"
             print(f"solo: state.json is written without what the packs add to it ({reason}); solo validate says what to fix", file=sys.stderr)
             view = {k: v for k, v in self.state.items() if k not in _GM_ONLY}
+        # First, with the seq, what it was made from: a command reads both to see whether state.json is behind (see session).
+        view = {"seq": view["seq"], "made_from": self.made_from, **view}
         temporary.write_text(json.dumps(view, ensure_ascii=False, indent=1), encoding="utf-8")
         os.replace(temporary, path)
 
@@ -415,10 +446,10 @@ class Campaign:
         return event
 
     def push(self, condition=None, rng=None, sole_survivor=False):
-        """Push the last check once, while it is still the result the story waits on: a commit or a
-        move after it and it stands as it fell. The cost comes from the system pack: a condition the
-        character doesn't have yet (Dragonbane) or a track increase (stress in Alien). A hero
-        with Sole Survivor may pay willpower instead of a condition."""
+        """Push the last check once, while it is still the result the story waits on: a commit, a move,
+        a rest or anything else _GOES_ON names after it, and it stands as it fell. The cost comes from
+        the system pack: a condition the character doesn't have yet (Dragonbane) or a track increase
+        (stress in Alien). A hero with Sole Survivor may pay willpower instead of a condition."""
         if self.system["family"] == "action-roll":
             raise SoloError("a roll can't be pushed here: after an action roll, momentum can be burned (solo burn)")
         self._able("push a roll")
@@ -440,9 +471,12 @@ class Campaign:
         elif last["type"] == "push":
             raise SoloError("that roll was already pushed")
         elif last.get("stood"):
-            raise SoloError("that roll stands: the story went on after it (a commit or a move), so it can't be pushed any more")
+            raise SoloError("that roll stands: the story went on after it (a commit, a move, a rest, a journey, a torch lit, "
+                            "or a fight begun, gone on a round or ended), so it can't be pushed any more")
         elif not last["outcome"]["pushable"]:
-            raise SoloError("that roll can't be pushed: it succeeded or it was a Demon")
+            why = ("it succeeded" if last["outcome"].get("success") else "it was a Demon" if last["outcome"].get("demon")
+                   else "the rules don't push this kind of roll")
+            raise SoloError(f"that roll can't be pushed: {why}")
         elif cost == "condition" and not available:
             raise SoloError("every condition is already taken, so the roll can't be pushed")
         elif cost == "condition" and slug(condition or "") not in available:
@@ -488,11 +522,16 @@ class Campaign:
         the full boxes of a track against the challenge dice."""
         self._moves_only("make a move")
         self._able("make a move")
-        self._let_stand(rng)
         move_id, move = self._move(move_id)
         if move["kind"] == "none":
             raise SoloError(f"{move['name']} has no roll: read it (solo rule {move['name'].lower()}) and commit what it says")
-        elif move["kind"] == "progress":
+        # Checked before the roll before it stands: a move refused (a typo, no track open) leaves that roll open to a burn.
+        if move["kind"] == "progress":
+            self._open_track(move["track"], track)
+        else:
+            self._stat_for(move, stat)
+        self._let_stand(rng)
+        if move["kind"] == "progress":
             track_id, progress = self._open_track(move["track"], track)
             outcome = mechanics.progress_roll(progress["ticks"] // self.system["progress"]["ticks"], rng)
             event = self.append("act", move=move_id, label=move["name"], track=track_id, track_name=progress["name"], outcome=outcome)
@@ -774,7 +813,27 @@ class Campaign:
         An ordinary move rolls a scene check against the chaos factor: the scene may be
         altered, or interrupted by a random event. Forced moves (a clock filled) aren't checked."""
         self._able("move")
+        # Checked before the roll before it stands: a move refused (a typo, a shut door) leaves that roll open to a burn.
+        self._way(target, force)
         self._let_stand(rng)
+        here, every, destination = self._way(target, force)
+        check = None
+        if not force and self.adventure["scene_checks"] and self.system.get("oracle", {}).get("scene_checks", True):
+            check = oracle.scene_check(self.state["chaos"], rng)
+            if check["result"] == "interrupted":
+                check["event"] = self._random_event(rng)
+        spent = {} if force else (every[destination]["time"] if destination in every and every[destination]["time"] else self.adventure["move_time"])
+        seconds = self._seconds(spent)
+        before = self.state["time"]
+        event = self.append("move", to=destination, forced=force, scene_check=check, time=seconds or None, **{"from": here})
+        self._follow(Counter([f"scene:{destination}"]) + self._time_triggers(before, before + seconds), cause=event["seq"], rng=rng)
+        if seconds:
+            self._burn(event["seq"])
+        self._voices(event["seq"], rng)
+        return event
+
+    def _way(self, target, force=None):
+        """(the scene the hero is in, its exits, the scene `target` leads to), or a sentence saying why it leads nowhere."""
         here = self.state["scene"]
         every = packs.exits(self.adventure, here)
         key = slug(target)
@@ -788,21 +847,7 @@ class Campaign:
             # A gated way (hidden stairs, a locked door) stays shut until the story opens it.
             raise SoloError(f"the way to {destination} isn't open yet (it opens when {every[destination]['when']}); "
                             "if the hero opened it, commit that first")
-        else:
-            check = None
-            if not force and self.adventure["scene_checks"] and self.system.get("oracle", {}).get("scene_checks", True):
-                check = oracle.scene_check(self.state["chaos"], rng)
-                if check["result"] == "interrupted":
-                    check["event"] = self._random_event(rng)
-            spent = {} if force else (every[destination]["time"] if destination in every and every[destination]["time"] else self.adventure["move_time"])
-            seconds = self._seconds(spent)
-            before = self.state["time"]
-            event = self.append("move", to=destination, forced=force, scene_check=check, time=seconds or None, **{"from": here})
-            self._follow(Counter([f"scene:{destination}"]) + self._time_triggers(before, before + seconds), cause=event["seq"], rng=rng)
-            if seconds:
-                self._burn(event["seq"])
-            self._voices(event["seq"], rng)
-            return event
+        return here, every, destination
 
     def _exit_by_label(self, every, key, target):
         """An exit by its label, or a word of it: a whole label first, then the one exit it
@@ -928,6 +973,9 @@ class Campaign:
 
     def commit(self, payload, rng=None):
         """Apply the consequences the agent proposes, after checking them against the packs."""
+        # Checked before the roll before it stands, and again after it (what the roll set off may have moved a clock):
+        # a commit refused leaves that roll open to a burn.
+        self._normalize(payload)
         self._let_stand(rng)
         return self._record("commit", payload, rng)
 
@@ -2433,6 +2481,7 @@ class Campaign:
         (so the log reads without context), clock moves, and warnings about clamping."""
         if not isinstance(payload, dict):
             raise SoloError("a commit is a JSON object")
+        _line(payload)  # text the log can't hold is refused here, before the roll a commit lets stand (see commit)
         warnings = []
         payload = dict(payload)
         for alias, key in _KEY_ALIASES.items():
@@ -3447,7 +3496,7 @@ def apply(state, event, adventure):
         state["clocks"][event["clock"]]["stopped"] = True
     elif kind == "due" and event["consequence"] in state["consequences"]:
         state["consequences"][event["consequence"]]["due"] = True
-    if kind in ("commit", "move") and (state["last_check"] or {}).get("outcome", {}).get("pushable"):
+    if kind in _GOES_ON and (state["last_check"] or {}).get("outcome", {}).get("pushable"):
         # The story went on: the roll stands as it fell, and its push is no longer on offer (the panel reads pushable).
         last = state["last_check"]
         state["last_check"] = {**last, "outcome": {**last["outcome"], "pushable": False}, "stood": True}
@@ -4077,6 +4126,19 @@ def _read_events(path):
     return events, data
 
 
+def _line(event):
+    """An event as the line the log holds. Text that isn't Unicode the log can hold (a lone surrogate: half an emoji cut
+    off, or a byte that wasn't UTF-8 on the command line), and lists nested deeper than Python writes them, are refused
+    with a sentence, not met by the write."""
+    try:
+        return (json.dumps(event, ensure_ascii=False) + "\n").encode("utf-8")
+    except UnicodeEncodeError as error:
+        raise SoloError(f"the text holds {error.object[error.start:error.end]!r}, half of a character (or a byte that wasn't UTF-8), "
+                        "which the log can't hold: write it again without it") from None
+    except RecursionError:
+        raise SoloError("it nests lists or objects deeper than the log can hold (a commit is an object a few levels deep)") from None
+
+
 def _damaged(path, number, error):
     """What to do about a line of the log that can't be read. (A last line cut off mid-write never gets here: _mend_tail sets it aside.)"""
     return (f"{path} line {number} is damaged ({error}), and the campaign is read from its log: mend that line by hand, "
@@ -4101,14 +4163,14 @@ def _write_line(path, line):
         os.close(fd)
 
 
-def _saved_seq(path):
-    """The seq state.json was written at (the first thing in it), or None when there is none to read."""
+def _saved(path):
+    """(the seq state.json was written at, what it was made from): the first things in it. None when there are none to read."""
     try:
         with open(path, "rb") as saved:
-            found = re.match(rb'\{\s*"seq":\s*(\d+)', saved.read(64))
+            found = re.match(rb'\{\s*"seq":\s*(\d+),\s*"made_from":\s*(\d+)', saved.read(96))
     except OSError:
         return None
-    return int(found.group(1)) if found else None
+    return (int(found.group(1)), int(found.group(2))) if found else None
 
 
 def _read_kept(c, log):
@@ -4119,7 +4181,7 @@ def _read_kept(c, log):
     except (OSError, EOFError, ValueError, TypeError):
         return None
     if not (isinstance(kept, dict) and kept.get("count", len(c.events) + 1) <= len(c.events) and kept.get("size", len(log) + 1) <= len(log)
-            and zlib.crc32(memoryview(log)[:kept["size"]]) == kept.get("crc") and kept.get("key") == _replay_key(c)):
+            and zlib.crc32(memoryview(log)[:kept["size"]]) == kept.get("crc") and kept.get("key") == c.key):
         return None
     for entry, event in zip(kept["entries"], c.events):
         entry["event"] = event

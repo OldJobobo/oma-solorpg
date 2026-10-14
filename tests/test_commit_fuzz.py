@@ -122,5 +122,32 @@ class CommitFuzzTest(CampaignTest):
         self.assertEqual(json.loads((root / "state.json").read_text())["seq"], last)
 
 
+class UnwritableTextTest(CampaignTest):
+    """Half an emoji cut off ("\\ud83d" in JSON), or a byte that wasn't UTF-8 on the command line, reaches the engine as a
+    lone surrogate, which the log can't hold."""
+
+    def test_text_the_log_cant_hold_is_refused_with_a_sentence_and_nothing_is_written(self):
+        with self.session() as c:
+            count = len(c.events)
+            for payload in ({"note": "a broken emoji \ud83d"}, {"npc": {"tam": {"name": "T\udce9"}}}, {"facts": {"hall.sign": "caf\udce9"}}):
+                with self.subTest(payload=ascii(payload)), self.assertRaisesRegex(SoloError, "half of a character .*which the log can't hold"):
+                    c.commit(payload)
+            with self.assertRaisesRegex(SoloError, "which the log can't hold"):
+                c.say("caf\udce9", "player")
+            self.assertEqual(len(c.events), count)
+
+    def test_a_commit_nested_deeper_than_python_writes_is_refused_with_a_sentence(self):
+        # A depth json.loads still reads can be one json.dumps can't write (on Python 3.11, a few levels short of 1000).
+        deep = []
+        for _ in range(200000):
+            deep = [deep]
+        with self.session() as c:
+            count = len(c.events)
+            for payload in ({"note": deep}, {"facts": {"hall.sign": deep}}):
+                with self.subTest(key=next(iter(payload))), self.assertRaisesRegex(SoloError, "nests lists or objects deeper than the log can hold"):
+                    c.commit(payload)
+            self.assertEqual(len(c.events), count)
+
+
 if __name__ == "__main__":
     unittest.main()

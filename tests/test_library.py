@@ -48,6 +48,17 @@ class RulesNotBuiltTest(CliCase):
         tusk = next(a for a in json.loads(self.solo("library")[1])["adventures"] if a["id"] == "red-tusk")
         self.assertEqual({key: tusk[key] for key in ("ready", "why", "system_name")}, {"ready": True, "why": "", "system_name": "Dragonbane"})
 
+    def test_an_adventure_on_a_system_that_doesnt_load_says_why_in_a_sentence(self):
+        broken = self.tmp / "games" / "systems" / "dragonbane"
+        broken.mkdir()
+        for text in ('format = 1\nextends = "dragonbane-rulebook"\n', "format = 1\nname = [half"):
+            with self.subTest(text=text):
+                (broken / "system.toml").write_text(text)
+                tusk = next(a for a in json.loads(self.solo("library")[1])["adventures"] if a["id"] == "red-tusk")
+                self.assertFalse(tusk["ready"])
+                self.assertTrue(tusk["why"].startswith("The system pack it plays on, dragonbane, doesn't load: "), tusk["why"])
+                self.assertTrue(tusk["why"].endswith(".") and not tusk["why"].endswith(".."), tusk["why"])
+
 
 class MissingRulesTextTest(unittest.TestCase):
     def test_a_game_that_says_how_its_rules_are_built_is_told_that_and_no_other_game_is_told_dragonbanes(self):

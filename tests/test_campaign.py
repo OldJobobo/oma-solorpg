@@ -1,4 +1,5 @@
 import errno
+import fcntl
 import io
 import json
 import os
@@ -63,6 +64,26 @@ class PushTest(CampaignTest):
                 c.push("scared")
             self.assertTrue(all(e["outcome"]["pushable"] for e in c.events if e["type"] == "check"))  # the log keeps the roll as it was
             self.assertEqual(c.state["last_check"], campaign.fold(c.system, c.adventure, c.events)["last_check"])
+
+    def test_so_does_a_rest_a_journey_a_torch_lit_or_a_fight_going_on(self):
+        with self.session() as c:
+            going_on = {"a rest, which stands its own roll to tend wounds too": lambda: c.rest("stretch", tend=True, rng=Dice(12, 3, 3)),
+                        "a torch lit": c.light, "a journey on a road": lambda: c.journey(10, road=True), "a fight begun": lambda: c.fight(["cultist"]),
+                        "a new round": c.next_round, "the fight's end": c.end_fight}
+            for what, story in going_on.items():
+                with self.subTest(what):
+                    c.check("sneaking", rng=Dice(12))
+                    story()
+                    self.assertFalse(c.state["last_check"]["outcome"]["pushable"])
+                    with self.assertRaisesRegex(SoloError, "that roll stands: the story went on after it"):
+                        c.push("scared")
+            self.assertEqual(c.state["pc"]["conditions"], [])
+
+    def test_a_roll_the_rules_dont_push_says_so(self):
+        with self.session() as c:
+            c.check("sneaking", rng=Dice(12), pushable=False)
+            with self.assertRaisesRegex(SoloError, "can't be pushed: the rules don't push this kind of roll"):
+                c.push("scared")
 
     def test_successes_and_demons_cannot_be_pushed(self):
         with self.session() as c:
@@ -455,6 +476,49 @@ class TornLogTest(CampaignTest):
             pass  # a command that only reads
         self.assertEqual(json.loads((self.root / "state.json").read_text())["seq"], seq)
 
+    def test_a_state_json_made_by_another_engine_or_other_packs_is_made_again_by_any_command(self):
+        with self.session() as c:
+            c.check("sneaking", rng=Dice(12))
+            c.commit({"note": "the guard sees her"})
+        path = self.root / "state.json"
+        old = json.loads(path.read_text())
+        old.pop("made_from", None)  # as an engine from before a commit let the roll stand wrote it: the Table offered the push
+        old["last_check"]["outcome"]["pushable"] = True
+        path.write_text(json.dumps(old, indent=1))
+        with self.session():
+            pass  # a command that only reads (solo state, solo log)
+        made = json.loads(path.read_text())
+        self.assertFalse(made["last_check"]["outcome"]["pushable"])
+        with unittest.mock.patch.object(campaign, "_replay_key", return_value=["the packs, edited"]), self.session():
+            pass
+        self.assertNotEqual(json.loads(path.read_text())["made_from"], made["made_from"])
+
+    def test_a_state_json_the_disk_refuses_fails_no_command_and_is_caught_up_later(self):
+        full = OSError(errno.ENOSPC, "No space left on device")
+        with unittest.mock.patch.object(campaign.Campaign, "save", side_effect=full), unittest.mock.patch("sys.stderr", new_callable=io.StringIO) as err:
+            with self.session() as c:
+                c.say("The road is long.")  # its event is written: running it again would write it twice
+                seq = c.state["seq"]
+            with self.session():
+                pass  # a command that only reads, with state.json behind (solo log, solo state)
+        self.assertEqual(err.getvalue().count("couldn't write"), 2)
+        self.assertIn("state.json (No space left on device): the log has everything", err.getvalue())
+        with self.session():
+            pass
+        self.assertEqual(json.loads((self.root / "state.json").read_text())["seq"], seq)
+
+    def test_solo_new_on_a_campaign_being_written_refuses_without_touching_its_log(self):
+        log = self.root / "events.jsonl"
+        with open(self.root / ".lock", "w") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)  # another command holds the campaign, half way through writing an event
+            with open(log, "a") as writing:
+                writing.write('{"seq": 99, "type": "said", "by": "gm", "te')
+            before = log.read_bytes()
+            with self.assertRaisesRegex(SoloError, "already holds a campaign"):
+                campaign.create(self.root, self.system, self.adventure, self.character)
+            self.assertEqual(log.read_bytes(), before)  # the half line is the writer's: it isn't set aside as torn
+            self.assertFalse((self.root / "events.jsonl.torn").exists())
+
     def test_a_campaign_whose_start_stopped_before_its_first_event_says_so_and_begins_again(self):
         root = self.tmp / "stopped"
         root.mkdir()
@@ -466,6 +530,17 @@ class TornLogTest(CampaignTest):
             self.assertEqual(c.events[0]["type"], "created")
         with self.assertRaisesRegex(SoloError, "already holds a campaign"):
             campaign.create(root, self.system, self.adventure, self.character)
+
+    def test_solo_new_never_writes_over_a_campaign_toml_it_didnt_write(self):
+        root = self.tmp / "notes"
+        root.mkdir()
+        for text in ('[world]\nname = "My homebrew notes"\nsessions = 14\n', "notes [half"):
+            with self.subTest(text=text):
+                (root / "campaign.toml").write_text(text)
+                with self.assertRaisesRegex(SoloError, "already holds a campaign"):
+                    campaign.create(root, self.system, self.adventure, self.character)
+                self.assertEqual((root / "campaign.toml").read_text(), text)
+        self.assertFalse((root / "events.jsonl").exists())
 
     def test_a_line_separator_in_a_message_stays_inside_its_event(self):
         # JSON keeps U+2028 and U+0085 as they are, and str.splitlines cuts at both: a pasted line read the whole log as damaged.
@@ -499,6 +574,7 @@ class ReplayTest(CampaignTest):
         with self.session() as c:
             self.assertEqual(c.events[-1]["type"], "check")  # a roll is never taken back
             rebuilt = campaign.snapshot(c.system, campaign.fold(c.system, c.adventure, c.events), c.adventure)
+        self.assertEqual(saved.pop("made_from"), c.made_from)  # beside the fold, what made it (see session)
         self.assertEqual(saved, json.loads(json.dumps(rebuilt)))
 
     def test_an_adventure_edited_since_still_opens_and_says_what_broke(self):
@@ -576,6 +652,7 @@ class FoldTest(CampaignTest):
         saved = json.loads((self.root / "state.json").read_text())
         with self.session() as c:
             rebuilt = campaign.snapshot(c.system, campaign.fold(c.system, c.adventure, c.events), c.adventure)
+        self.assertEqual(saved.pop("made_from"), c.made_from)  # beside the fold, what made it (see session)
         self.assertEqual(saved, json.loads(json.dumps(rebuilt)))
 
 

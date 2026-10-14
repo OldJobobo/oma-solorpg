@@ -113,7 +113,7 @@ def listing():
             rules[packs.slug(path.name)] = (system["name"], "")
         except SoloError as error:
             problems.append(f"system {path.name}: {error}")
-            rules[packs.slug(path.name)] = (None, f"The system pack it plays on, {path.name}, doesn't load: {error}")
+            rules[packs.slug(path.name)] = (None, f"The system pack it plays on, {path.name}, doesn't load: {str(error).rstrip('.')}.")
     adventures = []
     for path in _entries("adventure"):
         try:

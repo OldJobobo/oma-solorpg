@@ -262,6 +262,18 @@ class OpenRollTest(IronswornCampaignTest):
             c.move("road")
             self.stands(c)
 
+    def test_but_not_at_a_commit_a_move_or_a_move_made_that_is_refused(self):
+        with self.session() as c:
+            missed = self.missed(c)
+            refused = ((c.commit, {"pc": {"health": "lots"}}), (c.commit, {"mood": 1}), (c.move, "nowhere"), (c.act, "face_dangr"),
+                       (c.act, "face_danger", "edgy"), (c.act, "fulfill_your_vow"))
+            for command, *arguments in refused:
+                with self.subTest(arguments=arguments), self.assertRaises(SoloError):
+                    command(*arguments)
+            # Nothing written, the clock listening for a miss still waits, and the player can still burn.
+            self.assertEqual((len(c.events), c.state["open_roll"], c.state["clocks"]["doom"]["value"]), (missed["seq"], missed["seq"], 0))
+            self.assertEqual(c.burn()["outcome"]["hit"], "weak_hit")
+
     def test_a_roll_nothing_can_improve_is_final_at_once(self):
         with self.session() as c:
             missed = c.act("face_danger", stat="edge", rng=Dice(1, 9, 9))  # momentum 2: nothing to cancel
@@ -632,7 +644,8 @@ class MoveCommandTest(CliCase):
         self.act("commit", "{\"pc\": {\"momentum\": \"+4\"}}", dice=())
         _, report, _ = self.act("act", "face_danger", "--stat", "edge", dice=(1, 5, 5))
         self.assertIn("The challenge dice match: a twist", report["says"])
-        self.assertEqual(report["burn"], "solo burn (the player's choice): momentum 6 cancels the challenge dice under it, strong hit instead of miss, and goes back to 2")
+        self.assertEqual(report["burn"], "solo burn (the player's choice, until the next commit, move or move made: ask before any of them): "
+                                         "momentum 6 cancels the challenge dice under it, strong hit instead of miss, and goes back to 2")
         code, burned, _ = self.act("burn", dice=())
         self.assertEqual((code, burned["event"]["outcome"]["hit"]), (0, "strong_hit"))
         self.assertIn("On a **strong hit**", burned["says"])

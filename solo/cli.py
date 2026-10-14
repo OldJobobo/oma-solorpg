@@ -682,8 +682,9 @@ def _burn_option(c, event):
     """What burning momentum would do to the roll just made, if it would do anything."""
     burn = campaign.burn_option(c.state)
     if burn:
-        return (f"solo burn (the player's choice): momentum {burn['momentum']} cancels the challenge dice under it, "
-                f"{burn['hit'].replace('_', ' ')} instead of {event['outcome']['hit'].replace('_', ' ')}, and goes back to {burn['reset']}")
+        return (f"solo burn (the player's choice, until the next commit, move or move made: ask before any of them): momentum {burn['momentum']} "
+                f"cancels the challenge dice under it, {burn['hit'].replace('_', ' ')} instead of {event['outcome']['hit'].replace('_', ' ')}, "
+                f"and goes back to {burn['reset']}")
 
 
 def _threat_opening(c, event):
@@ -882,11 +883,12 @@ def cmd_move(args):
 
 
 def cmd_commit(args):
-    text = sys.stdin.read() if args.json == "-" else args.json
     try:
-        payload = json.loads(text)
-    except ValueError as error:  # a JSONDecodeError, or a number too long to read (over 4300 digits)
+        payload = json.loads(sys.stdin.read() if args.json == "-" else args.json)
+    except ValueError as error:  # a JSONDecodeError, a number too long to read (over 4300 digits), or stdin that isn't UTF-8
         raise SoloError(f"the commit isn't valid JSON: {error}") from None
+    except RecursionError:
+        raise SoloError("the commit isn't valid JSON here: it nests deeper than Python reads (a commit is an object a few levels deep)") from None
     with _open(args) as c:
         event = c.commit(payload, rng=_rng())
         _report(c, event, chronicle=None if event["changes"].get("chronicle") else _chronicle_nudge(c))
@@ -1728,6 +1730,11 @@ def _skills_line(state):
     return f"Skills: {', '.join(trained) or 'none trained'}" + (f"; untrained: {', '.join(other)}" if other else "")
 
 
+# How long a push is on offer, for the GM: the next commit or move (campaign._GOES_ON) lets the roll stand.
+_PUSH_UNTIL = ("the next commit or move (or rest, journey, torch lit or new round), which lets the roll stand: "
+               "ask the player, and end the turn on the question with nothing committed")
+
+
 def _push_options(c, event):
     if event["outcome"]["pushable"]:
         cost = c.system["push"].get("cost", "condition")
@@ -1737,9 +1744,9 @@ def _push_options(c, event):
             ability = c._ability("push")
             if ability:
                 options["or"] = f"{ability.get('name')}: pay {', '.join(f'{v} {t}' for t, v in ability['push'].items())} instead (solo push --sole-survivor)"
-            return options
+            return {**options, "until": _PUSH_UNTIL}
         else:
-            return {"cost": cost}
+            return {"cost": cost, "until": _PUSH_UNTIL}
     else:
         return None
 
