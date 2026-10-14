@@ -124,7 +124,12 @@ Item {
   readonly property var momentum: labels.momentum || null
   readonly property var progressSpec: labels.progress || null
   readonly property var lastCheck: game && game.last_check ? game.last_check : null
-  readonly property bool canPush: !dead && !dying && lastCheck !== null && lastCheck.type === "check" && lastCheck.outcome.pushable === true
+  // The push ability (Sole Survivor), when the hero has it: a push paid with willpower instead of a condition.
+  readonly property bool pushAbility: pc !== null && !!labels.push_ability && (pc.abilities || []).indexOf(labels.push_ability.name) >= 0
+  // A failed roll that can still be pushed, and something to pay for it: a condition not taken yet where that is the
+  // cost (the engine refuses a push with every one taken), or the push ability.
+  readonly property bool canPush: !dead && !dying && pc !== null && lastCheck !== null && lastCheck.type === "check" && lastCheck.outcome.pushable === true
+    && (labels.push !== "condition" || labels.conditions.some(c => pc.conditions.indexOf(c) === -1) || pushAbility)
   // Bindings update in no fixed order when state.json reloads, so pc is checked
   // here even though canPush already implies a game.
   readonly property var pushChoices: canPush && pc && labels.push === "condition"
@@ -2331,7 +2336,7 @@ Item {
               }
 
               Act {
-                visible: !!root.labels.push_ability && !!root.pc && (root.pc.abilities || []).indexOf(root.labels.push_ability.name) >= 0
+                visible: root.pushAbility
                 text: root.labels.push_ability ? root.labels.push_ability.name + " (" + root.labels.push_ability.cost + ")" : ""
                 tooltipText: "Push without a condition"
                 onClicked: root.act(["push", "--sole-survivor"], "roll")

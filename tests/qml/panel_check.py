@@ -347,6 +347,7 @@ def main(out):
     errors += errors_by_source(item, work, wait)
     errors += commands_wait_their_turn(item, panel, work, wait)
     errors += a_parry_and_what_waits(item, panel, work, wait)
+    errors += a_push_with_nothing_to_pay(item, panel, work, wait)
     errors += the_first_game(load, work, wait)
     errors += quiet_text_reads(engine, item, panel, out, wait)
     errors += by_keyboard(item, panel, wait)
@@ -989,6 +990,35 @@ def a_parry_and_what_waits(item, panel, work, wait):
         if c.state["combat"]:
             c.end_fight()
     wait(1000)
+    return problems
+
+
+def a_push_with_nothing_to_pay(item, panel, work, wait):
+    """A failed roll whose push costs a condition, when the hero has every condition already and no Sole Survivor to
+    pay with instead: the Table doesn't offer the push, rather than say "Push the roll:" over nothing."""
+    from helpers import DRAGONBANE, RAGNA, RED_TUSK, Dice
+    from solo import campaign
+    pointer = work / "state" / "solo" / "current"
+    kept = pointer.read_text()
+    game = work / "games" / "campaigns" / "spent"
+    campaign.create(game, DRAGONBANE, RED_TUSK, RAGNA)
+    with campaign.session(game) as c:
+        c.commit({"pc": {"conditions": {"add": list(c.system["conditions"])}}})
+        c.check("awareness", rng=Dice(18, 18, 18))
+    problems = []
+    try:
+        campaign.set_current(game)
+        item.open(json.dumps({"view": "table"}))
+        wait(1500)
+        if not item.property("lastCheck").toVariant()["outcome"]["pushable"]:
+            return ["the roll with every condition taken isn't a failure the rules push"]
+        offered = [text for text in ("Push the roll:", "Push the roll by taking a condition:") if labelled(panel.contentItem(), text) is not None]
+        if offered or empty_flows(panel.contentItem()):
+            problems.append(f"with every condition taken the Table still offers the push: {offered}, {len(empty_flows(panel.contentItem()))} empty rows")
+    finally:
+        pointer.write_text(kept)
+        item.open(json.dumps({"view": "table"}))
+        wait(1500)
     return problems
 
 
