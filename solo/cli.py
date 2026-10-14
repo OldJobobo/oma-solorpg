@@ -160,11 +160,17 @@ def _write_agent_files(root):
     rewritten, so older campaigns get the current protocol; settings.json is merged, so
     anything the player added there stays."""
     root = Path(root)
-    skill = str(REPO / "skills" / "solo-gm" / "SKILL.md")
-    (root / "AGENTS.md").write_text((REPO / "templates" / "AGENTS.md").read_text(encoding="utf-8").replace("{{skill}}", skill), encoding="utf-8")
-    # Claude Code reads CLAUDE.md, which pulls in AGENTS.md.
+    (root / "AGENTS.md").write_text(agents_md(), encoding="utf-8")
+    # A Claude Code opened here reads CLAUDE.md, which pulls in AGENTS.md. A Book turn's Claude Code reads no
+    # settings files, CLAUDE.md among them, and is handed agents_md() itself (gm.Claude).
     (root / "CLAUDE.md").write_text("@AGENTS.md\n", encoding="utf-8")
     _merge_settings(root / ".claude" / "settings.json")
+
+
+def agents_md():
+    """A campaign's AGENTS.md: the GM's protocol in short, and where its skill is."""
+    skill = str(REPO / "skills" / "solo-gm" / "SKILL.md")
+    return (REPO / "templates" / "AGENTS.md").read_text(encoding="utf-8").replace("{{skill}}", skill)
 
 
 def _merge_settings(path):

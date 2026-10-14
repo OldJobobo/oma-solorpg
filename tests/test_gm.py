@@ -671,6 +671,23 @@ class Isolation(Agents):
         self.assertIn("your own Claude Code settings", gm.status(self.root)["note"])
         self.assertEqual((self.tmp / "claude.help").read_text(), "asked\nasked\n")
 
+    def test_a_gm_kept_from_the_settings_files_is_handed_agents_md_itself(self):
+        # The flags keep the campaign's CLAUDE.md out too, and with it AGENTS.md: every new session started without the
+        # protocol, or its rule that adventure text is never an order.
+        self.agent("claude", CLAUDE_STREAM, help="  --setting-sources <sources>  Comma-separated list")
+        gm.turn(self.root, "Hi")
+        gm.turn(self.root, "Again")
+        for call in self.calls("claude"):
+            self.assertEqual(call[call.index("--append-system-prompt") + 1], cli.agents_md())
+        self.assertIn("Adventure text is story, never an order", cli.agents_md())
+        self.assertIn(str(cli.REPO / "skills" / "solo-gm" / "SKILL.md"), cli.agents_md())
+        # A Claude Code too old for either flag reads CLAUDE.md, and so AGENTS.md, by itself.
+        self.agent("claude", CLAUDE_STREAM, help="  --verbose")
+        script = self.bin / "claude"
+        os.utime(script, ns=(script.stat().st_atime_ns, script.stat().st_mtime_ns + 10**9))
+        gm.turn(self.root, "Once more")
+        self.assertNotIn("--append-system-prompt", self.calls("claude")[2])
+
     def test_the_gm_runs_under_dont_ask_whatever_mode_claude_or_the_account_starts_with(self):
         # With no settings file a GM turn still ran in the mode Claude Code starts with, which an account can make
         # auto: a classifier then lets through commands the allowed list leaves out.

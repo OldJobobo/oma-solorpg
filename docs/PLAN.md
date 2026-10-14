@@ -335,7 +335,8 @@ A campaign is a folder (by default `~/Games/solo/campaigns/<adventure>-<hero>/`)
 
 ```
 campaign.toml     system pack, adventure pack, title
-AGENTS.md         instructions the agent reads on launch (+ CLAUDE.md, .claude/settings.json)
+AGENTS.md         instructions the agent reads on launch (+ CLAUDE.md, .claude/settings.json; a Book turn's
+                  Claude Code reads none of these, and is given AGENTS.md as its system prompt instead)
 events.jsonl      append-only log, the source of truth: rolls, commits and the conversation
 state.json        derived; the panel watches it
 ```

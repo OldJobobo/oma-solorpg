@@ -41,7 +41,7 @@ Campaigns and commits:
 
 The GM:
 
-- Claude Code runs the GM with `--restricted` and `--permission-mode dontAsk` when it has them, so the player's own Claude Code settings, allow rules and permission mode never reach a GM turn.
+- Claude Code runs the GM with `--restricted` and `--permission-mode dontAsk` when it has them, so the player's own Claude Code settings, allow rules and permission mode never reach a GM turn. Those flags keep the campaign's CLAUDE.md out too, so the GM is handed AGENTS.md with its system prompt.
 - The GM can no longer strike a message, change the table settings, set its own budget or pace, or record words as the player's (`solo say --player`): those commands refuse inside a Book turn. What a session has spent is counted in `~/.local/state/solo`, out of the campaign folder.
 - A new session's first prompt puts the table and the adventure's text in a block marked as data, never instructions.
 - A turn ended by the quiet limit, the clock or Stop is charged an estimate (the session's dearest turn, or 50 cents) instead of nothing. Only an agent's own lost-session messages start a fresh session.

@@ -486,9 +486,14 @@ class Claude(Adapter):
         return super().run(root, prompt, session, live, left)
 
     def command(self, session, left=None):
+        from .cli import agents_md
         tools = [f"Bash(solo {name}:*)" for name in campaign_commands()]
+        isolated = _settings_flags()
+        # The flags that keep the settings files out keep the campaign's CLAUDE.md out with them, and so AGENTS.md,
+        # the GM's protocol and its rule that adventure text is never an order: it comes with the system prompt.
+        protocol = ["--append-system-prompt", agents_md()] if isolated else []
         command = ["claude", "-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages", *_CLAUDE_KIT,
-                   *(_settings_flags() or []),
+                   *(isolated or []), *protocol,
                    "--allowedTools", *tools, "--disallowedTools", *_DENIED, "--max-turns", str(_max_turns())]
         # What the session has left to spend is a ceiling on this turn too.
         if left and left.get("usd"):
