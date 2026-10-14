@@ -64,6 +64,26 @@ class PushTest(CampaignTest):
             self.assertTrue(all(e["outcome"]["pushable"] for e in c.events if e["type"] == "check"))  # the log keeps the roll as it was
             self.assertEqual(c.state["last_check"], campaign.fold(c.system, c.adventure, c.events)["last_check"])
 
+    def test_so_does_a_rest_a_journey_a_torch_lit_or_a_fight_going_on(self):
+        with self.session() as c:
+            going_on = {"a rest, which stands its own roll to tend wounds too": lambda: c.rest("stretch", tend=True, rng=Dice(12, 3, 3)),
+                        "a torch lit": c.light, "a journey on a road": lambda: c.journey(10, road=True), "a fight begun": lambda: c.fight(["cultist"]),
+                        "a new round": c.next_round, "the fight's end": c.end_fight}
+            for what, story in going_on.items():
+                with self.subTest(what):
+                    c.check("sneaking", rng=Dice(12))
+                    story()
+                    self.assertFalse(c.state["last_check"]["outcome"]["pushable"])
+                    with self.assertRaisesRegex(SoloError, "that roll stands: the story went on after it"):
+                        c.push("scared")
+            self.assertEqual(c.state["pc"]["conditions"], [])
+
+    def test_a_roll_the_rules_dont_push_says_so(self):
+        with self.session() as c:
+            c.check("sneaking", rng=Dice(12), pushable=False)
+            with self.assertRaisesRegex(SoloError, "can't be pushed: the rules don't push this kind of roll"):
+                c.push("scared")
+
     def test_successes_and_demons_cannot_be_pushed(self):
         with self.session() as c:
             c.check("swords", rng=Dice(3))

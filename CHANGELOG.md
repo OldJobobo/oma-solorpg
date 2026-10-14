@@ -32,7 +32,7 @@ Campaigns and commits:
 - `state.json` always matches the log: any command, read-only ones included, brings it up to date after a crash, and a map, codex or art the packs can't supply leaves it without them and says why on stderr.
 - Every event is on the disk (fsync) before the command goes on. A write that fails is taken back and the command stops with a sentence. A campaign whose start stopped before its first event, and a damaged line in the middle of the log, say what happened and what to do.
 - A clock filled by a commit or a clock stage sets off the clocks that listen to it.
-- A failed check can be pushed, and momentum burned on a roll, only while the roll is still open: once a commit or a move follows it, it stands (one refused leaves it open), and the Table stops offering both.
+- A failed check can be pushed, and momentum burned on a roll, only while the roll is still open: once a commit or a move follows it, it stands (one refused leaves it open), and the Table stops offering both. A check stands after a rest, a journey, a torch lit, or a fight begun, gone on a round or ended, too, so a tended wound or a missed blow can't be pushed once it can no longer change anything; a roll the rules don't push says so instead of calling it a success.
 - Removing what the hero lacks warns about the right list. A second foe of a kind never takes another person's id. `solo log -n 0` shows nothing, and `solo log | head` ends quietly.
 - `SOLO_SEED` gave every command the same roll; a seeded run now repeats roll for roll and its rolls differ.
 - Files in a pack that link outside it (rules pages, tables, people, chapters and the rest) are no longer read, and `solo validate` lists them.

@@ -73,6 +73,9 @@ _STORY_SIZE = 150
 # those events are the same bytes (their crc32) and the packs and the engine are the ones it was made from,
 # and it is kept again once the log has grown this many events past it.
 _KEEP_EVERY = 50
+# What the story going on is, after a roll: a commit, a move, time passing in a rest or on the road, a torch lit,
+# a fight begun, gone on a round or ended. The roll before it stands as it fell, and can't be pushed any more.
+_GOES_ON = ("commit", "move", "rest", "journey", "light", "fight", "round", "fight_end")
 # The campaigns open in this process, the innermost last (see session): a command's dice fixed by
 # SOLO_SEED are seeded by the event it writes first (next_seq).
 _OPEN = []
@@ -415,10 +418,10 @@ class Campaign:
         return event
 
     def push(self, condition=None, rng=None, sole_survivor=False):
-        """Push the last check once, while it is still the result the story waits on: a commit or a
-        move after it and it stands as it fell. The cost comes from the system pack: a condition the
-        character doesn't have yet (Dragonbane) or a track increase (stress in Alien). A hero
-        with Sole Survivor may pay willpower instead of a condition."""
+        """Push the last check once, while it is still the result the story waits on: a commit, a move,
+        a rest or anything else _GOES_ON names after it, and it stands as it fell. The cost comes from
+        the system pack: a condition the character doesn't have yet (Dragonbane) or a track increase
+        (stress in Alien). A hero with Sole Survivor may pay willpower instead of a condition."""
         if self.system["family"] == "action-roll":
             raise SoloError("a roll can't be pushed here: after an action roll, momentum can be burned (solo burn)")
         self._able("push a roll")
@@ -440,9 +443,12 @@ class Campaign:
         elif last["type"] == "push":
             raise SoloError("that roll was already pushed")
         elif last.get("stood"):
-            raise SoloError("that roll stands: the story went on after it (a commit or a move), so it can't be pushed any more")
+            raise SoloError("that roll stands: the story went on after it (a commit, a move, a rest, a journey, a torch lit, "
+                            "or a fight begun, gone on a round or ended), so it can't be pushed any more")
         elif not last["outcome"]["pushable"]:
-            raise SoloError("that roll can't be pushed: it succeeded or it was a Demon")
+            why = ("it succeeded" if last["outcome"].get("success") else "it was a Demon" if last["outcome"].get("demon")
+                   else "the rules don't push this kind of roll")
+            raise SoloError(f"that roll can't be pushed: {why}")
         elif cost == "condition" and not available:
             raise SoloError("every condition is already taken, so the roll can't be pushed")
         elif cost == "condition" and slug(condition or "") not in available:
@@ -3461,7 +3467,7 @@ def apply(state, event, adventure):
         state["clocks"][event["clock"]]["stopped"] = True
     elif kind == "due" and event["consequence"] in state["consequences"]:
         state["consequences"][event["consequence"]]["due"] = True
-    if kind in ("commit", "move") and (state["last_check"] or {}).get("outcome", {}).get("pushable"):
+    if kind in _GOES_ON and (state["last_check"] or {}).get("outcome", {}).get("pushable"):
         # The story went on: the roll stands as it fell, and its push is no longer on offer (the panel reads pushable).
         last = state["last_check"]
         state["last_check"] = {**last, "outcome": {**last["outcome"], "pushable": False}, "stood": True}
