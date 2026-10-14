@@ -41,6 +41,18 @@ def install_rules(home):
     (systems / "dragonbane").symlink_to(DRAGONBANE, target_is_directory=True)
 
 
+def leave_the_shell_out(test):
+    """Run the test without what a player or developer may have exported: a seed changes every roll and
+    what each event records, SOLO_TRACE gets the test's commands appended, the SOLO_GM_* limits change a
+    turn's, and CLAUDECODE or SOLO_BOOK would make it a Book turn. Each comes back after the test."""
+    patch = unittest.mock.patch.dict(os.environ)
+    patch.start()
+    test.addCleanup(patch.stop)
+    for name in list(os.environ):
+        if name in ("SOLO_SEED", "SOLO_TRACE", "SOLO_BOOK", "CLAUDECODE") or name.startswith("SOLO_GM_"):
+            del os.environ[name]
+
+
 class Dice:
     """Stands in for random.Random and returns the given faces in order."""
 
@@ -62,6 +74,7 @@ class CampaignTest(unittest.TestCase):
         folder = tempfile.TemporaryDirectory()
         self.addCleanup(folder.cleanup)
         self.tmp = Path(folder.name)
+        leave_the_shell_out(self)
         patch = unittest.mock.patch.dict(os.environ, {"XDG_STATE_HOME": str(self.tmp / "state")})
         patch.start()
         self.addCleanup(patch.stop)

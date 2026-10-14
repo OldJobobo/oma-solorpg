@@ -13,7 +13,7 @@ import unittest
 import unittest.mock
 from pathlib import Path
 
-from helpers import DRAGONBANE, RAGNA, FIXTURES, CampaignTest, install_rules
+from helpers import DRAGONBANE, RAGNA, FIXTURES, CampaignTest, install_rules, leave_the_shell_out
 
 from solo import SoloError, campaign, cli, generate, library, packs
 
@@ -44,6 +44,7 @@ class Folder(unittest.TestCase):
         folder = tempfile.TemporaryDirectory()
         self.addCleanup(folder.cleanup)
         self.tmp = Path(folder.name)
+        leave_the_shell_out(self)
 
 
 class Rolled(Folder):

@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from helpers import ROOT, install_rules
+from helpers import ROOT, install_rules, leave_the_shell_out
 
 
 @unittest.skipUnless(shutil.which("make"), "needs make")
@@ -19,6 +19,7 @@ class MakefileTest(unittest.TestCase):
         folder = tempfile.TemporaryDirectory()
         self.addCleanup(folder.cleanup)
         self.tmp = Path(folder.name)
+        leave_the_shell_out(self)
         self.env = {**os.environ, "HOME": str(self.tmp / "home"), "SOLO_HOME": str(self.tmp / "games"),
                     "XDG_STATE_HOME": str(self.tmp / "state"), "XDG_CONFIG_HOME": str(self.tmp / "config"),
                     "XDG_CACHE_HOME": str(self.tmp / "cache")}

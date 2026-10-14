@@ -9,7 +9,7 @@ import unittest.mock
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
-from helpers import BUNDLED, Dice, DRAGONBANE, RAGNA, RED_TUSK, ROOT, install_rules
+from helpers import BUNDLED, CampaignTest, Dice, DRAGONBANE, RAGNA, RED_TUSK, ROOT, install_rules, leave_the_shell_out
 
 from solo import campaign, cli
 
@@ -21,6 +21,8 @@ class CliCase(unittest.TestCase):
         folder = tempfile.TemporaryDirectory()
         self.addCleanup(folder.cleanup)
         self.tmp = Path(folder.name)
+        # Run as a player at a terminal, with none of the developer's settings, even inside Claude Code or a Book turn.
+        leave_the_shell_out(self)
         env = {
             "XDG_STATE_HOME": str(self.tmp / "state"), "HOME": str(self.tmp / "home"),
             "SOLO_HOME": str(self.tmp / "games"), "SOLO_SEED": "5",
@@ -30,9 +32,6 @@ class CliCase(unittest.TestCase):
         patch = unittest.mock.patch.dict(os.environ, env)
         patch.start()
         self.addCleanup(patch.stop)
-        # Run as a player at a terminal, even when the tests run inside Claude Code or a Book turn.
-        for name in ("CLAUDECODE", "SOLO_BOOK"):
-            os.environ.pop(name, None)
         self.game = str(self.tmp / "game")
         install_rules(self.tmp / "games")
 
@@ -45,6 +44,21 @@ class CliCase(unittest.TestCase):
     def new_game(self):
         code, _, err = self.solo("new", str(RED_TUSK), "--dir", self.game, "--character", str(RAGNA))
         self.assertEqual(code, 0, err)
+
+
+class ShellTest(unittest.TestCase):
+    def test_a_seed_a_trace_or_gm_limits_the_developer_exported_reach_no_test(self):
+        exported = {"SOLO_SEED": "7", "SOLO_TRACE": os.devnull, "SOLO_GM_BUDGET_USD": "3", "SOLO_GM_EFFORT": "high"}
+        with unittest.mock.patch.dict(os.environ, exported):
+            for case in (CampaignTest, CliCase):
+                test = case("setUp")
+                test.setUp()
+                try:
+                    seen = {name: os.environ.get(name) for name in exported}
+                finally:
+                    test.doCleanups()
+                self.assertEqual({name: value for name, value in seen.items() if value == exported[name]}, {}, case.__name__)
+            self.assertEqual({name: os.environ.get(name) for name in exported}, exported)  # and the shell gets them back
 
 
 class CliTest(CliCase):
