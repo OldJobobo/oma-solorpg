@@ -111,13 +111,15 @@ _DOING = {
 def default_agent():
     """The player's coding agent, by the rule bin/ask-agent follows too: $AGENT, else the one Omarchy
     launches (`omarchy default agent`), else claude if it is on PATH, else codex if it is, else none ("")."""
-    chosen = os.environ.get("AGENT", "").strip()
-    if chosen:
-        return chosen
+    return os.environ.get("AGENT", "").strip() or omarchy_agent() or next((name for name in ("claude", "codex") if shutil.which(name)), "")
+
+
+def omarchy_agent():
+    """The agent Omarchy launches (`omarchy default agent`, which omarchy-agent opens), or "" when none is set."""
     try:
         return (Path.home() / ".config/omarchy/defaults/agent").read_text(encoding="utf-8").split()[0]
     except (OSError, IndexError):
-        return next((name for name in ("claude", "codex") if shutil.which(name)), "")
+        return ""
 
 
 def why_not(agent):

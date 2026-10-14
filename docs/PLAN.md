@@ -268,7 +268,7 @@ A rest is a `rest` event whose changes go through the commit validator, so track
 
 ### Opening the GM
 
-`solo play` links `solo` and the skills if they are missing (the same idempotent links as `solo setup`, so a plugin installed with `omarchy plugin add` works on first click). If a GM is already running for the campaign, it focuses that window. Otherwise it refreshes the campaign's agent files (AGENTS.md and CLAUDE.md are rewritten, `.claude/settings.json` is merged) and launches the default agent in the campaign folder with one fixed prompt: run `solo resume` and do what it says. The launched process carries `SOLO_GM=<campaign>`, and the engine finds that process's window through Hyprland. With no `omarchy-agent`, it says how to start one by hand.
+`solo play` links `solo` and the skills if they are missing (the same idempotent links as `solo setup`, so a plugin installed with `omarchy plugin add` works on first click). If a GM is already running for the campaign, it focuses that window. Otherwise it refreshes the campaign's agent files (AGENTS.md and CLAUDE.md are rewritten, `.claude/settings.json` is merged) and launches Omarchy's default agent (`omarchy-agent`) in the campaign folder with one fixed prompt: run `solo resume` and do what it says. The launched process carries `SOLO_GM=<campaign>`, and the engine finds that process's window through Hyprland. With no `omarchy-agent`, it says how to start one by hand. `omarchy-agent` opens only Omarchy's default, so when `AGENT` names another agent, `solo play` opens that one itself, as `bin/ask-agent` does: Claude Code or Codex in the terminal it was run from, and otherwise (from the Table, or another agent) it says how, with the prompt to give it.
 
 ## Turn protocol
 
