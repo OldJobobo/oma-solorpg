@@ -49,7 +49,7 @@ The GM:
 - GM narration that says "commit", "the player", "narrated" or "your first solo journey" no longer disappears from the Book. Commands Claude Code's permissions refused show in `solo report`, `solo review` and play tests.
 - The Book and the make targets pick the agent the same way (`AGENT`, then Omarchy's default, read past blank lines, then claude, then codex), and `solo gm agent` says why when there is none or it can't run, in the words `solo setup` uses too, naming `AGENT` when that chose it. `SOLO_AGENT` is now `AGENT`.
 - A desktop border that couldn't be restored no longer stays red after later effects, and a screen shader that couldn't be restored is put back by the next restore instead of lost for good; an omen's words can't be read as notify-send options. `SOLO_GM_*` limits ignore zero, negative and non-numeric values.
-- `tests/gm_eval/compare.py` compares scenario by scenario with a permutation test corrected for the number of metrics, and says the runs are too few only when they are; play tests record the model the GM ran on and keep their report when the judge can't start.
+- `tests/gm_eval/compare.py` compares scenario by scenario with a permutation test corrected for the number of metrics, and says the runs are too few only when they are; play tests record the model they asked for and, apart from it, the one the GM ran on, and keep their report when the judge can't start.
 
 The Table and the Book:
 

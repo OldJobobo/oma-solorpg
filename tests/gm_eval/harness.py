@@ -324,7 +324,10 @@ def summarize(scenario, c, turns, reached):
     state = c.state
     return {
         "scenario": scenario["name"], "adventure": scenario["adventure"], "at": datetime.now().isoformat(timespec="seconds"),
-        "model": ", ".join(sorted({t["model"] for t in turns if t.get("model")})) or os.environ.get("SOLO_GM_MODEL") or "default", "effort": gm.effort(),
+        # The model the run asked for, which compare.py --model finds runs by, and the one the agent named starting its
+        # turns: Claude Code resolves "sonnet", or no --model at all, to a full name that changes with its default.
+        "model": os.environ.get("SOLO_GM_MODEL", "").strip() or "default",
+        "resolved_model": ", ".join(sorted({t["model"] for t in turns if t.get("model")})), "effort": gm.effort(),
         "turns": turns,
         "totals": {
             "turns": len(turns), "seconds": round(sum(t["seconds"] for t in turns), 1),
@@ -434,7 +437,9 @@ def write(out, report):
 def markdown(report):
     totals = report["totals"]
     lines = [f"# {report['scenario']} ({report['adventure']})", "",
-             f"{totals['turns']} turns in {totals['seconds']} s, GM model {report['model']} at {report['effort']} effort. "
+             f"{totals['turns']} turns in {totals['seconds']} s, GM model {report['model']}"
+             + (f" ({report['resolved_model']})" if report.get("resolved_model") not in ("", None, report["model"]) else "")
+             + f" at {report['effort']} effort. "
              f"{totals['commands']} solo commands, {totals['refused']} refused"
              + (f", {totals['model_calls']} model calls" if totals.get("model_calls") is not None else "")
              + (f", ${totals['cost_usd']:.2f}" if totals.get("cost_usd") is not None else "") + f". Ended in {report['final']['scene']} "

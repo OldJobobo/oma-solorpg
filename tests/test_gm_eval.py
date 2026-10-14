@@ -137,9 +137,31 @@ class Run(CampaignTest):
                 unittest.mock.patch.object(harness, "judge_run", judge):
             os.environ.pop("SOLO_GM_MODEL", None)
             report = harness.run(scenario, self.tmp / "run", log=lambda *_: None)
-        self.assertEqual(report["model"], "stand-in-model-1")  # not "default": what the stream's init event named
+        # The model the run asked for (none: "default"), and apart from it what the stream's init event named.
+        self.assertEqual((report["model"], report["resolved_model"]), ("default", "stand-in-model-1"))
+        self.assertIn("GM model default (stand-in-model-1)", (self.tmp / "run" / "report.md").read_text())
         self.assertIn("Argument list too long", report["judge"]["error"])
         self.assertIn("The judge failed", (self.tmp / "run" / "report.md").read_text())
+
+    def test_runs_are_found_by_the_model_they_asked_for_or_the_one_the_agent_named(self):
+        # results.tsv kept only the name Claude Code resolved ("claude-sonnet-5-5" for --model sonnet), so
+        # `compare.py --model sonnet` found no runs, and none past the checked-in "default" rows matched --model default.
+        import run
+        report = {"at": "2026-10-14T09:00:00", "scenario": "s", "agent": "claude", "model": "sonnet", "resolved_model": "claude-sonnet-5-5",
+                  "effort": "medium", "seed": 1, "run": 1, "totals": {"turns": 2, "median_seconds": 20, "commands": 4, "refused": 0},
+                  "expect": []}
+        results = self.tmp / "results.tsv"
+        results.write_text((harness.SCENARIOS.parent / "results.tsv").read_text(encoding="utf-8").splitlines()[0] + "\n")
+        with unittest.mock.patch.object(run, "RESULTS", results):
+            run.record(report)
+            run.record({**report, "model": "default"})
+        rows = compare.load(results)
+        self.assertEqual([(r["model"], r["resolved_model"]) for r in rows], [("sonnet", "claude-sonnet-5-5"), ("default", "claude-sonnet-5-5")])
+        for model, found in (("sonnet", 1), ("claude-sonnet-5-5", 2), ("default", 1), ("opus", 0)):
+            with self.subTest(model):
+                self.assertEqual(len(compare.runs(rows, "", model=model, dirty=True)), found)
+        # A row from before the column, as the checked-in ones are, is still found by the model it asked for.
+        self.assertEqual(len(compare.runs([{"commit": "65d2734", "scenario": "s", "model": "default", "effort": "medium"}], "65d", model="default")), 1)
 
     def test_the_judges_prompt_goes_in_on_stdin(self):
         # The judge reads the whole transcript: as an argument it could pass the 128 KiB Linux holds one to.

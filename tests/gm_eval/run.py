@@ -18,7 +18,7 @@ import harness  # noqa: E402
 
 RESULTS = Path(__file__).resolve().parent / "results.tsv"
 COLUMNS = ("at", "scenario", "commit", "agent", "model", "effort", "seed", "run", "turns", "median_s", "commands_per_turn", "model_calls_per_turn",
-           "refused", "cost_usd", *harness.SCORES, "expectations")
+           "refused", "cost_usd", *harness.SCORES, "expectations", "resolved_model")
 
 
 def main():
@@ -68,6 +68,7 @@ def record(report):
         "cost_usd": "" if totals.get("cost_usd") is None else f"{totals['cost_usd']:.2f}",
         **{key: "" if scores.get(key) is None else scores[key] for key in harness.SCORES},
         "expectations": f"{sum(e['ok'] for e in report['expect'])}/{len(report['expect'])}",
+        "resolved_model": report.get("resolved_model", ""),
     }
     new = not RESULTS.exists()
     with open(RESULTS, "a", encoding="utf-8") as results:

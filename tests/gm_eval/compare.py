@@ -53,9 +53,11 @@ def number(row, column):
 
 def runs(rows, commit, scenario=None, model=None, effort=None, dirty=False):
     """The rows of one commit (a prefix of it is enough), optionally of one scenario, model and effort.
+    The model is the one a run asked for ("sonnet", "default") or the one the agent named ("claude-sonnet-5-5").
     A "-dirty" commit's rows only with `dirty`."""
     return [r for r in rows if r["commit"].startswith(commit) and (dirty or not r["commit"].endswith("-dirty"))
-            and (not scenario or r["scenario"] == scenario) and (not model or r["model"] == model) and (not effort or r["effort"] == effort)]
+            and (not scenario or r["scenario"] == scenario) and (not effort or r["effort"] == effort)
+            and (not model or r["model"] == model or model in (r.get("resolved_model") or "").split(", "))]
 
 
 def permutation_p(groups, seed=SEED):
