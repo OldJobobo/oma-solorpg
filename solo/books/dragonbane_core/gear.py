@@ -10,6 +10,7 @@ import re
 
 from ... import packs
 from .. import grid
+from ..read import changed
 
 # The skill a weapon uses, by the words in its name, first match wins. The book says in each
 # skill's entry which weapons it covers, and gives a shield and a halberd none: a shield parries
@@ -42,10 +43,10 @@ def build(pack):
         for row in rows:
             cells = grid.Cells(section, header, row)
             name = row["cells"][0]
-            weapon = "grip" in columns and _grip(cells["grip"]) is not None
             if name == "Unarmed":
                 pack.facts["unarmed"] = {"damage": _dice(cells["damage"])}
                 continue
+            weapon = "grip" in columns and _grip(cells) is not None
             item_id = _id(_adjective_first(name) if weapon else _armor_name(name) if worn else re.sub(r"\s*\([^)]*\)", "", name))
             entry = _entry(name, title.capitalize(), cells, row["page"])
             if weapon:
@@ -121,7 +122,7 @@ def _weapon(name, cells, skills):
     spec = {"skill": skill, "damage": _dice(cells["damage"])}
     if "no damage bonus" not in cells["features"].lower() and skills.get(skill):
         spec["bonus"] = skills[skill]
-    spec["grip"] = _grip(cells["grip"])
+    spec["grip"] = _grip(cells)
     if cells["str"] != "—":
         spec["str"] = cells.number("str")
     spec["range"] = _range(cells["range"])
@@ -136,10 +137,17 @@ def _weapon(name, cells, skills):
     return spec
 
 
-def _grip(text):
-    """How many hands a weapon takes, from its grip cell; None for a cell that gives no grip."""
-    found = _GRIP.match(text.strip())
-    return None if found is None else 1 if found.group(1).lower() in ("1", "one") else 2
+def _grip(cells):
+    """How many hands a weapon takes, from a row's grip cell; None for a row that prints no grip ("—"), which is gear. A cell that holds
+    something else ("1H/2H", or a grip and the STR beside it run together) is an error that says which table of which book: read as gear,
+    the weapon would be gone from [weapons] without a word."""
+    text = cells["grip"].strip()
+    if text in ("—", "-", ""):
+        return None
+    found = _GRIP.match(text)
+    if found is None:
+        raise changed(cells.section, f"the table on p. {cells.page} has {text!r} in its GRIP column, where the importer reads how many hands a weapon takes")
+    return 1 if found.group(1).lower() in ("1", "one") else 2
 
 
 def _dice(text):

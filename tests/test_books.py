@@ -2,6 +2,7 @@
 on a made-up book that has the bookmarks of the real one and none of its words or numbers."""
 
 import os
+import re
 import tempfile
 import tomllib
 import types
@@ -401,6 +402,15 @@ class ChangedGearTableTest(unittest.TestCase):
         for grip, hands in (("1-handed", 1), ("Two-handed", 2), ("2 H", 2)):
             pack = self.build(names, ["Sword, Long", grip, "9", "2", "2D6", "14", "11 gold", "Common", "Slashing"])
             self.assertEqual(pack.system["weapons"]["long_sword"]["grip"], hands, grip)
+
+    def test_a_grip_the_importer_cant_read_is_named_and_a_row_that_prints_none_is_gear(self):
+        names = ["WEAPON", "GRIP", "STR", "RANGE", "DAMAGE", "DURABILITY", "COST", "SUPPLY", "FEATURES"]
+        for grip, strength in (("2H*", "9"), ("1H/2H", "9"), ("1–2H", "9"), ("1H 9", "")):
+            with self.assertRaisesRegex(SoloError, rf"Test Book.pdf, 'Table: Melee Weapons' \(p. 3\): the table on p. 3 has '{re.escape(grip)}' in its GRIP column, "
+                                                   r"where the importer reads how many hands a weapon takes"):
+                self.build(names, ["Sword, Long", grip, strength, "2", "2D6", "14", "11 gold", "Common", "Slashing"])
+        pack = self.build(names, ["Lantern Pole", "—", "—", "2", "D4", "—", "1 gold", "Common", "—"])
+        self.assertEqual((pack.system["weapons"], list(pack.gear["gear"])), ({}, ["lantern_pole"]))
 
 
 class ChangedCellTest(unittest.TestCase):
