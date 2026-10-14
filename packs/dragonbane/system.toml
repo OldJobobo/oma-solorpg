@@ -17,6 +17,8 @@ family = "d20-under"
 # What a campaign can't start without. Each is a key the pack built from your book must
 # hold (a dotted key reads into it: creation.choose is creation.toml's [choose] tables).
 needs = ["time", "push", "rest", "dying", "advancement", "combat", "weapons", "armor", "untrained", "creation.choose"]
+# How the player builds those rules from their own books, for the sentence that says they are missing.
+build = "make dragonbane BOOKS=<folder of your PDFs>"
 
 [attributes]
 str = "Strength"

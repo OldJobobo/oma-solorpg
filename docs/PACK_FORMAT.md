@@ -34,6 +34,7 @@ A pack can be laid over another: `extends = "dragonbane"` in `system.toml` (a fo
 | `credit` | A line every generated rules page of the pack ends with: the attribution a licensed pack owes (`packs/ironsworn` says its Creative Commons credit here) |
 | `extends` | The pack this one is laid over (above) |
 | `needs` | Keys a campaign can't start without (a dotted key reads into a section: `creation.choose`). The bundled Dragonbane lists what the player's book must supply; `solo validate` and `solo new` name what's missing |
+| `build` | How the player builds what `needs` lists from their own books, a command, for the sentence that says it's missing (the bundled Dragonbane: `make dragonbane BOOKS=<folder of your PDFs>`). Without it, the sentence says a pack built from the player's book has to supply them |
 | `untrained` | d20-under: base chance by attribute, `[[top, chance], ...]` |
 | `success`, `[pool]`, `[extra_dice.<id>]`, `[triggers.<id>]` | d6-pool: success face, dice groups, extra dice (stress) with `on_one`, trigger tables (panic) |
 | `[attributes]` | `id = "Label"` |

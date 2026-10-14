@@ -396,8 +396,11 @@ def missing(system):
 
 
 def missing_text(system, gaps):
-    return (f"{system['name']} has only its names so far. Its rules come from your own book: "
-            f"build them with `make dragonbane BOOKS=<folder of your PDFs>` (see the README). Missing: {', '.join(gaps)}")
+    """Why a system with gaps under `needs` can't be played yet. The pack's own `build` says how its rules are
+    made from the player's books; a pack that doesn't say gets no other game's command."""
+    how = (f"build them with `{system['build']}` (see the README)" if isinstance(system.get("build"), str) and system["build"].strip()
+           else "a pack built from your book has to supply them")
+    return f"{system['name']} has only its names so far. Its rules come from your own book: {how}. Missing: {', '.join(gaps)}"
 
 
 def declared_formats(system=None, adventure=None):

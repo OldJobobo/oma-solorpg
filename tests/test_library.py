@@ -2,6 +2,7 @@
 begin yet and why, and solo new says the rules come first, before it tries to make a hero."""
 
 import json
+import unittest
 
 from helpers import RAGNA, RED_TUSK, install_rules
 from test_cli import CliCase
@@ -46,3 +47,14 @@ class RulesNotBuiltTest(CliCase):
         install_rules(self.tmp / "games")
         tusk = next(a for a in json.loads(self.solo("library")[1])["adventures"] if a["id"] == "red-tusk")
         self.assertEqual({key: tusk[key] for key in ("ready", "why", "system_name")}, {"ready": True, "why": "", "system_name": "Dragonbane"})
+
+
+class MissingRulesTextTest(unittest.TestCase):
+    def test_a_game_that_says_how_its_rules_are_built_is_told_that_and_no_other_game_is_told_dragonbanes(self):
+        from solo import packs
+        dragonbane = {"name": "Dragonbane", "build": "make dragonbane BOOKS=<folder of your PDFs>"}
+        self.assertIn("build them with `make dragonbane BOOKS=<folder of your PDFs>`", packs.missing_text(dragonbane, ["combat"]))
+        other = packs.missing_text({"name": "Lanterns"}, ["combat", "weapons"])
+        self.assertNotIn("dragonbane", other.lower())
+        self.assertEqual(other, "Lanterns has only its names so far. Its rules come from your own book: "
+                                "a pack built from your book has to supply them. Missing: combat, weapons")
