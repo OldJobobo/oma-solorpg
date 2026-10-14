@@ -57,25 +57,29 @@ def _numbers(chapter, scale):
 def _ratings(book, section, top):
     """({kin: movement}, {rating: how an attribute changes it}): the movement table gives each kin's and a step for each range of
     AGL (what isn't there changes nothing), the damage bonus table a die for each range of STR and AGL."""
-    _, rows = grid.read(section.find("Movement", "Table: Movement").lines(own=True), book.glue)
+    movement = section.find("Movement", "Table: Movement")
+    header, rows = grid.read(movement.lines(own=True), book.glue)
     kin, steps, attribute = {}, [], None
-    for cells in (row["cells"] for row in rows):
+    for row in rows:
+        cells, value = row["cells"], grid.number(movement, row["page"], row["cells"][1], header[1])
         found = re.match(r"([A-Z]{3}) (\d+)\s*[–-]\s*(\d+)$", cells[0])
         if found:
             attribute = found.group(1).lower()
-            steps.append((int(found.group(2)), int(found.group(3)), int(re.sub(r"[–−]", "-", cells[1]))))
+            steps.append((int(found.group(2)), int(found.group(3)), value))
         else:
-            kin[packs.slug(cells[0])] = int(cells[1])
+            kin[packs.slug(cells[0])] = value
     table, last = [], 0
     for low, high, change in steps:
         table += [[low - 1, 0]] if low > last + 1 else []
         table.append([high, change])
         last = high
     ratings = {"movement": {"label": "Movement", "attribute": attribute, "table": table}}
-    header, rows = grid.read(section.find("Damage Bonus", "Table: Damage Bonus").lines(own=True), book.glue)
+    damage = section.find("Damage Bonus", "Table: Damage Bonus")
+    header, rows = grid.read(damage.lines(own=True), book.glue)
     bonus = []
-    for cells in (row["cells"] for row in rows):
-        bonus.append([top if cells[0].endswith("+") else int(re.split(r"[–-]", cells[0].lstrip("≤"))[-1]), "none" if cells[1] in ("—", "") else cells[1]])
+    for row in rows:
+        cells = row["cells"]
+        bonus.append([grid.top(damage, row["page"], cells[0], header[0], top), "none" if cells[1] in ("—", "") else cells[1]])
     for attribute in (part.strip() for part in header[0].split("/")):
         ratings[f"damage_bonus_{attribute.lower()}"] = {"label": f"Damage bonus ({attribute})", "attribute": attribute.lower(), "table": bonus}
     return kin, ratings

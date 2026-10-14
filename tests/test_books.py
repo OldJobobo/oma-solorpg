@@ -403,6 +403,54 @@ class ChangedGearTableTest(unittest.TestCase):
             self.assertEqual(pack.system["weapons"]["long_sword"]["grip"], hands, grip)
 
 
+class ChangedCellTest(unittest.TestCase):
+    """A cell the core rules read as a number or a range that holds more ("3*", "17 or more"): named with its table and page, like any
+    other change of layout, not a ValueError that stops the import of every book after it."""
+
+    def book(self, movement, bonus):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        made = FakeBook(Path(folder.name) / "extract")
+        made.section(1, 80, 1, "Derived Ratings", "Ratings follow from the attributes.")
+        made.line(1, 140, "MOVEMENT", style=HEADING)
+        made.mark(2, "Movement")
+        made.banner(1, 160, 3, "Table: Movement")
+        made.table(1, 180, ["KIN", "MOVEMENT"], movement, [128, 200])
+        made.line(1, 300, "DAMAGE BONUS", style=HEADING)
+        made.mark(2, "Damage Bonus")
+        made.banner(1, 320, 3, "Table: Damage Bonus")
+        made.table(1, 340, ["STR/AGL", "DAMAGE BONUS"], bonus, [128, 200])
+        made.save()
+        return Book(Path(folder.name) / "extract")
+
+    def test_a_number_or_a_range_with_more_in_its_cell_is_named_with_its_column_and_page(self):
+        from solo.books.dragonbane_core import creation, system
+        ratings = self.book([["Fox", "9"], ["AGL 1–6", "–3"]], [["≤12", "—"], ["13–16", "+D4"], ["17+", "+D6"]])
+        self.assertEqual(creation._ratings(ratings, ratings.find("Derived Ratings"), 18)[0], {"fox": 9})
+        self.assertEqual(system._damage_bonus(ratings, ratings.find("Derived Ratings", "Damage Bonus", "Table: Damage Bonus"))["str"],
+                         [[12, ""], [16, "1d4"], [99, "1d6"]])
+        for movement, bonus, said in (([["Fox", "9*"]], [["17+", "+D6"]], r"'Table: Movement' \(p. 1\): the table on p. 1 has '9\*' in its MOVEMENT column, "
+                                                                          r"where the importer reads a number"),
+                                      ([["Fox", "9"]], [["17 or more", "+D6"]], r"'Table: Damage Bonus' \(p. 1\): the table on p. 1 has '17 or more' in its "
+                                                                                 r"STR/AGL column, where the importer reads a range")):
+            changed = self.book(movement, bonus)
+            with self.assertRaisesRegex(SoloError, said):
+                creation._ratings(changed, changed.find("Derived Ratings"), 18)
+        changed = self.book([["Fox", "9"]], [["1–5", "3*"]])
+        with self.assertRaisesRegex(SoloError, r"has '3\*' in its DAMAGE BONUS column, where the importer reads a number"):
+            system._ranges(changed, changed.find("Derived Ratings", "Damage Bonus", "Table: Damage Bonus"))
+
+    def test_a_spells_rank_that_isnt_a_number_is_named_with_the_spell(self):
+        from solo.books import spelllist
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        made = FakeBook(Path(folder.name) / "extract")
+        made.section(1, 80, 1, "Zap", "✦Rank: 2*", "✦Range: 10 meters", "A bolt.")
+        made.save()
+        with self.assertRaisesRegex(SoloError, r"Test Book.pdf, 'Zap' \(p. 1\): can't read its rank in '2\*'"):
+            spelllist.spell(None, "animism", Book(Path(folder.name) / "extract").find("Zap"))
+
+
 class BuildTest(unittest.TestCase):
     """books.build with a made-up recipe in place of the real ones: what it writes, and what it keeps when a build goes wrong."""
 
@@ -540,6 +588,35 @@ class ImportBookCliTest(CliCase):
         self.assertIn("scan.pdf: no importer knows this book, or this printing of it (it has 0 bookmarks, fingerprint e3b0c44298fc1c14). "
                       "3 of its 3 pages have no text, so it looks scanned: run ocrmypdf on the PDF and import it again.", out)
         self.assertIn("not every book became a pack: torn.pdf (it can't be read); lanterns (no importer knows it); scan (no importer knows it)", err)
+
+    def test_an_importer_that_stops_on_a_page_it_doesnt_name_fails_that_book_and_the_others_are_built(self):
+        def broken(pack):
+            raise ValueError("invalid literal for int() with base 10: '3*'")
+
+        def build(pack):
+            pack.system.update({"name": "Wicks", "family": "d20-under"})
+            pack.item("wicks", "Wicks", "mechanic", [1, 2], ["system.toml:name"])
+
+        def recipe(name, build):
+            # A module, as a recipe is: books.plan orders them by themselves.
+            made = types.ModuleType(name)
+            made.NAME, made.PACK, made.build, made.extends = name, name.lower(), build, lambda folder: None
+            made.recognizes = lambda book: book.manifest["source"] == f"{name.lower()}.pdf"
+            return made
+
+        books_folder = self.tmp / "books"
+        books_folder.mkdir()
+        for name in ("lanterns.pdf", "wicks.pdf"):
+            (books_folder / name).write_bytes(b"%PDF")
+        os.environ.pop("SOLO_DEBUG")
+        known = (recipe("Lanterns", broken), recipe("Wicks", build))
+        with unittest.mock.patch("solo.extract.extract", self.extract), unittest.mock.patch.object(books, "recipes", lambda: known):
+            code, out, err = self.solo("import", "book", str(books_folder))
+        self.assertEqual(code, 1, out + err)
+        self.assertIn("Lanterns: the importer stopped (ValueError: invalid literal for int() with base 10: '3*'); this may be another printing than it was "
+                      "written for. Run it again with SOLO_DEBUG=1 for the details.", out)
+        self.assertIn(f"Wicks: built 2 files in {self.tmp / 'games' / 'systems' / 'wicks'}", out)
+        self.assertEqual(err, "solo: not every book became a pack: Lanterns (the importer stopped). See above.\n")
 
 
 if __name__ == "__main__":

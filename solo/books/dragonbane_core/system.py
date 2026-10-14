@@ -42,8 +42,8 @@ def build(pack):
 
 def _ranges(book, section):
     """[[top, value], ...] from a table of ranges (in a made-up one, "1–4", "15–17"): what the score reaches, and what it gives."""
-    _, rows = grid.read(section.lines(own=True), book.glue)
-    return [[int(re.split(r"[–-]", cell[0])[-1].rstrip("+")), int(cell[1])] for cell in (row["cells"] for row in rows)]
+    header, rows = grid.read(section.lines(own=True), book.glue)
+    return [[grid.top(section, row["page"], row["cells"][0], header[0]), grid.number(section, row["page"], row["cells"][1], header[1])] for row in rows]
 
 
 def _damage_bonus(book, section):
@@ -51,9 +51,9 @@ def _damage_bonus(book, section):
     D4, 14 and more a D8), the last range open-ended."""
     header, rows = grid.read(section.lines(own=True), book.glue)
     table = []
-    for cells in (row["cells"] for row in rows):
-        top = 99 if "+" in cells[0] else int(re.split(r"[–-]", cells[0].lstrip("≤"))[-1])
-        table.append([top, "" if cells[1] in ("—", "") else roll(cells[1].lstrip("+"))])
+    for row in rows:
+        cells = row["cells"]
+        table.append([grid.top(section, row["page"], cells[0], header[0], 99), "" if cells[1] in ("—", "") else roll(cells[1].lstrip("+"))])
     attributes = [packs.slug(part) for part in header[0].split("/")]
     return {attribute: table for attribute in attributes}
 
