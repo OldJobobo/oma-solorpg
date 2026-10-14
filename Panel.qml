@@ -205,6 +205,20 @@ Item {
     watchdog.restart()
   }
 
+  // The X-card: cut the GM's last message (a line or a veil too, if the player made it one), then the GM carries on without it.
+  // What the player typed goes as --flag=value, so words that start with a dash stay words. The cut is in the campaign it
+  // was asked in; when another is current by the time it is done (one picked while the cut waited, or from a terminal),
+  // that one's GM isn't asked to carry on from a cut it never had.
+  function cut(note, line, veil) {
+    var asked = root.campaign
+    root.act(["strike"].concat(note !== "" ? ["--note=" + note] : []).concat(line !== "" ? ["--line=" + line] : [])
+               .concat(veil !== "" ? ["--veil=" + veil] : []), "book",
+             () => {
+               bookView.cutDone(true)
+               if (root.campaign === asked) root.speak("")
+             }, () => bookView.cutDone(false))
+  }
+
   // A turn writes turn.json as soon as it starts, and the Book waits on it. One that never
   // got that far (another turn holds the lock, words too long for the environment, a
   // campaign folder gone) is sent with nobody to hear: if turn.json hasn't changed a while
@@ -1033,11 +1047,7 @@ Item {
       onSend: text => root.speak(text)
       onStop: Quickshell.execDetached([root.solo, "-C", root.campaign, "gm", "stop"])
       onRetry: root.speak(root.turn.unsent || "")
-      // The X-card: cut the GM's last message (a line or a veil too, if the player made it one), then the GM carries on without it.
-      // What the player typed goes as --flag=value, so words that start with a dash stay words.
-      onCut: (note, line, veil) => root.act(["strike"].concat(note !== "" ? ["--note=" + note] : []).concat(line !== "" ? ["--line=" + line] : [])
-                                              .concat(veil !== "" ? ["--veil=" + veil] : []), "book",
-                                            () => { bookView.cutDone(true); root.speak("") }, () => bookView.cutDone(false))
+      onCut: (note, line, veil) => root.cut(note, line, veil)
       onAct: args => root.act(args, "book")
       onOpenTable: {
         root.opened = true

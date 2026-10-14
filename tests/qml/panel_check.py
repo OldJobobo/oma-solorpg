@@ -337,6 +337,7 @@ def main(out):
     wait(1500)
     errors += begin_and_ask(item, panel, out, work, wait)
     errors += an_x_card(item, panel, out, work, wait)
+    errors += a_cut_while_another_is_picked(item, work, wait)
     errors += a_turn_that_never_starts(item, panel, out, work, wait)
     errors += no_agent_yet(item, work, wait)
     errors += desk_moments(item, panel, out, work, wait)
@@ -465,6 +466,51 @@ def an_x_card(item, panel, out, work, wait):
     state = json.loads((game / "state.json").read_text())
     if len(state["struck"]) != 2 or state["prefs"]["veils"] != ["-mothers"] or book.property("cutting"):
         problems.append(f"the cut tried again didn't go through: {trouble(item) or state['struck']}, {state['prefs']}")
+    item.setProperty("turn", {"status": "idle"})
+    return problems
+
+
+def a_cut_while_another_is_picked(item, work, wait):
+    """The X-card's cut, waiting behind a command that picks another campaign (a card on Home clicked just before):
+    it cuts the message it was asked to, where it was asked, and the campaign picked meanwhile isn't asked to carry
+    on from a cut it never had."""
+    from solo import campaign
+    problems = []
+    game = Path((work / "state" / "solo" / "current").read_text().strip())
+    other = work / "games" / "campaigns" / "elsewhere"
+    subprocess.run([str(REPO / "bin" / "solo"), "new", "red-tusk", "--dir", str(other)], check=True, capture_output=True)
+    campaign.set_current(game)
+    with campaign.session(game) as c:
+        c.say("The rope bridge creaks under you.")
+    item.setProperty("turn", {"status": "idle"})
+    book = item.findChild(QObject, "book")
+    for _ in range(20):
+        wait(300)
+        if book.property("canCut") and item.property("campaign") == str(game):
+            break
+    struck = len(json.loads((game / "state.json").read_text())["struck"])
+    book.setProperty("cutting", True)
+    LAUNCHED.clear()
+    Process.hold = True
+    try:
+        item.useCampaign(str(other))
+        wait(100)
+        QMetaObject.invokeMethod(book, "cutIt", Q_ARG("QVariant", ""))
+        wait(100)
+    finally:
+        release()
+    for _ in range(20):
+        wait(300)
+        if not item.property("busy"):
+            break
+    if len(json.loads((game / "state.json").read_text())["struck"]) != struck + 1 or item.property("campaign") != str(other):
+        problems.append(f"the cut waiting behind another campaign picked didn't cut where it was asked: {trouble(item)}")
+    turns = [" ".join(str(a) for a in command[1:]) for command in LAUNCHED if "turn" in command]
+    if turns:
+        problems.append(f"the campaign picked while a cut waited was asked to carry on from it: {turns}")
+    campaign.set_current(game)
+    item.useCampaign(str(game))
+    wait(1500)
     item.setProperty("turn", {"status": "idle"})
     return problems
 
