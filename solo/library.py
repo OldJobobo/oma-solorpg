@@ -223,11 +223,13 @@ def _find(kind, name):
 
 
 def _entries(kind):
+    """Every pack of this kind, the player's first. A folder whose name starts with a dot is never one: `solo import book`
+    builds a pack in .<name>.building beside where it goes, and a build killed before it finished can leave that behind."""
     mine, bundled, markers = _KINDS[kind]
     found, seen = [], set()
     for folder in (home() / mine, REPO / bundled):
         for path in sorted(folder.iterdir()) if folder.is_dir() else []:
-            if path.is_dir() and path.name not in seen and any((path / m).exists() for m in markers):
+            if path.is_dir() and not path.name.startswith(".") and path.name not in seen and any((path / m).exists() for m in markers):
                 seen.add(path.name)
                 found.append(path)
     return found

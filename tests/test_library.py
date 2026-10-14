@@ -69,3 +69,21 @@ class MissingRulesTextTest(unittest.TestCase):
         self.assertNotIn("dragonbane", other.lower())
         self.assertEqual(other, "Lanterns has only its names so far. Its rules come from your own book: "
                                 "a pack built from your book has to supply them. Missing: combat, weapons")
+
+
+class HalfBuiltTest(CliCase):
+    def test_a_pack_an_import_was_still_building_when_it_was_killed_is_never_listed(self):
+        # solo import book builds in .<pack>.building beside where the pack goes; a SIGKILL or a hangup leaves it there.
+        for kind, marker in (("systems", "system.toml"), ("adventures", "adventure.toml")):
+            left = self.tmp / "games" / kind / ".lanterns.building"
+            left.mkdir(parents=True)
+            (left / marker).write_text('format = 1\nname = "Lanterns"\ntitle = "Lanterns"\nsystem = "dragonbane"\n')  # no family yet
+        code, out, err = self.solo("library")
+        self.assertEqual(code, 0, err)
+        library = json.loads(out)
+        self.assertEqual([s["id"] for s in library["systems"] if s["id"].startswith(".")], [])
+        self.assertEqual([a["id"] for a in library["adventures"] if a["id"].startswith(".")], [])
+        self.assertEqual(library["problems"], [])
+        code, _, err = self.solo("character", "--system", "nope")
+        self.assertEqual(code, 1)
+        self.assertNotIn(".lanterns.building", err)

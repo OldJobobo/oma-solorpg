@@ -71,7 +71,8 @@ def build(folder, out=None, replace=False, systems=None, adventures=None):
     made = main.read_text(encoding="utf-8").startswith(MARK) if main.exists() else False
     if main.exists() and not (replace and made):
         raise SoloError(f"{target} already holds a pack" + (" built by solo import book: --replace builds it again" if made else " (not one this built: build into another folder with --out, then compare)"))
-    # Built beside where it goes, a first build too: what the engine can't play never reaches the library, which lists every pack of the folder.
+    # Built beside where it goes, a first build too, in a folder the library never lists (its name starts with a dot): what the engine can't
+    # play never reaches the library, even when the build is killed half way.
     building = target.with_name(f".{target.name}.building")
     shutil.rmtree(building, ignore_errors=True)  # what a build stopped half way left
     if kind == "adventure":
