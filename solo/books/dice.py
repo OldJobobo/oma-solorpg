@@ -62,7 +62,8 @@ def read(lines, glue, sides=None):
     top = rows[-1]["high"] if rows else 0
     if given is None and top < sides:
         # The rows are read in order up to the first number missing: a table that stops short of its die has lost a row.
-        raise SoloError(f"the table under {heads[0]['text'].strip()!r} on p. {heads[0]['page']} has rows for 1-{top} and none for {top + 1}, "
+        found = f"rows for 1-{top} and none for {top + 1}" if top > 1 else "a row for 1 and none for 2" if top else "no row the importer can read"
+        raise SoloError(f"the table under {heads[0]['text'].strip()!r} on p. {heads[0]['page']} has {found}, "
                         "short of its die; this may be another printing than the importer was written for")
     return {"faces": sides, "headers": [line["text"].strip() for line in sorted(small, key=lambda l: (l["page"], l["x0"]))], "rows": rows}
 

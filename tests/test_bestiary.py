@@ -34,8 +34,10 @@ class BestiaryRecipeTest(unittest.TestCase):
         made = FakeBook(self.tmp / "extract")
         made.section(1, 80, 1, "6. Gear", "Gear is sold.")
         made.banner(1, 140, 2, "Table: Melee Weapons")
-        made.banner(1, 170, 2, "Table: Ranged Weapons")
-        made.banner(1, 200, 2, "Table: Armor & Helmets")
+        made.table(1, 160, ["WEAPON", "DAMAGE"], [["Sabre", "D8"], ["Dirk", "D8"], ["Small Wooden Club", "D6"]], [68, 200])
+        made.banner(1, 240, 2, "Table: Ranged Weapons")
+        made.banner(1, 270, 2, "Table: Armor & Helmets")
+        made.table(1, 290, ["ARMOR", "ARMOR RATING"], [["Scale Armor", "4"], ["Open Helmet", "+1"]], [68, 200])
         made.section(2, 80, 1, "7. Bestiary", "Monsters live here.")
         made.section(2, 140, 2, "Introduction", "Monsters have ferocity.")
         # A monster that is hurt by little, mends and carries a weapon.
@@ -104,7 +106,7 @@ class BestiaryRecipeTest(unittest.TestCase):
         for text, x in (("TYPE", 68), ("SKILLS", 130), ("HEROIC ABILITIES", 227), ("BONUS", 312), ("HP", 361), ("WP", 386), ("GEAR", 411)):
             made.line(7, 300, text, x, HEADER)
         people = [(320, ["Guard"], ["Swords 12", "Evade 10"], ["—"], "STR +D4", "12", "—", "Sabre, scale armor"),
-                  (360, ["Bandit Chief ", "(Boss)"], ["Swords 15", "Evade 12"], ["Berserker", "Robust × 6", "Veteran"], "STR +D6", "30", "16", "Sabre, scale armor"),
+                  (360, ["Bandit Chief ", "(Boss)"], ["Swords 15", "Evade 12"], ["Berserker", "Robust × 6", "Veteran"], "STR +D6", "30", "16", "Sabre, scale armor, open helmet"),
                   (420, ["Villager"], ["Brawling 8"], ["—"], "—", "8", "—", "Wooden club"),
                   (450, ["Scholar"], ["Languages 13", "Myths & Legends 13"], ["—"], "—", "7", "—", "A good book")]
         for y, kind, skills, abilities, bonus, hp, wp, gear in people:
@@ -113,12 +115,12 @@ class BestiaryRecipeTest(unittest.TestCase):
                     made.line(7, y + 12 * number, text, column, CELL)
             for column, text in ((312, bonus), (363, hp), (389, wp), (411, gear)):
                 made.line(7, y, text, column, CELL)
-        made.save()
+        made.save(pages=True)
         self.book = Book(self.tmp / "extract")
         self.pack = Pack(self.book, self.tmp / "out", dragonbane_core.NAME, dragonbane_core.extends(None))
         self.pack.system["weapons"] = {"sabre": {"skill": "swords", "damage": "1d8"}, "dirk": {"skill": "knives", "damage": "1d8"},
                                        "small_wooden_club": {"skill": "hammers", "damage": "1d6"}}
-        self.pack.system["armor"] = {"scale_armor": 4}
+        self.pack.system["armor"] = {"scale_armor": 4, "open_helmet": 1}
         bestiary.build(self.pack)
 
     def read(self, path):
@@ -177,8 +179,8 @@ class BestiaryRecipeTest(unittest.TestCase):
                          ("A typical guard", {"label": "Sabre", "skill": "swords", "damage": "1d8", "bonus": "1d4"}, {"hp": 12, "armor": 4}, {"swords": 12, "evade": 10}))
         self.assertEqual(guard["description"], "Gear: Sabre, scale armor. Damage bonus: STR +D4.")
         chief = self.read("bestiary/bandit_chief.toml")
-        self.assertEqual((chief["name"], chief["role"], chief["attack"]["bonus"], chief["stats"]), ("Bandit Chief", "A boss: bandit chief", "1d6", {"hp": 30, "armor": 4}))
-        self.assertEqual(chief["description"], "Gear: Sabre, scale armor. Damage bonus: STR +D6. Heroic abilities: Berserker, Robust × 6, Veteran. WP 16.")
+        self.assertEqual((chief["name"], chief["role"], chief["attack"]["bonus"], chief["stats"]), ("Bandit Chief", "A boss: bandit chief", "1d6", {"hp": 30, "armor": 5}))
+        self.assertEqual(chief["description"], "Gear: Sabre, scale armor, open helmet. Damage bonus: STR +D6. Heroic abilities: Berserker, Robust × 6, Veteran. WP 16.")
 
     def test_a_weapon_the_book_names_loosely_is_the_gear_tables_and_a_skill_it_lacks_is_the_npcs_own(self):
         villager = self.read("bestiary/villager.toml")
@@ -194,6 +196,11 @@ class BestiaryRecipeTest(unittest.TestCase):
         report = audit.audit(self.tmp / "out", "system")
         self.assertEqual([unit for unit in report["unclaimed"] if not unit.startswith("system.toml")], [])
         self.assertEqual(report["problems"], [])
+        # Read back against the made-up book's own pages, every number is on them: the bandit chief's armor is its scale armor and helmet added up.
+        self.assertEqual(report["unverified"], [])
+        chief = self.tmp / "out" / "bestiary" / "bandit_chief.toml"
+        chief.write_text(chief.read_text(encoding="utf-8").replace("armor = 5", "armor = 9"), encoding="utf-8")
+        self.assertIn("bestiary_typical_npcs: bestiary/bandit_chief gives stats.armor 9, and p. 1, 7 never says it", audit.audit(self.tmp / "out", "system")["unverified"])
 
 
 class ChangedAnimalsTableTest(unittest.TestCase):

@@ -418,6 +418,36 @@ class BookCheckTest(unittest.TestCase):
                             'text = "Runs away screaming into the night." },\n  { range = [2, 2], text = "Shakes and drops what they hold." }')
         self.assertIn('result 1 "Runs away screaming into the night." is row 2 on p. 1, not row 1', found)
 
+    def test_rows_whose_numbers_come_after_their_words_are_read_up_from_the_number(self):
+        # The PDF wrote each row's words first and its number after them, on a line of its own.
+        write(self.book / "pages" / "0001.txt", self.PAGES[1].replace("1 Shakes and drops what they hold.\n", "Shakes and drops\nwhat they hold.\n1\n\n")
+              .replace("2 Runs away screaming into the night.\n", "Runs away screaming\ninto the night.\n2\n\n")
+              .replace("3-6 Freezes on the spot for a round.\n", "Freezes on the spot\nfor a round.\n3-6\n\n"))
+        report = audit.audit(self.pack, "system")
+        self.assertFalse(audit.failed(report), audit.render(report))
+        found = self.change("tables/fear.toml", '"Freezes on the spot for a round."', '"Resting heals a long sword."')
+        self.assertIn('result 3-6 "Resting heals a long sword." isn\'t what row 3-6 on p. 1 says ("freezes on the spot for a round")', found)
+
+    def test_a_row_that_wraps_before_a_number_goes_on_over_it(self):
+        # A wrapped line that starts with a number is the row above's, whether that number is the next row's, one passed, or none of the table's.
+        table = self.pack / "tables" / "fear.toml"
+        fear = table.read_text(encoding="utf-8")
+        for wrapped, old, new in (
+                ("1 Shakes and\n2 WP are lost, and they drop what they hold.\n", "Shakes and drops what they hold.", "Shakes and 2 WP are lost, and they drop what they hold."),
+                ("3-6 Freezes on the spot for\n1 round passes before they can act again.\n", "Freezes on the spot for a round.",
+                 "Freezes on the spot for 1 round passes before they can act again."),
+                ("2 Runs away screaming into the night for\n1 hour of terror and dread.\n", "Runs away screaming into the night.",
+                 "Runs away screaming into the night for 1 hour of terror and dread.")):
+            page = self.PAGES[1].replace({"Shakes": "1 Shakes and drops what they hold.\n", "Freezes": "3-6 Freezes on the spot for a round.\n",
+                                          "Runs": "2 Runs away screaming into the night.\n"}[old.split()[0]], wrapped)
+            write(self.book / "pages" / "0001.txt", page)
+            write(table, fear.replace(old, new))
+            report = audit.audit(self.pack, "system")
+            self.assertFalse(audit.failed(report), f"{wrapped!r}\n" + audit.render(report))
+        write(table, fear.replace('text = "Shakes and drops what they hold." },\n  { range = [2, 2], text = "Runs away screaming into the night." }',
+                                  'text = "Runs away screaming into the night for 1 hour of terror and dread." },\n  { range = [2, 2], text = "Shakes and drops what they hold." }'))
+        self.assertIn("is row 2 on p. 1, not row 1", "\n".join(audit.audit(self.pack, "system")["unverified"]))
+
     def test_a_word_with_a_hyphen_of_its_own_is_on_its_row_where_the_page_has_it_joined(self):
         # solo extract joins a word whose line breaks at a hyphen ("two-" "handed"), and the recipe keeps a hyphen the word has of its own.
         write(self.book / "pages" / "0001.txt", self.PAGES[1].replace("drops what they hold.", "drops what they hold in a twohanded grip."))
@@ -427,6 +457,26 @@ class BookCheckTest(unittest.TestCase):
         self.assertFalse(audit.failed(report), audit.render(report))
         self.assertIn('rules: tables/fear result 1 "Shakes and drops what they hold in a two-handed bear grip." isn\'t on p. 1 (no bear)',
                       self.change("tables/fear.toml", "two-handed grip", "two-handed bear grip"))
+
+    def test_a_results_numbers_dice_and_short_words_are_read_on_its_own_row(self):
+        # Each change below is on the page, on another row or under the table: only the result's own row tells it is wrong.
+        rows = {"Shakes and drops what they hold.": "Shakes and drops what they hold, losing 2 WP.",
+                "Runs away screaming into the night.": "Runs away screaming into the night and takes D6 damage. It can be shaken off.",
+                "Freezes on the spot for a round.": "Freezes, and must flee from the fight after a round."}
+        page, table = self.PAGES[1], (self.pack / "tables" / "fear.toml").read_text(encoding="utf-8")
+        for old, new in rows.items():
+            page, table = page.replace(old, new), table.replace(old, new)
+        write(self.book / "pages" / "0001.txt", page)
+        write(self.pack / "tables" / "fear.toml", table)
+        report = audit.audit(self.pack, "system")
+        self.assertFalse(audit.failed(report), audit.render(report))
+        for old, new, said in (("losing 2 WP", "losing 10 WP", "result 1 \"Shakes and drops what they hold, losing 10 WP.\" isn't what row 1 on p. 1 says (no 10)"),
+                               ("losing 2 WP", "losing 2 HP", "result 1 \"Shakes and drops what they hold, losing 2 HP.\" isn't what row 1 on p. 1 says (no hp)"),
+                               ("takes D6 damage", "takes D4 damage", "takes D4 damage....\" isn't what row 2 on p. 1 says (no d4)"),
+                               ("can be shaken", "can't be shaken", "isn't what row 2 on p. 1 says (no can't)"),
+                               ("must flee", "must not flee", "result 3-6 \"Freezes, and must not flee from the fight after a round.\" isn't what row 3-6 on p. 1 says (no not)")):
+            self.assertIn(said, self.change("tables/fear.toml", old, new))
+            write(self.pack / "tables" / "fear.toml", table)
 
     def test_a_row_that_fits_several_results_proves_none_of_them_swapped(self):
         # Two results alike: the row they both fit can't say which one moved, and each is judged against its own row.
@@ -464,6 +514,37 @@ class BookCheckTest(unittest.TestCase):
         report = audit.audit(self.pack, "system")
         self.assertFalse(audit.failed(report), audit.render(report))
 
+    def test_a_monsters_stats_are_read_on_its_own_stat_block(self):
+        # Another monster on the page: its numbers are no proof of the ghoul's.
+        write(self.book / "pages" / "0003.txt", self.PAGES[3] + "WIGHT. Ferocity: 3 Movement: 12 Armor: 6 HP: 30\n")
+        report = audit.audit(self.pack, "system")
+        self.assertFalse(audit.failed(report), audit.render(report))
+        self.assertIn("ghoul: bestiary/ghoul gives stats.hp 30, and p. 3 says hp: 18", self.change("bestiary/ghoul.toml", "hp = 18", "hp = 30"))
+        self.assertIn("gives stats.movement 12, and p. 3 says movement: 10", self.change("bestiary/ghoul.toml", "movement = 10", "movement = 12"))
+
+    def test_a_sidebar_or_a_stat_box_read_as_columns_is_not_the_monsters_value(self):
+        ghoul = self.pack / "bestiary" / "ghoul.toml"
+        stats = ghoul.read_text(encoding="utf-8")
+        # Its stat line has no colons, and a sidebar on the page has a hireling's.
+        write(self.book / "pages" / "0003.txt", self.PAGES[3].replace("Ferocity: 2 Movement: 10 Armor: 4 HP: 18", "Ferocity 2 Size Normal Movement 10 Armor 4 HP 18")
+              + "A hireling the heroes meet has Armor: 1 and HP: 10.\n")
+        report = audit.audit(self.pack, "system")
+        self.assertFalse(audit.failed(report), audit.render(report))
+        self.assertIn("ghoul: bestiary/ghoul gives stats.hp 10, and p. 3 says hp: 18", self.change("bestiary/ghoul.toml", "hp = 18", "hp = 10"))
+        # The labels in a column and the values in the next: no label has its value beside it.
+        write(ghoul, stats)
+        write(self.book / "pages" / "0003.txt", "GHOUL\nFerocity:\nSize:\nMovement:\nArmor:\nHP:\n\n2\nNormal\n10\n4\n18\nIts claws do 2D6 damage. It has 4 friends and 12 teeth.\n")
+        report = audit.audit(self.pack, "system")
+        self.assertFalse(audit.failed(report), audit.render(report))
+        # A monster the page names only in passing, beside an NPC of the pack with a stat block of its own.
+        write(self.book / "pages" / "0003.txt", "BRAND THE GUARD. Armor: 2 HP: 14. Ferocity 2, Movement 10.\n"
+              "In the crypt is a ghoul with armor rating 4 and with 18 HP. Its claws do 2D6 damage, 12 teeth.\n")
+        write(self.pack / "bestiary" / "brand.toml", 'name = "Brand the Guard"\nrole = "A guard"\ndescription = "Old."\nstats = { hp = 14, armor = 2 }\n')
+        inventory = self.pack / "inventory.toml"
+        write(inventory, inventory.read_text(encoding="utf-8").replace('to = ["bestiary/ghoul"]', 'to = ["bestiary/ghoul", "bestiary/brand"]'))
+        report = audit.audit(self.pack, "system")
+        self.assertFalse(audit.failed(report), audit.render(report))
+
     def test_a_monsters_movement_and_attack_skill_are_on_its_page(self):
         self.assertIn("ghoul: bestiary/ghoul gives stats.movement 99, and p. 3 never says it", self.change("bestiary/ghoul.toml", "movement = 10", "movement = 99"))
 
@@ -480,6 +561,12 @@ class BookCheckTest(unittest.TestCase):
         # What an agent read off the page's picture is text the audit reads.
         write(self.book / "picture" / "0003.txt", self.PAGES[3])
         self.assertIn("ghoul: bestiary/ghoul gives stats.hp 40, and p. 3 never says it", self.change("bestiary/ghoul.toml", "hp = 40", "hp = 40"))
+
+    def test_a_page_past_the_books_last_is_said_once_and_not_taken_for_a_scan(self):
+        write(self.pack / "inventory.toml", (self.pack / "inventory.toml").read_text(encoding="utf-8").replace("pages = [3]", "pages = [31]"))
+        report = audit.audit(self.pack, "system")
+        self.assertEqual(report["pages"]["beyond"], [31])
+        self.assertNotIn("ocrmypdf", audit.render(report))
 
     def test_a_page_of_a_few_words_is_read_and_not_taken_for_a_scan(self):
         write(self.book / "pages" / "0002.txt", "FIREBOLT\nRank 1. 2D6.\n")

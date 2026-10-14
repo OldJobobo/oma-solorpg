@@ -32,7 +32,7 @@ def build(pack):
         need = _requires(facts.get("Requirement", "—"), skills)
         if need:
             spec["requires"] = need
-        abilities[packs.slug(ability.title)] = {**spec, **_effects(text)}
+        abilities[packs.slug(ability.title)] = {**spec, **_effects(text, ability)}
     pack.system["abilities"] = abilities
     pack.item("abilities_heroic", "Heroic abilities", "ability", section.pages, ["system.toml:abilities"],
               note="What each costs and asks for is read from its page; the ones the engine runs have their effect in words the recipe knows, the rest are for the GM.")
@@ -52,8 +52,8 @@ def _requires(text, skills):
     return {"skills": [next((skill for skill in sorted(skills) if skill == name or skill.startswith(name)), name) for name in names], "level": level}
 
 
-def _effects(text):
-    """What the engine runs of an ability, by the words the book uses for it."""
+def _effects(text, section):
+    """What the engine runs of an ability, by the words the book uses for it (in `section`)."""
     effects = {}
     raised = re.search(r"(max HP|maximum number of Willpower Points)[^.]*?increase[sd]? by (\d+)", text)
     if raised:
@@ -68,7 +68,7 @@ def _effects(text):
         effects["against"] = "monster"
     drawn = re.search(r"draw (\w+) cards instead of one", text)
     if drawn:
-        effects["initiative_pick"] = count(drawn.group(1))
+        effects["initiative_pick"] = count(drawn.group(1), section)
     if re.search(r"retain your initiative card", text):
         effects["initiative_keep"] = True
     for how, word in (("parry", "parry"), ("dodge", "dodge")):

@@ -1,0 +1,29 @@
+# Reads every pull request's files against the maintainer's book fingerprints (tests/test_no_book_text.py), with the key that reads them:
+# the SOLO_FINGERPRINT_KEY secret, which a pull request from a fork never gets in tests.yml. So that the key never meets the pull request's
+# code, this runs the base branch's own copy of the test, and only reads the pull request's files: nothing of the pull request is run.
+name: Book text
+
+on:
+  pull_request_target:
+
+permissions:
+  contents: read
+
+jobs:
+  book-text:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: pull-request
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - run: python3 tests/test_no_book_text.py --check pull-request
+        env:
+          SOLO_FINGERPRINT_KEY: ${{ secrets.SOLO_FINGERPRINT_KEY }}

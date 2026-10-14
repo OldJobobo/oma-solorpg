@@ -24,8 +24,8 @@ def facts(section):
 def spell(book, school, section, skill=None):
     """The spell on a section's page. `school` is the skill it is cast with (or "general"); `skill` the one the prerequisite names, when that isn't the school's own."""
     found, text = facts(section)
-    if "Rank" not in found:
-        raise changed(section, "can't read its rank")
+    if not re.fullmatch(r"\d+", found.get("Rank", "").strip()):
+        raise changed(section, "can't read its rank" + (f" in {found['Rank']!r}" if "Rank" in found else ""))
     entry = {"name": section.title, "school": school, "rank": int(found["Rank"])}
     prerequisite = _prerequisite(found.get("Prerequisite", ""))
     if prerequisite:

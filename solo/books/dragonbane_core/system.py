@@ -42,8 +42,8 @@ def build(pack):
 
 def _ranges(book, section):
     """[[top, value], ...] from a table of ranges (in a made-up one, "1–4", "15–17"): what the score reaches, and what it gives."""
-    _, rows = grid.read(section.lines(own=True), book.glue)
-    return [[int(re.split(r"[–-]", cell[0])[-1].rstrip("+")), int(cell[1])] for cell in (row["cells"] for row in rows)]
+    header, rows = grid.read(section.lines(own=True), book.glue)
+    return [[grid.top(section, row["page"], row["cells"][0], header[0]), grid.number(section, row["page"], row["cells"][1], header[1])] for row in rows]
 
 
 def _damage_bonus(book, section):
@@ -51,9 +51,9 @@ def _damage_bonus(book, section):
     D4, 14 and more a D8), the last range open-ended."""
     header, rows = grid.read(section.lines(own=True), book.glue)
     table = []
-    for cells in (row["cells"] for row in rows):
-        top = 99 if "+" in cells[0] else int(re.split(r"[–-]", cells[0].lstrip("≤"))[-1])
-        table.append([top, "" if cells[1] in ("—", "") else roll(cells[1].lstrip("+"))])
+    for row in rows:
+        cells = row["cells"]
+        table.append([grid.top(section, row["page"], cells[0], header[0], 99), "" if cells[1] in ("—", "") else roll(cells[1].lstrip("+"))])
     attributes = [packs.slug(part) for part in header[0].split("/")]
     return {attribute: table for attribute in attributes}
 
@@ -106,13 +106,14 @@ def _torch(book, gear):
 
 
 def _dying(book, section):
-    death = section.find("Death Roll").text(own=True)
+    death_roll = section.find("Death Roll")
+    death = death_roll.text(own=True)
     found = find(section, r"roll against your (CON|STR|AGL|INT|WIL|CHA)", "the roll a dying hero makes", own=False)
     rally = re.search(r"(?:after )?(\w+) successful death rolls you recover (\d*D\d+) HP", death, re.I)
     fail = re.search(r"(?:after )?(\w+) failed death rolls", death, re.I)
     if not (rally and fail):
-        raise changed(section.find("Death Roll"), "can't find the successes and failures a death roll counts")
-    return {"track": "hp", "roll": found.group(1).lower(), "rally": count(rally.group(1)), "die": count(fail.group(1)), "recover": roll(rally.group(2))}
+        raise changed(death_roll, "can't find the successes and failures a death roll counts")
+    return {"track": "hp", "roll": found.group(1).lower(), "rally": count(rally.group(1), death_roll), "die": count(fail.group(1), death_roll), "recover": roll(rally.group(2))}
 
 
 def _advancement(book, section):
@@ -154,7 +155,7 @@ def _encumbrance(book, section):
     coins = re.search(r"(\d+)\s*[–-]\s*\d+ coins count as one item", text, re.I)
     pack_size = re.search(r"A backpack increases your carrying capacity by (\d+)", text, re.I)
     if hand:
-        found["at_hand"] = count(hand.group(1))
+        found["at_hand"] = count(hand.group(1), section)
     if coins:
         found["coins"] = int(coins.group(1))
     if pack_size:
@@ -168,7 +169,7 @@ def _journey(book, section):
     per_day = find(section, r"there are (\w+) shifts in a day", "how many shifts make a day")
     skill = find(section, r"must make a (\w+) roll every shift", "the pathfinder's skill")
     camp = section.find("Making Camp")
-    journey = {"foot": int(travel.group(1)), "mounted": int(travel.group(2)), "shifts_per_day": count(per_day.group(1)), "travel_shifts": count(days.group(1)),
+    journey = {"foot": int(travel.group(1)), "mounted": int(travel.group(2)), "shifts_per_day": count(per_day.group(1), section), "travel_shifts": count(days.group(1), section),
                "skill": packs.slug(skill.group(1)), "mishaps": ids.table("Table: Mishaps")}
     needs = re.search(r"without a (sleeping fur)", camp.text(), re.I)
     helps = re.search(r"A (tent) grants a boon", camp.text(), re.I)
@@ -183,7 +184,8 @@ def _magic(book, chapter):
     power = find(casting.find("Power Level"), r"ranges from 1 to (\d+)", "how many power levels there are", own=False)
     tricks = find(casting, r"magic tricks always cost (\d+) WP", "what a magic trick costs")
     body = find(casting.find("Power Level", "Power from the Body"), r"die of your choice \(([^)]*)\)", "the dice power from the body is drawn with")
-    below = find(casting.find("Power Level", "Power from the Body"), r"just (\w+) or zero WP left", "how few points it takes to draw power from the body")
+    from_body = casting.find("Power Level", "Power from the Body")
+    below = find(from_body, r"just (\w+) or zero WP left", "how few points it takes to draw power from the body")
     prepared = find(chapter.find("Spells", "Prepared Spells"), r"equal to your base chance for (INT|WIL|STR|AGL|CON|CHA)", "how many spells can be held prepared")
     learning = chapter.find("Learning Magic")
     trick_time = find(learning.find("Magic Tricks"), r"takes one (stretch|shift|round) to learn", "how long a magic trick takes to learn")
@@ -193,7 +195,7 @@ def _magic(book, chapter):
     teacher = find(learning.find("Teachers"), r"roll against (INT), with a boon", "the roll a teacher's lesson asks for")
     grimoire = find(learning.find("Grimoires"), r"roll against (LANGUAGES)", "the roll a grimoire's lesson asks for")
     magic = {"cost": int(cost.group(1)), "max_power": int(power.group(1)), "trick_cost": int(tricks.group(1)), "track": "wp",
-             "body": [roll(d) for d in re.findall(r"D\d+", body.group(1))], "body_below": count(below.group(1)), "prepared": prepared.group(1).lower(),
+             "body": [roll(d) for d in re.findall(r"D\d+", body.group(1))], "body_below": count(below.group(1), from_body), "prepared": prepared.group(1).lower(),
              "dragon": options, "trick_time": {trick_time.group(1).lower(): 1},
              "learn": {"teacher": {"roll": teacher.group(1).lower(), "boons": 1}, "grimoire": {"roll": packs.slug(grimoire.group(1)), "boons": 0}}}
     if mishap:

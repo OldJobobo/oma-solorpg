@@ -80,11 +80,20 @@ def cells(section, row, count):
 
 
 def number(section, page, text, column):
-    """The whole number in a cell ("12", "+2"): a cell that holds anything more ("9*") is an error that says which table of
+    """The whole number in a cell ("12", "+2", "–3"): a cell that holds anything more ("9*") is an error that says which table of
     which book, not a ValueError."""
-    if re.fullmatch(r"\+?\d+", text.strip()) is None:
+    if re.fullmatch(r"[+\-–−]?\d+", text.strip()) is None:
         raise changed(section, f"the table on p. {page} has {text!r} in its {column.upper()} column, where the importer reads a number")
-    return int(text)
+    return int(re.sub(r"[–−]", "-", text.strip()))
+
+
+def top(section, page, text, column, open_top=None):
+    """The top of the range in a cell ("13–16" is 16, "≤12" is 12, "8" is 8), and `open_top` for a range that runs on ("17+") when
+    there is one: a cell that holds anything more ("17 or more") is an error that says which table of which book, not a ValueError."""
+    found = re.fullmatch(r"≤?\s*(?:\d+\s*[–-]\s*)?(\d+)\s*(\+)?", text.strip())
+    if found is None:
+        raise changed(section, f"the table on p. {page} has {text!r} in its {column.upper()} column, where the importer reads a range")
+    return open_top if found.group(2) and open_top is not None else int(found.group(1))
 
 
 def _is_header(line):

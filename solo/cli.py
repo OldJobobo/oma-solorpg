@@ -1136,6 +1136,14 @@ def _import_book(args):
             print(f"\n{recipe.NAME}: {error}")
             failed.append(f"{recipe.NAME} (it wasn't built)")
             continue
+        except Exception as error:
+            # A page the importer trips over without naming it: said, like any book that isn't built, and the other books are built all the same.
+            if os.environ.get("SOLO_DEBUG"):
+                raise
+            print(f"\n{recipe.NAME}: the importer stopped ({type(error).__name__}: {error}); this may be another printing than it was written for. "
+                  "Run it again with SOLO_DEBUG=1 for the details.")
+            failed.append(f"{recipe.NAME} (the importer stopped)")
+            continue
         print(f"\n{recipe.NAME}: built {len(written)} files in {target}")
         print("\n".join(f"  note: {note}" for note in notes))
         report = audit.audit(target, books.kind_of(recipe))
