@@ -2,9 +2,9 @@
 
 A book sets a roll table in whatever shape the page allows: a header with the die and what it gives, the
 rows under it; the same table in two halves side by side, or a long one continued in the next column;
-a number with its text in the same line ("1-2 Warhammer ...") or in a cell of its own; a column of
+a number with its text in the same line ("1-2 A lantern ...") or in a cell of its own; a column of
 results that wrap. And a table of several dice, one column each, read together as a sentence
-(the quest: "One day, <D4>, the characters come across <D6> ...").
+(in a made-up one: "At <D4>, a stranger brings <D6> ...").
 
 A row is found by its number: the next one of the die, at the start of a line, in a column of numbers;
 its words are the text in that column from there to the next number, with what wraps under it.
@@ -16,6 +16,8 @@ from .. import SoloError
 
 _DIE = re.compile(r"^D(\d+|%)(?!\w)\s*(.*)$", re.I)
 _NUMBER = re.compile(r"^(\d+)(?:(\+)|\s*[–-]\s*(\d+))?(?:\s+(.*))?$")
+# A header is set smaller than this, bold (as grid.py reads a table's); cells at this size or smaller.
+_HEADER_SIZE = 8.6
 _CELL_SIZE = 9.3
 # Numbers whose left edges are this close are one column of numbers.
 _COLUMN = 8
@@ -43,7 +45,7 @@ def is_die(label):
 
 
 def is_marker(line):
-    return line["size"] < 8.6 and line["font"].endswith("-Bold") and is_die(line["text"])
+    return line["size"] < _HEADER_SIZE and line["font"].endswith("-Bold") and is_die(line["text"])
 
 
 def read(lines, glue, sides=None):
@@ -53,11 +55,16 @@ def read(lines, glue, sides=None):
     heads = [line for line in lines if is_marker(line)]
     if not heads and sides is None:
         raise SoloError("no roll table here: a header with the die (D6, D20 ...) was not found")
-    sides = sides or faces(heads[0]["text"])
-    small = [line for line in lines if line["size"] < 8.6 and line["font"].endswith("-Bold")]
+    given, sides = sides, sides or faces(heads[0]["text"])
+    small = [line for line in lines if line["size"] < _HEADER_SIZE and line["font"].endswith("-Bold")]
     body = [line for line in lines if line["size"] <= _CELL_SIZE and line not in small]
-    return {"faces": sides, "headers": [line["text"].strip() for line in sorted(small, key=lambda l: (l["page"], l["x0"]))],
-            "rows": _rows(body, sides, glue)}
+    rows = _rows(body, sides, glue)
+    top = rows[-1]["high"] if rows else 0
+    if given is None and top < sides:
+        # The rows are read in order up to the first number missing: a table that stops short of its die has lost a row.
+        raise SoloError(f"the table under {heads[0]['text'].strip()!r} on p. {heads[0]['page']} has rows for 1-{top} and none for {top + 1}, "
+                        "short of its die; this may be another printing than the importer was written for")
+    return {"faces": sides, "headers": [line["text"].strip() for line in sorted(small, key=lambda l: (l["page"], l["x0"]))], "rows": rows}
 
 
 def _rows(pool, sides, glue):
@@ -112,8 +119,9 @@ def _starts(cells, sides):
     for line in cells:
         match = _NUMBER.match(line["text"].strip().replace("\u00ad", ""))
         if match:
-            low = int(match.group(1))
-            found.append({"range": (low, sides if match.group(2) else int(match.group(3) or low)), "rest": (match.group(4) or "").strip(), "line": line})
+            # "00" on a D% is a hundred.
+            low, high = (100 if number == "00" else int(number) for number in (match.group(1), match.group(3) or match.group(1)))
+            found.append({"range": (low, sides if match.group(2) else high), "rest": (match.group(4) or "").strip(), "line": line})
     return found
 
 
@@ -132,7 +140,7 @@ def _columns(starts):
 
 def _cells(start, others, glue):
     """What a row holds, a cell to each column of words it stands in: the words of the number's line after the number, and
-    the lines under or beside it, each column read down and joined (a name that wraps, "Teeth knocked" and "out")."""
+    the lines under or beside it, each column read down and joined (a name that wraps, "A lamp that" and "goes out")."""
     pieces = [(line["x0"], line["y0"], line["text"].strip()) for line in others]
     if start["rest"]:
         line = start["line"]
@@ -158,10 +166,10 @@ def _cells(start, others, glue):
 def columns(lines, glue):
     """[{faces, rows}] for a table of several dice, one column each, which the book reads together as a sentence: dice
     labels across the top ("D4", "D6" ...) and the row numbers in a column of their own to the left. A column of a
-    smaller die has "—" in the rows it doesn't use. Cells the PDF set in one line ("a flooded chamber 2D8 goblins")
+    smaller die has "—" in the rows it doesn't use. Cells the PDF set in one line ("a dry well 2D6 crows")
     are cut apart where the words have a gap."""
     marks = sorted((line for line in lines if is_marker(line) and not _DIE.match(line["text"].strip()).group(2)), key=lambda line: line["x0"])
-    heads = [line for line in lines if line["size"] < 8.6 and line["font"].endswith("-Bold")]
+    heads = [line for line in lines if line["size"] < _HEADER_SIZE and line["font"].endswith("-Bold")]
     top = min(line["y0"] for line in marks)
     body = [cell for line in lines if line["size"] <= _CELL_SIZE and line not in heads and line["y0"] > top for cell in _split(line)]
     left = marks[0]["x0"] - _COLUMN

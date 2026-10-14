@@ -7,9 +7,9 @@ that is a printing the recipe wasn't written for.
 
 import re
 
-from ... import SoloError, packs
+from ... import packs
 from .. import grid
-from ..read import count, find, roll, says
+from ..read import changed, count, find, roll, says
 from . import ids
 
 _SECONDS = {"second": 1, "minute": 60, "hour": 3600, "day": 86400}
@@ -41,13 +41,14 @@ def build(pack):
 
 
 def _ranges(book, section):
-    """[[top, value], ...] from a table of ranges ("1–5", "16–18"): what the score reaches, and what it gives."""
+    """[[top, value], ...] from a table of ranges (in a made-up one, "1–4", "15–17"): what the score reaches, and what it gives."""
     _, rows = grid.read(section.lines(own=True), book.glue)
     return [[int(re.split(r"[–-]", cell[0])[-1].rstrip("+")), int(cell[1])] for cell in (row["cells"] for row in rows)]
 
 
 def _damage_bonus(book, section):
-    """The damage bonus by STR and AGL: up to 12 none, 13-16 a die, 17 and more a bigger one."""
+    """The damage bonus by STR and AGL: a row for each range of the score, giving no die or a die (in a made-up table, up to 9 none, 10-13 a
+    D4, 14 and more a D8), the last range open-ended."""
     header, rows = grid.read(section.lines(own=True), book.glue)
     table = []
     for cells in (row["cells"] for row in rows):
@@ -100,7 +101,7 @@ def _torch(book, gear):
     row = next((r["cells"] for r in grid.read(gear.find("Table: Light Sources").lines(own=True), book.glue)[1] if r["cells"][0] == "Torch"), None)
     found = re.search(r"burn(?:s)? for up to (?:a|one) (shift|stretch)", row[-1] if row else "", re.I)
     if not found:
-        raise SoloError("the torch in the light sources table: can't find how long it burns; this may be another printing than the importer was written for")
+        raise changed(gear.find("Table: Light Sources"), "can't find how long the torch burns")
     return {"label": "Torch", "item": "torch", "lasts": {found.group(1).lower(): 1}}
 
 
@@ -110,7 +111,7 @@ def _dying(book, section):
     rally = re.search(r"(?:after )?(\w+) successful death rolls you recover (\d*D\d+) HP", death, re.I)
     fail = re.search(r"(?:after )?(\w+) failed death rolls", death, re.I)
     if not (rally and fail):
-        raise SoloError("the death roll: can't find the successes and failures it counts; this may be another printing than the importer was written for")
+        raise changed(section.find("Death Roll"), "can't find the successes and failures a death roll counts")
     return {"track": "hp", "roll": found.group(1).lower(), "rally": count(rally.group(1)), "die": count(fail.group(1)), "recover": roll(rally.group(2))}
 
 

@@ -62,8 +62,11 @@ def build(system, picks=(), rng=None):
     recipe = system["creation"]
     choose = recipe.get("choose", {})
     if not choose and not recipe.get("attributes"):
-        raise SoloError(f"{system['name']} has no creation tables yet: they come from your books (`make dragonbane BOOKS=<folder of your PDFs>`). "
-                        "Until then, pick a pre-made hero or a character file")
+        gaps = packs.missing(system)
+        if gaps:
+            # Only a game's names so far: a pre-made hero can't be played on them either, so the rules come first.
+            raise SoloError(packs.missing_text(system, gaps) + ".")
+        raise SoloError(f"{system['name']} has no creation tables: pick a pre-made hero or a character file.")
     rng = rng or random.SystemRandom()
     wanted = _match(choose, picks)
     rolled = _attributes(system, recipe, rng)

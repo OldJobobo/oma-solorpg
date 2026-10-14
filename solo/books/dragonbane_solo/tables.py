@@ -5,11 +5,11 @@ again" is a draw of two from the treasure deck and a roll on this table again; "
 
 import re
 
-from ... import SoloError, packs
+from ... import packs
 from ...tomlwrite import Inline
 from .. import dice
 from ..dragonbane_core import ids
-from ..read import count, roll
+from ..read import changed, count, roll
 
 # The tables whose rows are what the booklet prints: (where, id, name).
 _SIMPLE = [(("Your Missions", "Mission Threats", "Table: Threats"), "threats", "Threats"),
@@ -39,10 +39,11 @@ def read(pack, section):
     return dice.read(section.lines(own=True), pack.book.glue)
 
 
-def _write(pack, section, table_id, name, found, rows):
+def _write(pack, section, table_id, name, found, rows, pages=None):
+    """A table of the section, cited by its pages, or by `pages` when its words are read from more of the book than the table."""
     pack.toml(f"tables/{table_id}.toml", {"name": name, "formula": dice.formula(found["faces"]), "source": f"p. {section.page}", "results": rows})
     pack.facts.setdefault("tables", {})[section.number] = (table_id, dice.formula(found["faces"]))
-    pack.item(f"table_{table_id}", name, "table", section.pages, [f"tables/{table_id}"])
+    pack.item(f"table_{table_id}", name, "table", pages or section.pages, [f"tables/{table_id}"])
 
 
 def _simple(pack, section, table_id, name):
@@ -92,15 +93,15 @@ def _damage(pack, section):
 def _locations(pack, section):
     """What the booklet says in words and prints in two tables: a D4 for how many details, a table of which details (contents, environment, oddity, danger)
     and a table of twenty for each."""
-    book = pack.book
     steps = re.search(r"Roll a (D\d+), then roll a D\d+", section.text(own=True).replace("\n", " "))
     if not steps:
-        raise SoloError(f"{book.manifest.get('source', 'the book')}, {section.title!r} (p. {section.page}): can't find how many details a location has; this may be another printing than the importer was written for")
+        raise changed(section, "can't find how many details a location has")
     details = section.find("Table: Location Details")
     kinds = read(pack, section.find("Table: Subtables"))
     many = {"faces": dice.faces(steps.group(1)), "rows": [{"low": n, "high": n} for n in range(1, dice.faces(steps.group(1)) + 1)]}
     _write(pack, details, "location_detail_rolls", "Location details: how many", many,
-           [Inline({"range": [row["low"], row["high"]], "text": f"Roll on the location details table {row['low']} time{'s' * (row['low'] != 1)}", "then": ["location_details"] * row["low"]}) for row in many["rows"]])
+           [Inline({"range": [row["low"], row["high"]], "text": f"Roll on the location details table {row['low']} time{'s' * (row['low'] != 1)}", "then": ["location_details"] * row["low"]}) for row in many["rows"]],
+           section.pages)
     listed = read(pack, details)
     _write(pack, details, "location_details", "Location details", listed,
            [Inline({"range": [row["low"], row["high"]], "text": row["text"], "then": f"location_{packs.slug(row['text'])}"}) for row in listed["rows"]])

@@ -8,7 +8,7 @@ from pathlib import Path
 
 from fake_book import CELL, HEADER, LABEL, FakeBook
 
-from solo import audit
+from solo import SoloError, audit
 from solo.books import dragonbane_core
 from solo.books.dragonbane_core import bestiary
 from solo.books.pack import Pack
@@ -194,6 +194,29 @@ class BestiaryRecipeTest(unittest.TestCase):
         report = audit.audit(self.tmp / "out", "system")
         self.assertEqual([unit for unit in report["unclaimed"] if not unit.startswith("system.toml")], [])
         self.assertEqual(report["problems"], [])
+
+
+class ChangedAnimalsTableTest(unittest.TestCase):
+    def build(self, names, row):
+        with tempfile.TemporaryDirectory() as folder:
+            made = FakeBook(Path(folder) / "extract")
+            made.section(1, 80, 1, "7. Bestiary", "Monsters live here.")
+            made.section(2, 80, 2, "Common Animals", "Animals are common.")
+            made.table(2, 140, names, [row], [68, 120, 178, 218, 388][:len(names)])
+            made.save()
+            pack = Pack(Book(Path(folder) / "extract"), Path(folder) / "out", dragonbane_core.NAME, dragonbane_core.extends(None))
+            pack.system.update({"weapons": {}, "armor": {}})
+            bestiary.build(pack)
+
+    def test_a_table_of_other_columns_or_an_attack_set_otherwise_is_named_with_its_page(self):
+        with self.assertRaisesRegex(SoloError, r"'Common Animals' \(p. 2\): the table on p. 2 has 4 columns, and the importer reads 5; this may be another printing"):
+            self.build(["ANIMAL", "MOVEMENT", "ATTACK", "SKILLS"], ["Hare", "16", "Bite (skill level 8, damage D3)", "Evade 14"])
+        with self.assertRaisesRegex(SoloError, r"'Common Animals' \(p. 2\): can't read the attack of Hare on p. 2 \('Bite, D3, at 8'\)"):
+            self.build(["ANIMAL", "MOVEMENT", "HP", "ATTACK", "SKILLS"], ["Hare", "16", "3", "Bite, D3, at 8", "Evade 14"])
+
+    def test_a_number_cell_that_holds_more_than_a_number_is_named_with_its_column_and_page(self):
+        with self.assertRaisesRegex(SoloError, r"'Common Animals' \(p. 2\): the table on p. 2 has '3 each' in its HP column, where the importer reads a number"):
+            self.build(["ANIMAL", "MOVEMENT", "HP", "ATTACK", "SKILLS"], ["Hare", "16", "3 each", "Bite (skill level 8, damage D3)", "Evade 14"])
 
 
 if __name__ == "__main__":

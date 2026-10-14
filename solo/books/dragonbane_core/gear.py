@@ -11,10 +11,10 @@ import re
 from ... import packs
 from .. import grid
 
-# The skill a weapon uses, by the words in its name, first match wins. The book lists what each
-# skill covers ("knives and daggers", "spears and tridents, including lances") and gives a
-# shield and a halberd none: a shield parries with any STR-based melee skill and this uses
-# BRAWLING; a halberd is a long piercing weapon and goes with the spears.
+# The skill a weapon uses, by the words in its name, first match wins. The book says in each
+# skill's entry which weapons it covers, and gives a shield and a halberd none: a shield parries
+# with any STR-based melee skill and this uses BRAWLING; a halberd is a long piercing weapon and
+# goes with the spears.
 WEAPON_SKILLS = [
     ("crossbow", "crossbows"), ("bow", "bows"), ("sling", "slings"), ("shield", "brawling"),
     ("sword|scimitar", "swords"), ("axe", "axes"), ("hammer|mace|club|flail|morningstar|blunt object", "hammers"),
@@ -22,6 +22,8 @@ WEAPON_SKILLS = [
 ]
 # How the engine names what the book's Features column says.
 _FEATURES = {"can_be_thrown": "thrown"}
+# A grip as a table may write it: "1H", "2H", "1-handed", "Two-handed", "1 H".
+_GRIP = re.compile(r"^(1|2|one|two)[\s-]*h(?:and(?:ed)?)?$", re.I)
 _COINS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10, "twenty": 20, "fifty": 50, "hundred": 100}
 
 
@@ -38,9 +40,9 @@ def build(pack):
         worn = "armor rating" in columns
         refs = ["system.toml:armor"] if worn else []
         for row in rows:
-            cells = {name: row["cells"][at] for name, at in columns.items()}
+            cells = grid.Cells(section, header, row)
             name = row["cells"][0]
-            weapon = "grip" in columns and cells["grip"] in ("1H", "2H")
+            weapon = "grip" in columns and _grip(cells["grip"]) is not None
             if name == "Unarmed":
                 pack.facts["unarmed"] = {"damage": _dice(cells["damage"])}
                 continue
@@ -50,7 +52,7 @@ def build(pack):
                 weapons[item_id] = _weapon(name, cells, skills)
                 refs.append(f"system.toml:weapons.{item_id}")
             elif worn:
-                armor[item_id] = int(cells["armor rating"].lstrip("+"))
+                armor[item_id] = cells.number("armor rating")
                 if _banes(cells["effect"]):
                     entry["banes"] = _banes(cells["effect"])
             pack.gear["gear"][item_id] = entry
@@ -93,7 +95,7 @@ def _entry(name, category, cells, page):
 
 def _price(cost):
     """(price, note): "5 silver" as it is; "2 gold/day" is 2 gold per day; a price with more to it
-    ("2 gold × potency") or none ("—") is "varies", and the note says what the book gave."""
+    ("3 gold × dose", made up) or none ("—") is "varies", and the note says what the book gave."""
     amount = re.match(r"^((?:\d+ (?:gold|silver|copper)\s*)+)(.*)$", cost)
     rest = amount.group(2).strip() if amount else cost
     if amount and not rest:
@@ -119,12 +121,12 @@ def _weapon(name, cells, skills):
     spec = {"skill": skill, "damage": _dice(cells["damage"])}
     if "no damage bonus" not in cells["features"].lower() and skills.get(skill):
         spec["bonus"] = skills[skill]
-    spec["grip"] = int(cells["grip"][0])
+    spec["grip"] = _grip(cells["grip"])
     if cells["str"] != "—":
-        spec["str"] = int(cells["str"])
+        spec["str"] = cells.number("str")
     spec["range"] = _range(cells["range"])
     if cells["durability"] != "—":
-        spec["durability"] = int(cells["durability"])
+        spec["durability"] = cells.number("durability")
     if features:
         spec["features"] = features
     if "cannot be used for parrying" in cells["features"].lower() or "requires quiver" in cells["features"].lower() or name in ("Sling",):
@@ -132,6 +134,12 @@ def _weapon(name, cells, skills):
     if "requires quiver" in cells["features"].lower() or name == "Sling":
         spec["ranged"] = True
     return spec
+
+
+def _grip(text):
+    """How many hands a weapon takes, from its grip cell; None for a cell that gives no grip."""
+    found = _GRIP.match(text.strip())
+    return None if found is None else 1 if found.group(1).lower() in ("1", "one") else 2
 
 
 def _dice(text):
@@ -147,7 +155,7 @@ def _range(text):
 
 
 def _banes(effect):
-    """The skills an armor or a helmet puts a bane on ("Bane on EVADE and SNEAKING rolls."), and
+    """The skills an armor or a helmet puts a bane on (in a made-up cell, "Bane on ACROBATICS and SWIMMING rolls."), and
     "ranged_attack" for all ranged attacks."""
     found = re.match(r"Bane on (.+?)(?: rolls)?\.?$", effect)
     if not found:
@@ -167,7 +175,7 @@ def _weapon_skills(book):
 
 
 def _coins(book):
-    """{coin: worth in the smallest}, from the coins sidebar ("Ten copper coins equal one silver")."""
+    """{coin: worth in the smallest}, from the coins sidebar (a made-up one: "Five tin coins equal one copper")."""
     text = book.find("2. Your Player Character", "Gear", "Sidebar: Coins").text(own=True).lower()
     ratios = {small: (_COINS[n], big) for n, small, big in re.findall(r"(\w+) (\w+) coins equal one (\w+)", text) if n in _COINS}
     coins = {small: 1 for small in ratios if small not in {big for _, big in ratios.values()}}

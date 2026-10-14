@@ -116,10 +116,15 @@ def cmd_new(args):
     if not system_name:
         raise SoloError(f"{adventure['title']} doesn't name its system: add system = \"...\" to adventure.toml or pass --system")
     system_path = library.find_system(system_name)
+    system = packs.load_system(system_path)
+    gaps = packs.missing(system)
+    if gaps:
+        # Before a hero is made: a pack of names only has no creation tables, and its pre-made heroes can't be played on it either.
+        raise SoloError(f"{adventure['title']} can't begin until the rules it plays on are built. " + packs.missing_text(system, gaps) + ".")
     if args.character and (Path(args.character).expanduser() / "campaign.toml").exists():
         sheet = campaign.hero(Path(args.character).expanduser(), name=args.name)
     else:
-        sheet = creation.character(packs.load_system(system_path), args.character, name=args.name, seed=args.seed, adventure=adventure)
+        sheet = creation.character(system, args.character, name=args.name, seed=args.seed, adventure=adventure)
     root = Path(args.dir).expanduser() if args.dir else library.new_campaign_dir(adventure_path.name, sheet.get("name", "hero"))
     prefs = {"tone": args.tone, "lines": args.line, "veils": args.veil}
     root = campaign.create(root, system_path, adventure_path, sheet, args.title, prefs=prefs)
@@ -1106,18 +1111,31 @@ def _import_book(args):
     many = path.is_dir() and not (path / "manifest.json").exists()
     if many and args.out:
         raise SoloError("--out is the folder of one pack: point at one PDF, or give --systems and --adventures for the folders of all of them")
-    folders = []
+    # A book that can't be read, or that no importer knows, doesn't stop the others: each is said, and the import fails at the end.
+    folders, failed = [], []
     for source in (sorted(path.glob("*.pdf")) if many else [path]):
         if source.is_dir():
             folders.append(source)
-        else:
+            continue
+        try:
             folder, manifest = extract.extract(source, None if many else args.sources, tables=False)
-            print(f"read {manifest['pages']} pages of {source.name} into {folder}")
-            folders.append(folder)
-    known, unknown = books.plan(folders)
-    failed = []
+        except SoloError as error:
+            print(f"\n{source.name}: {error}")
+            failed.append(f"{source.name} (it can't be read)")
+            continue
+        print(f"read {manifest['pages']} pages of {source.name} into {folder}")
+        folders.append(folder)
+    known, unknown, broken = books.plan(folders)
+    for folder, error in broken:
+        print(f"\n{Path(folder).name} can't be read: {error}")
+        failed.append(f"{Path(folder).name} (it can't be read)")
     for folder, recipe in known:
-        target, written, notes = books.build(folder, args.out, args.replace, args.systems, args.adventures)
+        try:
+            target, written, notes = books.build(folder, args.out, args.replace, args.systems, args.adventures)
+        except SoloError as error:
+            print(f"\n{recipe.NAME}: {error}")
+            failed.append(f"{recipe.NAME} (it wasn't built)")
+            continue
         print(f"\n{recipe.NAME}: built {len(written)} files in {target}")
         print("\n".join(f"  note: {note}" for note in notes))
         report = audit.audit(target, books.kind_of(recipe))
@@ -1125,11 +1143,12 @@ def _import_book(args):
               f"{len(report['unverified'])} unverified, {len((report['pages'] or {}).get('uncited', []))} pages uncited")
         if audit.failed(report):
             print(audit.render(report), end="")
-            failed.append(target.name)
+            failed.append(f"{target.name} (the pack and the book's pages disagree)")
     for folder in unknown:
-        print(f"\nno importer knows {Path(folder).name}: an agent with the solo-rules-import or solo-import skill can read it (make adventure, make supplement)")
+        print(f"\n{books.unknown(folder)}")
+        failed.append(f"{Path(folder).name} (no importer knows it)")
     if failed:
-        raise SoloError(f"{', '.join(failed)}: the pack and the book's pages disagree (above)")
+        raise SoloError(f"not every book became a pack: {'; '.join(failed)}. See above.")
 
 
 # Rendering ------------------------------------------------------------------------------

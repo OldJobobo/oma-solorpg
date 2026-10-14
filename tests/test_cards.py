@@ -25,7 +25,7 @@ def deck(folder, faces):
         for at, text in enumerate(lines):
             made.line(2 * number + 2, 40 + 12 * at, text, 60, CELL)
         made.line(2 * number + 2, 200, "DRAGONBANE CORE SET", 60, CELL)
-    made.save()
+    made.save(pages=True)
     return Book(folder)
 
 
@@ -77,6 +77,15 @@ class TreasureTest(unittest.TestCase):
         report = audit.audit(self.tmp / "out", "system")
         self.assertEqual(report["unclaimed"], [])
         self.assertEqual(report["problems"], [])
+        # Read back against the made-up deck's own pages, every card's words and numbers are on its page.
+        self.assertEqual(report["unverified"], [])
+
+
+class FrameTest(unittest.TestCase):
+    def test_the_frames_words_come_out_in_one_order_whatever_order_they_were_found_in(self):
+        # Two frame lines as long as each other overlap in a card's line: which goes first decides what is left.
+        for frame in (["AB CD", "CD EF"], ["CD EF", "AB CD"]):
+            self.assertEqual(cards.without("AB CD EF", frame), "EF", frame)
 
 
 class OtherDecksTest(unittest.TestCase):

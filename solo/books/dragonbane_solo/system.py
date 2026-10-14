@@ -62,11 +62,14 @@ def _scavenge(section):
 def _npcs(pack, section):
     """The attack table's kinds of attacker, and the simple NPCs: a template each (attributes, movement, HP, armor, damage and skill levels)."""
     templates = {}
-    block = section.find("Sidebar: Simple NPC Templates").text(own=True)
+    sidebar = section.find("Sidebar: Simple NPC Templates")
+    block = sidebar.text(own=True)
     for name, body in re.findall(r"\n\n([A-Z]+)\n\n(.*?)(?=\n\n[A-Z]+\n\n|\Z)", block, re.S):
         found = {key: re.search(pattern, body) for key, pattern in (("attributes", r"Attributes: (\d+)"), ("movement", r"Movement: (\d+)"), ("hp", r"HP: (\d+)"), ("armor", r"Armor: (\d+|—)"),
                                                                     ("damage", r"Damage: (\d*D\d+)"), ("skill", r"relevant skills (\d+)"), ("other", r"other (\d+)"))}
         templates[name.lower()] = {key: (roll(match.group(1)) if key == "damage" else 0 if match.group(1) == "—" else int(match.group(1))) for key, match in found.items() if match}
+    if not templates:
+        pack.note(f"{sidebar.title!r} (p. {sidebar.page}): no template the importer can read, so the pack has no simple NPCs")
     return {"attacks": "npc_attacks", "attackers": pack.facts["attackers"], "templates": templates}
 
 

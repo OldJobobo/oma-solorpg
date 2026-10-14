@@ -14,8 +14,14 @@ def find(section, pattern, what, flags=re.I | re.S, own=False):
     """The match of `pattern` in a section's text, or an error saying which part of which book is not as the recipe expects."""
     found = re.search(pattern, section.text(own=own), flags)
     if found is None:
-        raise SoloError(f"{section.book.manifest.get('source', 'the book')}, {section.title!r} (p. {section.page}): can't find {what}; this may be another printing than the importer was written for")
+        raise changed(section, f"can't find {what}")
     return found
+
+
+def changed(section, what):
+    """The error for a section that isn't as the recipe expects: which part of which book, and what is wrong with it."""
+    return SoloError(f"{section.book.manifest.get('source', 'the book')}, {section.title!r} (p. {section.page}): {what}; "
+                     "this may be another printing than the importer was written for")
 
 
 def says(section, pattern):
@@ -23,7 +29,10 @@ def says(section, pattern):
 
 
 def count(word):
-    return int(word) if word.isdigit() else _COUNTS[word.lower()]
+    if word.isdigit() or word.lower() in _COUNTS:
+        return int(word) if word.isdigit() else _COUNTS[word.lower()]
+    raise SoloError(f"the importer reads {word!r} where it expects a number, and doesn't know it as one (it knows the digits and {', '.join(_COUNTS)}); "
+                    "this may be another printing than the importer was written for")
 
 
 def roll(text):

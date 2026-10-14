@@ -13,7 +13,7 @@ import re
 from html.parser import HTMLParser
 from pathlib import Path
 
-from . import SoloError
+from . import SoloError, library
 from .packs import FORMAT, slug, toml_string
 
 _DOC_TYPES = ("JournalEntryPage", "JournalEntry", "Actor", "RollTable", "Item", "Scene")
@@ -25,6 +25,7 @@ _LIST_ITEM = re.compile(r"\s*(?:-|\d+\.)\s")
 def import_adventure(paths, out, journal=None):
     """Journal pages become scenes (links become exits, NPCs and tables), actors become
     NPC stat blocks, roll tables become tables."""
+    out = library.outside_repository(out)
     documents = load_documents(paths)
     journals = [d for d in documents if kind(d) == "JournalEntry"]
     if journal:
@@ -35,7 +36,6 @@ def import_adventure(paths, out, journal=None):
         raise SoloError("no journal entries in the export" + (f" named {journal!r}" if journal else ""))
     else:
         ids = _Ids(journals, actors, tables)
-        out = Path(out)
         (out / "scenes").mkdir(parents=True, exist_ok=True)
         scenes = {}
         for entry, page in ids.page_order:
@@ -72,12 +72,12 @@ def import_adventure(paths, out, journal=None):
 def import_rules(paths, out):
     """Rules journals and item descriptions become rules/*.md; skill items become
     skills.json (skill -> attribute); roll tables become tables/*.json."""
+    out = library.outside_repository(out)
     documents = load_documents(paths)
     journals = [d for d in documents if kind(d) == "JournalEntry"]
     items = [d for d in documents if kind(d) == "Item"]
     tables = [d for d in documents if kind(d) == "RollTable"]
     ids = _Ids(journals, [], tables, items)
-    out = Path(out)
     (out / "rules").mkdir(parents=True, exist_ok=True)
     taken = set()
     for _, page in ids.page_order:
@@ -109,6 +109,7 @@ def import_rules(paths, out):
 def import_character(paths, out, system):
     """A character actor becomes a sheet `solo new --character` accepts. Where the values
     live comes from the system pack's [foundry] table."""
+    out = library.outside_repository(out)
     actors = [d for d in load_documents(paths) if kind(d) == "Actor"]
     characters = [a for a in actors if a.get("type") == "character"] or actors
     if not characters:
@@ -155,7 +156,6 @@ def import_character(paths, out, system):
                 name for name, attribute in system["conditions"].items()
                 if _get(data, condition_path.format(attribute=attribute, name=name))
             ]
-        out = Path(out)
         out.parent.mkdir(parents=True, exist_ok=True)
         _write_json(out, sheet)
         return out

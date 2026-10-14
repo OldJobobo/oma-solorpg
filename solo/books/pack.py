@@ -11,6 +11,7 @@ import re
 from pathlib import Path
 
 from .. import SoloError, packs
+from ..audit import kept
 from ..tomlwrite import dump_toml
 
 _SPANS = re.compile(r"\d+")
@@ -69,7 +70,7 @@ class Pack:
         header = [f"Built by `solo import book` from {self.book.manifest.get('source', 'the book')}; every number and word below is read from its pages.",
                   "Pages are the PDF's, as solo extract numbers them."]
         files = {**self._main(header), "inventory.toml": dump_toml(
-            {"source": self.name, "extract": str(extract), "items": self.items}, ["What the book holds and where it went: see docs/PACK_FORMAT.md."])}
+            {"source": self.name, "extract": kept(extract), "items": self.items}, ["What the book holds and where it went: see docs/PACK_FORMAT.md."])}
         for name, data in (("creation.toml", self.creation), ("gear.toml", self.gear)):
             if data:
                 files[name] = dump_toml(data, header)

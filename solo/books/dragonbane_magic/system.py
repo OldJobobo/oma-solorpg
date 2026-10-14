@@ -4,7 +4,7 @@ which is rolled as PERFORMANCE), the way a mage starts in each (its list of suit
 import re
 
 from ... import packs
-from .. import grid
+from .. import grid, pages
 from ..read import count, find
 from ..dragonbane_core import gear
 from . import schools
@@ -20,7 +20,7 @@ def build(pack):
         school = schools.skill(chapter)
         if school != "general":
             skills[school] = {"attribute": "cha", "untrained": False, "uses": harmonism} if school == "harmonism" else {"attribute": attribute, "untrained": False}
-        option = _start(chapter, school)
+        option = _start(pack, chapter, school)
         if option:
             options[option[0]] = option[1]
         starts += [page for section in chapter.subtree() if section.title in ("Sidebar: Starting Skills", "Sidebar: Starting Harmonists") for page in section.pages]
@@ -33,7 +33,7 @@ def build(pack):
         pack.item("alchemy_ingredients", "Alchemical ingredients", "gear", ingredients[0], [f"gear.toml:gear.{item}" for item in ingredients[1]])
 
 
-def _start(chapter, school):
+def _start(pack, chapter, school):
     """(id, option) for a mage who starts in this school: the book lists skills suited to "newly created animists" (the one the option is named for), six to be
     trained, the school's own among them; None for a school with no such list (harmonism is for bards, dracomancy is learned in play)."""
     sidebar = next((s for s in chapter.subtree() if s.title == "Sidebar: Starting Skills"), None)
@@ -42,6 +42,8 @@ def _start(chapter, school):
     text = " ".join(sidebar.text(own=True).split())
     found = re.search(r"(?:newly created|beginner) ([a-z]+)\b.*?may be chosen as the (\w+) trained skills.*?\):\s*(.*?)\.(?:\s|$)", text)
     if not found:
+        pack.note(f"{pages.clean(chapter.title)}, {sidebar.title!r} (p. {sidebar.page}): can't read which skills a new mage of the school starts with, "
+                  "so a hero can't start in it")
         return None
     agent = re.sub(r"(?<=ch)es$|(?<=[^s])s$", "", found.group(1))
     listed = [item.strip() for item in found.group(3).split(",")]
@@ -53,6 +55,7 @@ def _ingredients(pack, chapter):
     """(pages, [ids]) of the alchemist's ingredients: a table of what each costs a dose and how easy it is to get, as gear."""
     section = next((s for s in chapter.subtree() if s.title == "Sidebar: Magic Tricks"), None)
     if section is None:
+        pack.note(f"{pages.clean(chapter.title)}: no table of ingredients where the importer looks for it (a sidebar on magic tricks), so they aren't gear")
         return None
     _, rows = grid.read(section.lines(own=True), pack.book.glue)
     pack.gear.setdefault("gear", {})

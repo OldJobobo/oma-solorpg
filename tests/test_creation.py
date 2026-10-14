@@ -118,7 +118,7 @@ class CreationRecipeTest(unittest.TestCase):
         made.banner(11, y, 3, "Table: Effects of Age")
         made.roll_table(11, y + 20, ["D6", "AGE", "TRAINED SKILLS*", "ATTRIBUTES†"],
                    [["1–3", "Young", "6+2", "AGL and CON +1"], ["4–5", "Adult", "6+4", "—"], ["6", "Old", "6+6", "STR, AGL, and CON –2, INT and WIL +1"]], [122, 188, 271, 339])
-        made.save()
+        made.save(pages=True)
         self.book = Book(self.tmp / "extract")
         self.pack = Pack(self.book, self.tmp / "out", dragonbane_core.NAME, dragonbane_core.extends(None))
         self.pack.system["weapons"] = {"light_mace": {}, "sabre": {}, "pike": {}, "dirk": {}}
@@ -179,6 +179,8 @@ class CreationRecipeTest(unittest.TestCase):
         # The weapons and armor stand in for what the gear recipe writes: they are not this recipe's to claim.
         self.assertEqual([unit for unit in report["unclaimed"] if unit.startswith("creation.toml")], [])
         self.assertEqual(report["problems"], [])
+        # Each number is on the pages its item cites: a kin's movement is the movement table's, a profession's six skills the skills' section's.
+        self.assertEqual(report["unverified"], [])
 
 
 if __name__ == "__main__":

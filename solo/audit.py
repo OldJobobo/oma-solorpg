@@ -24,7 +24,7 @@ import re
 import unicodedata
 from pathlib import Path
 
-from . import SoloError, packs
+from . import SoloError, dice, library, packs
 from .extract import SCANNED_BELOW, chapter_level
 from .library import REPO
 
@@ -37,6 +37,8 @@ STATUSES = ("mapped", "house", "engine", "skipped", "todo")
 # system.toml keys that describe the pack or an import, not the game.
 _SYSTEM_META = ("name", "family", "source", "foundry", "extends", "format")
 _RANGE = re.compile(r"^(\d+)\s*-\s*(\d+)$")
+# The folders of a pack that hold an entry a file (tables/fear.toml), as the engine loads them.
+_FOLDERS = ("tables", "characters", "bestiary", "spells", "moves", "assets")
 
 
 def load_inventory(pack):
@@ -78,8 +80,16 @@ def load_inventory(pack):
         items[item_id] = {**item, "id": item_id, "name": item.get("name") or item_id.replace("_", " ").capitalize(),
                           "status": status, "pages": pages, "to": to, "note": item.get("note", "").strip(), "file": name}
     extract = data.get("extract")
-    return {"source": data.get("source", ""), "extract": Path(extract).expanduser() if extract else None,
+    # A relative extract is under SOLO_HOME (sources/<book>): the inventory reads the same on every machine.
+    return {"source": data.get("source", ""), "extract": library.home() / Path(extract).expanduser() if extract else None,
             "items": items, "problems": problems}
+
+
+def kept(folder):
+    """An extract's folder as an inventory keeps it: under SOLO_HOME, relative to it (sources/<book>), so the pack is the same file on
+    every machine; anywhere else, the whole path."""
+    folder, home = Path(folder).expanduser().resolve(), library.home().expanduser().resolve()
+    return folder.relative_to(home).as_posix() if home in folder.parents else str(folder)
 
 
 def parse_pages(value):
@@ -129,7 +139,8 @@ def audit(pack, kind, extract=None):
     folder = Path(extract).expanduser() if extract else inventory["extract"]
     report["pages"] = _page_coverage(folder, items) if folder else None
     book = _book_pages(folder) if folder else {}
-    report["unverified"] = [line for item in items.values() for line in _checked(item, loaded, book)] if book else []
+    lines = _book_lines(folder) if book else {}
+    report["unverified"] = [line for item in items.values() for line in _checked(item, pack, loaded, book, lines)] if book else []
     report["files"] = _progress(items)
     return report
 
@@ -219,9 +230,8 @@ def pack_units(pack, kind, loaded):
             for section in ("factions", "clocks", "weapons"):
                 units += [f"{name}:{section}.{key}" for key in data.get(section, {})]
     # This pack's own files: a pack laid over another claims only what it adds.
-    units += [f"tables/{tid}" for tid in packs._load_folder(pack / "tables")]
-    units += [f"characters/{cid}" for cid in packs._load_folder(pack / "characters")]
-    units += [f"bestiary/{mid}" for mid in packs._load_folder(pack / "bestiary")]
+    for folder in _FOLDERS:
+        units += [f"{folder}/{stem}" for stem in packs._load_folder(pack / folder)]
     units += [f"rules/{p.name}" for p in sorted((pack / "rules").glob("*.md"))]
     return units
 
@@ -243,7 +253,7 @@ def _covers(ref, unit):
     every weapon (the book's weapons table), system.toml:weapons.dagger only the dagger, and
     a reference deeper than a unit (weapons.dagger.damage) still claims its unit.
     tables/fear.toml claims tables/fear."""
-    ref = re.sub(r"^(tables|npcs|characters|scenes|bestiary)/([^:/]+)\.(toml|json|md)$", r"\1/\2", ref)
+    ref = re.sub(r"^(tables|npcs|characters|scenes|bestiary|spells|moves|assets)/([^:/]+)\.(toml|json|md)$", r"\1/\2", ref)
     return ref == unit or ref.startswith(unit + ".") or unit.startswith(ref + ".")
 
 
@@ -277,8 +287,9 @@ def _page_coverage(folder, items):
 # Coverage says every item went somewhere; it can't say the pack copied the book right. An
 # agent that half-remembers a rulebook writes plausible numbers. So what a mapped item
 # points at is read back against the pages it cites: a table's results, word for word
-# (order aside, since columns scramble), and in any data (weapons, rests, monsters, gear)
-# every dice expression, stat and price.
+# (order aside, since columns scramble) and, where the page sets the table as rows, each on
+# the row its range starts; its dice against its results' ranges; and in any data (weapons,
+# rests, monsters, gear) every dice expression, stat and price.
 
 _CHECKS_SHOWN = 5
 
@@ -299,20 +310,30 @@ def _book_pages(folder):
     return {number: _norm(text) for number, text in _page_texts(folder).items()}
 
 
+def _book_lines(folder):
+    """{page: [each line of its text, normalised]}: where a table's rows start."""
+    return {number: [line for line in map(_norm, re.sub(r"\u00ad\s*", "", text).splitlines()) if line]
+            for number, text in _page_texts(folder).items()}
+
+
 def _norm(text):
     # A soft hyphen marks where a word may break ("market\u00adplace"), at a line's end too.
     text = unicodedata.normalize("NFKC", re.sub(r"\u00ad\s*", "", str(text))).lower()
     return " ".join(re.sub(r"[\u2010-\u2015\u2212]", "-", text).replace("\u00d7", "x").split())
 
 
-def _checked(item, loaded, book):
+def _checked(item, pack, loaded, book, lines):
     if item["status"] != "mapped" or not item["pages"]:
         return []
     text = " ".join(book.get(page, "") for page in item["pages"])
-    if not text.strip():
-        return []
-    words = set(re.findall(r"[a-z0-9]+", text))
     where = f"p. {spans(item['pages'])}"
+    if not re.search(r"[a-z]", text):
+        # A scanned page has no words, and nothing the pack says can be read back against it.
+        return [f"{item['id']}: {where} has no text to read the pack against (a scanned page has none): run ocrmypdf on the PDF and "
+                f"extract it again, or write what the page's picture says in picture/{item['pages'][0]:04d}.txt in the extract"]
+    words = set(re.findall(r"[a-z0-9]+", text))
+    # A number with its unit set close after it ("2H", "10m") is the number too.
+    words |= {found.group(1) for found in map(re.compile(r"(\d+)[a-z]+").fullmatch, list(words)) if found}
     found = []
     for ref in item["to"]:
         data = _data_for(ref, loaded)
@@ -324,26 +345,35 @@ def _checked(item, loaded, book):
         parts = [(data, text, where)]
         if ref.startswith("tables/"):
             parts = [({k: v for k, v in data.items() if k not in ("formula", "results")}, text, where)]
-            for result in data.get("results", []):
+            rows = _rows([line for page in item["pages"] for line in lines.get(page, [])], data.get("results", []))
+            for at, result in enumerate(data.get("results", [])):
                 page = result.get("page")
                 own = book.get(page, "") if isinstance(page, int) else text
                 own_where = f"p. {page}" if isinstance(page, int) else where
-                own_words = set(re.findall(r"[a-z0-9]+", own))
-                label = "-".join(dict.fromkeys(str(n) for n in (result.get("range") or ["?", "?"])[:2]))
-                roles = [v["text"] for v in result.values() if isinstance(v, dict) and isinstance(v.get("text"), str)]  # an NPC attack table's columns
-                for said in [result.get("text", ""), *result.get("choices", []), *roles]:
+                own_words = _words(own)
+                label = _label(result)
+                for said in _said(result):
                     missing = _missing_words(said, own_words) or _missing_numbers(said, own_words)
                     if missing:
                         found.append(f"{item['id']}: {ref} result {label} \"{_short(said)}\" isn't on {own_where} "
                                      f"(no {', '.join(missing[:4])})")
+                        break
+                else:
+                    found += [f"{item['id']}: {ref} result {label} \"{_short(_said(result)[0])}\" {line}"
+                              for line in _row_problems(at, rows, own_words, own_where)]
                 parts.append(({k: v for k, v in result.items() if k not in ("range", "page")}, own, own_where))
+            found += [f"{item['id']}: {ref} {line}" for line in _formula_problems(data, where)]
         for part, part_text, part_where in parts:
             for dice in sorted(set(_dice_in(part))):
                 if not _dice_on(dice, part_text):
                     found.append(f"{item['id']}: {ref} has {dice}, and {part_where} never says it")
-        for label, number in _numbers_in(ref, data):
-            if str(number) not in words:
-                found.append(f"{item['id']}: {ref} gives {label} {number}, and {where} never says it")
+        own = _own(ref, pack)
+        if own is None:
+            # The pack maps what only a pack under it holds: the book's pages show whether that one had its numbers right.
+            found += [f"{item['id']}: {ref} gives {label} {number}, and {where} never says it"
+                      for label, number in _numbers_in(ref, data) if not _says_number(number, text, words)]
+        else:
+            found += [f"{item['id']}: {ref} {line}" for line in _entry_problems(ref, own, text, words, where, loaded.get("tracks") or {})]
 
     money = loaded.get("money") or {}
     entries = [(ref, _data_for(ref, loaded)) for ref in item["to"] if ref.startswith("gear.toml:gear.")]
@@ -357,12 +387,9 @@ def _data_for(ref, loaded):
     """What a reference points at, as the engine loaded it (every layer of a pack)."""
     path, _, key = ref.partition(":")
     stem = Path(path).stem
-    if path.startswith("tables/"):
-        return loaded.get("tables", {}).get(stem)
-    elif path.startswith("bestiary/"):
-        return loaded.get("bestiary", {}).get(stem)
-    elif path.startswith("npcs/"):
-        return loaded.get("npcs", {}).get(stem)
+    folder = path.partition("/")[0]
+    if "/" in path and folder in (*_FOLDERS, "npcs"):
+        return loaded.get(folder, {}).get(stem)
     roots = {"system.toml": loaded, "adventure.toml": loaded, "creation.toml": loaded.get("creation"),
              "gear.toml": {"gear": loaded.get("gear"), "money": loaded.get("money")}}
     if not key or path not in roots:
@@ -409,6 +436,151 @@ def _numbers_in(ref, data):
     return numbers
 
 
+# The numbers of an entry ------------------------------------------------------------------
+#
+# Every number of an entry the book gives (a weapon, a rest, a piece of gear, a monster, a spell,
+# a creation choice, a hero) is on the pages its item cites. Where a page labels a value ("HP: 18",
+# "Rank: 2", "D6 HP"), the value has to be one the label carries: a monster's HP of 12 doesn't
+# pass because its page has a 12 somewhere else. And a number the page has only as another
+# label's value (the 18 of "HP: 18", for the skill of the monster's attack) isn't the entry's.
+# What a recipe or an agent works out rather than copies is not read: 0 and 1 (a book says
+# "none", "a", "once"), time (counted in seconds, or in rests), a list (a table the recipe may have
+# completed: a row between two the book prints, a top for "17+"), and what each coin is worth.
+
+_UNREAD = ("time",)
+_NUMBER_WORDS = {2: ("two", "twice", "double", "half"), 3: ("three", "thrice", "third"), 4: ("four", "quarter"), 5: ("five",), 6: ("six",),
+                 7: ("seven",), 8: ("eight",), 9: ("nine",), 10: ("ten",), 11: ("eleven",), 12: ("twelve",), 20: ("twenty",)}
+# The labels a book sets before a stat's value ("HP: 18"), by the key a pack holds the stat under.
+_STAT_LABELS = {"hp": ("hp",), "wp": ("wp",), "armor": ("armor",), "ferocity": ("ferocity",), "movement": ("movement", "mov."), "rank": ("rank",)}
+
+
+def _own(ref, pack):
+    """What a reference points at in the pack's own files, without the packs it is laid over: None
+    when only those hold it."""
+    path, _, key = ref.partition(":")
+    folder = path.partition("/")[0]
+    if "/" in path and folder in (*_FOLDERS, "npcs"):
+        found = {}
+        for suffix in (".json", ".toml"):
+            file = Path(pack) / folder / f"{Path(path).stem}{suffix}"
+            found.update(packs.load_data(file) if file.exists() else {})
+        return found or None
+    if path not in ("system.toml", "creation.toml", "gear.toml") or not key or not (Path(pack) / path).exists():
+        return None
+    node = packs.load_data(Path(pack) / path)
+    for part in key.split("."):
+        node = node.get(part) if isinstance(node, dict) else None
+    return node
+
+
+def _entries(ref, data):
+    """[(name, entry)] whose numbers are read back, of what a reference points at: a file of its own
+    (a monster, an NPC, a spell, a hero), a key of system.toml, creation.toml or gear.toml that names
+    one entry, or each entry of a section that is a table of them (system.toml:weapons: each weapon;
+    system.toml:armor: each armor's rating). Not a section of other things (combat, magic)."""
+    path, _, key = ref.partition(":")
+    if "/" in path:
+        return [("", data)] if path.partition("/")[0] in ("bestiary", "npcs", "spells", "characters") and isinstance(data, dict) else []
+    if path not in ("system.toml", "creation.toml", "gear.toml") or not key or not isinstance(data, dict) or key.split(".")[0] in ("money", *_UNREAD):
+        return []
+    if "." in key:
+        return [("", data)]
+    if data and all(isinstance(value, dict) for value in data.values()):
+        return [(f"{name}.", value) for name, value in data.items()]
+    if data and all(_whole(value) for value in data.values()):
+        return [("", data)]
+    return []
+
+
+def _whole(value):
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _numbers(entry, prefix=""):
+    """[(path, key, number)]: an entry's numbers that are read back (see above), and its prices'."""
+    found = []
+    for key, value in entry.items():
+        if key in _UNREAD:
+            continue
+        elif isinstance(value, dict):
+            found += _numbers(value, f"{prefix}{key}.")
+        elif _whole(value) and abs(value) > 1:
+            found.append((f"{prefix}{key}", key, abs(value)))
+        elif key == "price":
+            found += [(f"{prefix}{key}", key, int(n)) for n in re.findall(r"\d+", str(value))]
+    return found
+
+
+def _track_dice(entry, tracks, prefix=""):
+    """[(path, track, dice)]: the dice an entry gives a track ("1d6" HP a rest recovers)."""
+    found = []
+    for key, value in entry.items():
+        if isinstance(value, dict):
+            found += _track_dice(value, tracks, f"{prefix}{key}.")
+        elif key in tracks and isinstance(value, str):
+            found += [(f"{prefix}{key}", key, dice) for dice in _dice_in(value)]
+    return found
+
+
+def _says_number(number, text, words):
+    """Whether the pages have a number: as digits (with a unit after them, "2H", too: see _checked), in
+    words ("two", "twice"), or (meters) in kilometers."""
+    return (str(number) in words or any(word in words for word in _NUMBER_WORDS.get(number, ()))
+            or (number % 1000 == 0 and re.search(rf"\b{number // 1000}\s*kilomet", text) is not None))
+
+
+def _labelled(text, labels):
+    """[(value, start, end)] of each number the pages set after one of these labels and a colon ("hp: 18")."""
+    found = []
+    for label in labels:
+        for at in re.finditer(rf"(?<![a-z]){re.escape(label)}\s*:\s*(\d+)(\s*kilomet)?", text):
+            found.append((int(at.group(1)) * (1000 if at.group(2) else 1), at.start(1), at.end(1)))
+    return found
+
+
+def _paired(text, labels):
+    """The values the pages give a stat by one of its labels: after it and a colon ("hp: 18"), or just
+    before it ("with 20 hp"). None when the label is also followed by something other than a number
+    ("armor: same as armor", "willpower points: -"): such a stat isn't always printed as a number
+    there, a recipe works it out, and the page's other values of it are no measure of this one. Empty
+    when no label has a colon and a number after it: a number just before a label is as likely the
+    value of the one above it (a sheet read top to bottom, "willpower points 13 hit points 15"), so it
+    only adds to what a colon gives."""
+    if any(re.search(rf"(?<![a-z]){re.escape(label)}\s*:(?!\s*\d)", text) for label in labels):
+        return None
+    labelled = {value for value, _, _ in _labelled(text, labels)}
+    before = {int(at.group(1)) for label in labels for at in re.finditer(rf"(?<![\w.])(\d+)\s+{re.escape(label)}(?![a-z]|\s*:)", text)}
+    return labelled | before if labelled else set()
+
+
+def _entry_problems(ref, data, text, words, where, tracks):
+    """What an entry's numbers say that its pages don't (see above)."""
+    problems = []
+    for name, entry in _entries(ref, data):
+        numbers = _numbers(entry)
+        labels = {key: (*_STAT_LABELS.get(key, ()), *((key, tracks[key].lower()) if key in tracks else ())) for _, key, _ in numbers}
+        labels = {key: names for key, names in labels.items() if names}
+        claims = {key: _labelled(text, names) for key, names in labels.items()}
+        for path, key, number in numbers:
+            said = f"gives {name}{path} {number}, and {where}"
+            printed = _paired(text, labels[key]) if key in labels else set()
+            if not _says_number(number, text, words):
+                problems.append(f"{said} never says it")
+            elif printed and number not in printed:
+                problems.append(f"{said} says {labels[key][0]}: {', '.join(map(str, sorted(printed)))}")
+            elif str(number) in words and printed is not None and not printed:
+                spots = [(at.start(), at.end()) for at in re.finditer(rf"(?<![\w]){number}(?![\w])", text)]
+                theirs = {(start, end): other for other, found in claims.items() if other != key for _, start, end in found}
+                if spots and all(spot in theirs for spot in spots) and not any(word in words for word in _NUMBER_WORDS.get(number, ())):
+                    problems.append(f"{said} has {number} only as {labels[theirs[spots[0]]][0]}: {number}")
+        for path, track, rolled in _track_dice(entry, tracks):
+            names = "|".join(re.escape(label) for label in (track, tracks[track].lower()))
+            printed = {f"{count if count not in ('', '1') else ''}d{sides}" for count, sides in re.findall(rf"\b(\d*)d(\d+)\s+(?:{names})\b", text)}
+            if printed and rolled not in printed:
+                problems.append(f"gives {name}{path} {rolled}, and {where} says {', '.join(sorted(printed))} {track}")
+    return problems
+
+
 # A price is read back beside its item's name: the plausible price of the wrong row passes a
 # check that only asks whether the number is somewhere on the page. A table puts the price
 # after the name or before it; whichever way explains most of a table's entries is its way,
@@ -444,9 +616,30 @@ def _prices_apart(entries, text, coins):
 _STOP = {"with", "that", "this", "from", "your", "they", "their", "them", "have", "into", "when", "which", "will", "were", "been"}
 
 
+def _words(text):
+    """The words and numbers of normalised text, with a word that a hyphen breaks at a line's end
+    also joined whole ("one-" "handed" is "onehanded" too), as solo extract joins one in a block."""
+    return {*re.findall(r"[a-z0-9]+", text), *("".join(pair) for pair in re.findall(r"([a-z]+)-\s*([a-z]+)", text))}
+
+
+def _tokens(text):
+    """The words of a result that say something: four letters or more, a dice placeholder ({value}) left out."""
+    return [w for w in re.findall(r"[a-z]+", _norm(re.sub(r"\{[^}]*\}", "", str(text)))) if len(w) >= 4 and w not in _STOP]
+
+
+def _has(words, word):
+    return word in words or word.rstrip("s") in words or f"{word}s" in words
+
+
+def _joined(text):
+    """{word: the whole it is part of}, for the words of a text that have a hyphen of their own ("two-handed": "handed" is
+    "twohanded"). solo extract joins a word whose line breaks at its hyphen, and a page then has it whole where the recipe kept it."""
+    return {part: "".join(parts) for parts in (word.split("-") for word in re.findall(r"[a-z]+(?:-[a-z]+)+", _norm(text))) for part in parts}
+
+
 def _missing_words(text, words):
-    tokens = [w for w in re.findall(r"[a-z]+", _norm(re.sub(r"\{[^}]*\}", "", text))) if len(w) >= 4 and w not in _STOP]
-    missing = [w for w in tokens if w not in words and w.rstrip("s") not in words and f"{w}s" not in words]
+    tokens = _tokens(text)
+    missing = [w for w in tokens if not _has(words, w)]
     return missing if tokens and len(missing) * 3 > len(tokens) else []
 
 
@@ -454,6 +647,137 @@ def _missing_numbers(text, words):
     """The numbers a result names (Potency 12, worth 25 gold) that the page doesn't."""
     numbers = re.findall(r"\b\d+\b", _norm(re.sub(r"\{[^}]*\}", "", text)))
     return [n for n in numbers if n not in words]
+
+
+def _label(result):
+    """A result's range as the report names it: "3", or "3-6"."""
+    return "-".join(dict.fromkeys(str(n) for n in (result.get("range") or ["?", "?"])[:2]))
+
+
+def _said(result):
+    """The words of a result: its text, its choices, and an NPC attack table's text for each kind of attacker."""
+    roles = [v["text"] for v in result.values() if isinstance(v, dict) and isinstance(v.get("text"), str)]
+    return [str(result.get("text", "")), *map(str, result.get("choices", [])), *roles]
+
+
+# A table's rows -------------------------------------------------------------------------
+#
+# A roll table set as rows has each row on the line its range starts ("3-6", "3–6", "3 to 6",
+# a lone "3", "6+" for the last): its words follow the range, and run on over the lines under
+# it when the row wraps. Read that way, each result is checked on its own row, so two results
+# swapped, a range moved, or a word put into a row ("Never runs away" for "Runs away") show. A
+# page's text doesn't always come out as rows: when a table's numbers come out in a column of
+# their own and its words after them, there are no rows to read, and a result's words are only
+# looked for on the page, as before.
+
+_ROW_LINES = 6
+# A range at the start of a line: "3", "3-6", "3 to 6", "6+", and "00" for a hundred.
+_LEAD = re.compile(r"^(\d{1,3})(?:\s*(?:-|to)\s*(\d{1,3}))?(\+)?(?=$|[\s.:)])")
+
+
+def _printed(found, top):
+    """(low, high) of the range a line starts with: "00" is a hundred, and "6+" runs to the table's top."""
+    low, high = (100 if number == "00" else int(number) for number in (found.group(1), found.group(2) or found.group(1)))
+    return low, top if found.group(3) else high
+
+
+def _anywhere(low, high):
+    """A range after a space: the second half of a table set in two halves side by side starts its rows in the middle of a line."""
+    pattern = rf"0*{low}(?!\s*(?:-|to)\s*\d)" if low == high else rf"0*{low}\s*(?:-|to)\s*0*{high}"
+    return re.compile(rf"(?<=\s){pattern}(?=$|[\s.:)])")
+
+
+def _ranged(result):
+    found = result.get("range")
+    return isinstance(found, list) and len(found) == 2 and all(isinstance(n, int) and not isinstance(n, bool) for n in found)
+
+
+def _rows(lines, results):
+    """For each result of a table, the rows of its pages that bear on it: {"label", "said" (its text,
+    choices and roles), "words" (its own words: a column's name before a colon and a note in brackets
+    are the table's), "own" [(text, words) of each row its range starts], "other" [(range, text, words)
+    of each row of the table's span that another range starts]}. A row runs on over the lines under it
+    as far as the result's words would, short of the next row: the last row has no next row to end it,
+    and what is set under the table isn't its own. A result of a deck (`page`) is a card, with no rows."""
+    top = max((result["range"][1] for result in results if _ranged(result)), default=0)
+    leads = [(number, _printed(found, top), found.end()) for number, line in enumerate(lines) for found in [_LEAD.match(line)] if found]
+    leads = [(number, span, end) for number, span, end in leads if 1 <= span[0] <= span[1] <= top]
+    starts = {number for number, _, _ in leads}
+
+    def row(number, end, size):
+        window = [lines[number][end:]]
+        for more in range(number + 1, min(number + _ROW_LINES, len(lines))):
+            if len(" ".join(window)) >= size or more in starts:
+                break
+            window.append(lines[more])
+        text = " ".join(window).strip(" .:)")
+        return text, _words(text)
+
+    rows = []
+    for result in results:
+        said = _said(result)
+        found = {"label": _label(result), "said": said, "own": [], "other": [],
+                 "words": [w for text in said for w in _tokens(re.sub(r"\([^)]*\)|[a-z]+:", " ", _norm(text)))]}
+        if _ranged(result) and "page" not in result:
+            span, size = tuple(result["range"]), len(_norm(" ".join(said)))
+            found["own"] = [row(number, end, size) for number, printed, end in leads if printed == span]
+            if not found["own"]:
+                anywhere = _anywhere(*span)
+                found["own"] = [(text, _words(text)) for line in lines for at in [anywhere.search(line)] if at
+                                for text in [line[at.end():].strip(" .:)")] if re.search(r"[a-z]", text)]
+            found["other"] = [(printed, *row(number, end, size)) for number, printed, end in leads if printed != span]
+        rows.append(found)
+    return rows
+
+
+def _fits(row, words):
+    """Whether a row holds at least half of a result's words."""
+    return bool(words) and sum(_has(row, word) for word in words) * 2 >= len(words)
+
+
+def _row_problems(at, rows, page_words, where):
+    """What is wrong with result `at` on the rows of its table: a word on its row that the page doesn't
+    print at all, another range's row, a row of its own that says something else, or no row. Nothing
+    when the table's numbers came out in a column of their own, and nothing a row's neighbours don't
+    back: a row is only judged where most of the table reads as rows."""
+    row = rows[at]
+    if not row["words"] or any(found["own"] and not any(re.search(r"[a-z]", text) for text, _ in found["own"]) for found in rows):
+        return []
+    if any(_fits(words, row["words"]) for _, words in row["own"]):
+        missing = list(dict.fromkeys(w for said in row["said"] for joined in [_joined(said)] for w in _tokens(said)
+                                     if not _has(page_words, w) and not _has(page_words, joined.get(w, w))))
+        return [f"isn't on {where} (no {', '.join(missing[:4])})"] if missing else []
+    # Another range's row is this result's when it fits this result alone: a row that fits other results of the table as
+    # well (results that share their words, or a row run on into the title of the table below it) proves nothing.
+    theirs = [span for span, _, words in row["other"] if _fits(words, row["words"])
+              and not any(_fits(words, found["words"]) for other, found in enumerate(rows) if other != at)]
+    if theirs:
+        return [f"is row {'-'.join(dict.fromkeys(map(str, theirs[0])))} on {where}, not row {row['label']}"]
+    fitting = sum(1 for found in rows if any(_fits(words, found["words"]) for _, words in found["own"]))
+    if fitting < 2 or fitting * 2 <= sum(1 for found in rows if found["words"]):
+        return []
+    if row["own"]:
+        # A row of short words only ("you run from the", the rest wrapped elsewhere) says too little to say it says something else.
+        said = [text for text, _ in row["own"] if _tokens(text)]
+        return [f"isn't what row {row['label']} on {where} says (\"{_short(said[0], 40)}\")"] if said else []
+    return [f"has no row {row['label']} on {where}: the page doesn't print that range"]
+
+
+def _formula_problems(table, where):
+    """A table's dice against its results' ranges, which are read against the book's rows: a d20 on
+    a table of six rows is the wrong die."""
+    formula = str(table.get("formula", ""))
+    ranges = [result["range"] for result in table.get("results", []) if _ranged(result)]
+    if not ranges or "@" in formula:
+        return []
+    try:
+        possible = dice.outcomes(formula)
+    except SoloError:
+        return []
+    low, high = min(r[0] for r in ranges), max(r[1] for r in ranges)
+    if (min(possible), max(possible)) != (low, high):
+        return [f"rolls {formula} ({min(possible)}-{max(possible)}), and its results, the rows of {where}, run {low}-{high}"]
+    return []
 
 
 def _short(text, size=60):
@@ -490,7 +814,7 @@ def scaffold(pack, folder, source=None):
     itself when it has none) and one per table found, each `todo` with its pages and a
     guessed kind. Every page with text is cited from the start, so the audit's page check
     only has to hold; an agent per chapter file refines, merges, renames and maps them."""
-    pack, folder = Path(pack), Path(folder).expanduser().resolve()
+    pack, folder = library.outside_repository(pack), Path(folder).expanduser().resolve()
     manifest_path, toc_path = folder / "manifest.json", folder / "toc.json"
     if not manifest_path.exists():
         raise SoloError(f"{folder} isn't solo extract's folder (no manifest.json): run solo extract on the book first")
@@ -530,7 +854,7 @@ def scaffold(pack, folder, source=None):
         (pack / name).write_text("\n".join(lines), encoding="utf-8")
         written.append(name)
     header = [f"source  = {packs.toml_string(source or Path(manifest.get('source', 'book')).stem)}",
-              f"extract = {packs.toml_string(str(folder))}", "",
+              f"extract = {packs.toml_string(kept(folder))}", "",
               "# The items are in inventory/, a file per chapter. See docs/PACK_FORMAT.md.", ""]
     (pack / "inventory.toml").write_text("\n".join(header), encoding="utf-8")
     return ["inventory.toml", *written]

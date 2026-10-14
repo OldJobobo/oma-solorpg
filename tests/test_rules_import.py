@@ -216,7 +216,7 @@ class RulesImport(unittest.TestCase):
         self.assertIn("prices: gear.toml:gear.broadsword gives price 15, and p. 3 never says it", found)
         self.assertIn('weather: tables/weather result 5 "Hail the size of eggs" isn\'t on p. 5', found)
         self.assertIn("wolf: tables/wolf_attacks has d10, and p. 6 never says it", found)
-        self.assertIn("wolf: bestiary/wolf gives hp 12, and p. 6 never says it", found)
+        self.assertIn("wolf: bestiary/wolf gives stats.hp 12, and p. 6 never says it", found)
         self.assertTrue(audit.failed(report))
 
     def test_play_on_it(self):

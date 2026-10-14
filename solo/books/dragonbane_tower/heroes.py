@@ -8,6 +8,7 @@ import re
 
 from ... import SoloError, magic, packs
 from ..dragonbane_core import ids
+from ..read import changed
 from ...tomlwrite import Inline
 
 _ATTRIBUTES = ("STR", "CON", "AGL", "INT", "WIL", "CHA")
@@ -35,12 +36,12 @@ def _near(fills, label, window):
 
 
 def _hero(pack, section, lines):
-    book, system = pack.book, pack.system_pack
+    system = pack.system_pack
     fills = [line for line in lines if "aveat" in line["font"]]
     labels = {line["text"].strip(): line for line in lines if line["size"] < 8 and line["text"].strip() in (*_LABELS, "KIN", "AGE", "PROFESSION", "WEAKNESS")}
     found = {name: _near(fills, labels[name], window) for name, window in _LABELS.items() if name in labels}
     if len(labels) != len(_LABELS) + 4 or not all(found[name] for name in _ATTRIBUTES):
-        raise SoloError(f"{book.manifest.get('source', 'the book')}, {section.title!r} (p. {section.page}): can't read the character sheet; this may be another printing than the importer was written for")
+        raise changed(section, "can't read the character sheet")
     attributes = {name.lower(): int(found[name]) for name in _ATTRIBUTES}
     hero_id = packs.slug(section.title)
     info = {key.lower(): _near(fills, labels[key], ((-6, 6), (-2, 14))) for key in ("KIN", "PROFESSION", "AGE")}

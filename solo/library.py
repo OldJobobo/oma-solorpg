@@ -26,6 +26,15 @@ def home():
     return Path(os.environ.get("SOLO_HOME") or Path.home() / "Games" / "solo").expanduser()
 
 
+def outside_repository(path, default=None):
+    """`path`, whole, for an importer to write a book's pack, table or text into: never the repository, which is published
+    and holds no book (NOTICE.md). `default` is where it goes when the player names nowhere, for the error to say."""
+    path = Path(path).expanduser().resolve()
+    if path == REPO or REPO in path.parents:
+        raise SoloError(f"{path} is inside the repository: a book's text stays out of it" + (f" (the default is {default})" if default else ""))
+    return path
+
+
 def state_home():
     return Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local/state") / "solo"
 
@@ -69,8 +78,12 @@ def new_campaign_dir(adventure_id, hero):
 def listing():
     """Everything the panel's Home and New adventure screens show. A pack that doesn't load
     (one half-built from a book) is left out and said why under `problems`, so it never
-    takes the rest of the library down with it."""
+    takes the rest of the library down with it. Each adventure says whether a campaign can
+    begin on it (`ready`), why not (`why`, a sentence) and the name of the system it plays
+    on (`system_name`), which a pack of names only has before its rules are built."""
     systems, problems = [], []
+    # {system id: (its name, or None when it doesn't load; why nothing can begin on it, or "")}
+    rules = {}
     for path in _entries("system"):
         try:
             system = packs.load_system(path)
@@ -79,10 +92,12 @@ def listing():
             if unreadable:
                 # Written for a newer engine than this one: not offered, and the player is told to update.
                 problems.append(f"system {path.name}: {unreadable[0]}")
+                rules[packs.slug(path.name)] = (system["name"], f"This engine can't read the rules it plays on: {unreadable[0]}.")
                 continue
             if gaps:
                 # Only a game's names so far: nothing can be played on it until the book's rules are built.
                 problems.append(f"system {path.name}: " + packs.missing_text(system, gaps))
+                rules[packs.slug(path.name)] = (system["name"], packs.missing_text(system, gaps) + ".")
                 continue
             systems.append({
                 "id": path.name,
@@ -95,8 +110,10 @@ def listing():
                     for cid, sheet in system["characters"].items()
                 ],
             })
+            rules[packs.slug(path.name)] = (system["name"], "")
         except SoloError as error:
             problems.append(f"system {path.name}: {error}")
+            rules[packs.slug(path.name)] = (None, f"The system pack it plays on, {path.name}, doesn't load: {error}")
     adventures = []
     for path in _entries("adventure"):
         try:
@@ -113,15 +130,22 @@ def listing():
             # A campaign an agent is still writing (make campaign): not ready to begin.
             problems.append(f"adventure {path.name}: still being written (draft = true in adventure.toml)")
             continue
+        named = spec.get("system")
+        system_name, why = (rules.get(packs.slug(named), (None, f"It plays on {named}, and there is no system pack by that name.")) if named
+                            else (None, "It doesn't say which system it plays on (system = \"...\" in its adventure.toml)."))
         adventures.append({
             "id": path.name,
             "title": spec.get("title", path.name),
-            "system": spec.get("system"),
+            "system": named,
             "summary": spec.get("summary", ""),
             "path": str(path),
             # Heroes written for this adventure (a pre-generated party), offered before the system's.
             "characters": [{"id": cid, "name": sheet.get("name", cid), "info": ", ".join(map(str, sheet.get("info", {}).values()))}
                            for cid, sheet in premade.items() if not sheet.get("replacement")],
+            # Whether a campaign can begin on it, and a sentence saying why not: the rules it plays on aren't built from the player's books yet.
+            "ready": not why,
+            "why": why,
+            "system_name": system_name,
         })
     now = current()
     folders = sorted(p for p in (home() / "campaigns").glob("*") if (p / "campaign.toml").exists())

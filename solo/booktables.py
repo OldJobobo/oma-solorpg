@@ -9,9 +9,8 @@ the table the engine reads. `solo validate` then checks the ranges cover every r
 """
 
 import re
-from pathlib import Path
 
-from . import SoloError, packs
+from . import SoloError, library, packs
 
 _DASH = r"[-‐-―−]"
 _ROLL = re.compile(rf"^\s*(\d{{1,3}})(?:\s*{_DASH}\s*(\d{{1,3}}))?\s*[.:)]?\s+(\S.*)$")
@@ -134,7 +133,7 @@ def write(text, out, name=None, formula=None, source=None):
     if not results:
         raise SoloError("no table rows found: expected Markdown rows (| 1-2 | text |) or lines like \"1-2 Frozen in place\"")
     formula = formula or found_formula or guess_formula(results)
-    out = Path(out)
+    out = library.outside_repository(out)
     name = name or out.stem.replace("_", " ").capitalize()
     lines = [f"name = {packs.toml_string(name)}", f"formula = {packs.toml_string(formula)}"]
     if source:

@@ -90,6 +90,9 @@ def _sentence(pack, section, title):
     (`then`), so one roll gives the sentence."""
     made = SENTENCES[title]
     found = dice.columns(section.lines(own=True), pack.book.glue)
+    if len(found) != len(made):
+        pack.note(f"{title} (p. {section.page}): the book's table has {len(found)} columns of dice and the importer names {len(made)}: "
+                  + (f"the last {len(found) - len(made)} aren't read" if len(found) > len(made) else f"no table is written for the last {len(made) - len(found)}"))
     for index, ((table_id, name), column) in enumerate(zip(made, found)):
         then = {"then": [table_id for table_id, _ in made[1:]]} if index == 0 else {}
         rows = [Inline({"range": [row["low"], row["high"]], "text": row["text"], **then}) for row in column["rows"] if row["text"] not in ("", "—")]

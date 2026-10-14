@@ -1,7 +1,9 @@
 import json
+import os
 import tempfile
 import textwrap
 import unittest
+import unittest.mock
 from pathlib import Path
 
 from test_cli import CliCase
@@ -275,6 +277,242 @@ class SystemAuditTest(unittest.TestCase):
             report = audit.audit(pack, "system")
         # name, family, format and foundry describe the pack, not the game
         self.assertEqual(report["unclaimed"], ["system.toml:untrained", "system.toml:weapons.sword"])
+
+
+class BookCheckTest(unittest.TestCase):
+    """A small rules pack true to its three pages, and the ways a copy can go wrong that the audit has to see:
+    each test changes one thing in the pack (or the book) and the audit must fail on it, naming it."""
+
+    PAGES = {
+        1: "FEAR TABLE\nD6 EFFECT\n1 Shakes and drops what they hold.\n2 Runs away screaming into the night.\n3-6 Freezes on the spot for a round.\n"
+           "A long sword has durability 12, STR 10, range 2, damage 2D8. Resting heals D6 HP. A dagger does D4.\n",
+        2: "FIREBOLT. Rank 1. The spell inflicts 2D6 damage to one target. It can be dodged.\n",
+        3: "GHOUL. Ferocity: 2 Movement: 10 Armor: 4 HP: 18. Its claws do 2D6 damage. It has 4 friends and 12 teeth.\n",
+    }
+
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.tmp = Path(folder.name)
+        self.book, self.pack = self.tmp / "extract", self.tmp / "pack"
+        for number, text in self.PAGES.items():
+            write(self.book / "pages" / f"{number:04d}.txt", text)
+        write(self.book / "manifest.json", json.dumps({"source": "made.pdf", "pages": 3}))
+        write(self.book / "toc.json", json.dumps([{"level": 1, "title": "Rules", "start": 1, "end": 3}]))
+        write(self.pack / "system.toml", """
+            format = 1
+            extends = "bundled:dragonbane"
+
+            [weapons.long_sword]
+            skill = "swords"
+            damage = "2d8"
+            str = 10
+            range = 2
+            durability = 12
+
+            [rest.stretch]
+            label = "Stretch rest"
+            recover = { hp = "1d6" }
+            time = { stretch = 1 }
+            """)
+        write(self.pack / "tables" / "fear.toml", """
+            name = "Fear"
+            formula = "1d6"
+            results = [
+              { range = [1, 1], text = "Shakes and drops what they hold." },
+              { range = [2, 2], text = "Runs away screaming into the night." },
+              { range = [3, 6], text = "Freezes on the spot for a round." },
+            ]
+            """)
+        write(self.pack / "bestiary" / "ghoul.toml", """
+            name = "Ghoul"
+            role = "A monster"
+            description = "Claws."
+            attack = { label = "Claws", value = 12, damage = "2d6" }
+            stats = { hp = 18, armor = 4, ferocity = 2, movement = 10 }
+            """)
+        write(self.pack / "spells" / "firebolt.toml", """
+            name = "Firebolt"
+            school = "elementalism"
+            rank = 1
+            damage = "2d6"
+            avoid = ["dodge"]
+            source = "p. 2"
+            """)
+        write(self.pack / "inventory.toml", f"""
+            source = "Made"
+            extract = "{self.book}"
+
+            [items.rules]
+            kind = "mechanic"
+            pages = [1]
+            status = "mapped"
+            to = ["system.toml:weapons", "system.toml:rest", "tables/fear"]
+
+            [items.spells]
+            kind = "spell"
+            pages = [2]
+            status = "mapped"
+            to = ["spells/firebolt"]
+
+            [items.ghoul]
+            kind = "creature"
+            pages = [3]
+            status = "mapped"
+            to = ["bestiary/ghoul"]
+            """)
+
+    def change(self, name, old, new):
+        """The audit's findings once `old` is `new` in the pack's file `name` (the book's, for pages/)."""
+        path = (self.book if name.startswith("pages/") else self.pack) / name
+        text = path.read_text(encoding="utf-8")
+        self.assertIn(old, text)
+        path.write_text(text.replace(old, new), encoding="utf-8")
+        report = audit.audit(self.pack, "system")
+        self.assertTrue(audit.failed(report), f"{name}: {old!r} -> {new!r} passed the audit")
+        return "\n".join(report["problems"] + report["unclaimed"] + report["unverified"])
+
+    def test_the_pack_true_to_its_pages_passes(self):
+        report = audit.audit(self.pack, "system")
+        self.assertFalse(audit.failed(report), audit.render(report))
+
+    def test_two_rows_of_a_table_swapped_are_each_on_the_others_row(self):
+        found = self.change("tables/fear.toml", 'text = "Shakes and drops what they hold." },\n  { range = [2, 2], text = "Runs away screaming into the night." }',
+                            'text = "Runs away screaming into the night." },\n  { range = [2, 2], text = "Shakes and drops what they hold." }')
+        self.assertIn('rules: tables/fear result 1 "Runs away screaming into the night." is row 2 on p. 1, not row 1', found)
+        self.assertIn('rules: tables/fear result 2 "Shakes and drops what they hold." is row 1 on p. 1, not row 2', found)
+
+    def test_a_word_put_into_a_row_is_found_on_its_row(self):
+        found = self.change("tables/fear.toml", '"Runs away', '"Never runs away')
+        self.assertIn('rules: tables/fear result 2 "Never runs away screaming into the night." isn\'t on p. 1 (no never)', found)
+
+    def test_a_table_rolled_on_another_die_than_its_rows(self):
+        found = self.change("tables/fear.toml", 'formula = "1d6"', 'formula = "1d20"')
+        self.assertIn("rules: tables/fear rolls 1d20 (1-20), and its results, the rows of p. 1, run 1-6", found)
+
+    def test_a_row_that_says_something_else(self):
+        found = self.change("tables/fear.toml", '"Freezes on the spot for a round."', '"Resting heals a long sword."')
+        self.assertIn('rules: tables/fear result 3-6 "Resting heals a long sword." isn\'t what row 3-6 on p. 1 says ("freezes on the spot for a round")', found)
+
+    def test_a_range_the_page_does_not_print(self):
+        found = self.change("tables/fear.toml", '{ range = [2, 2], text = "Runs away screaming into the night." },\n  { range = [3, 6]',
+                            '{ range = [2, 3], text = "Runs away screaming into the night." },\n  { range = [4, 6]')
+        self.assertIn('rules: tables/fear result 2-3 "Runs away screaming into the night." is row 2 on p. 1, not row 2-3', found)
+        self.assertIn('rules: tables/fear result 4-6 "Freezes on the spot for a round." is row 3-6 on p. 1, not row 4-6', found)
+
+    def test_a_row_the_page_does_not_print_at_all(self):
+        write(self.pack / "tables" / "fear.toml", (self.pack / "tables" / "fear.toml").read_text(encoding="utf-8").replace('"1d6"', '"1d7"'))
+        found = self.change("tables/fear.toml", 'round." },\n', 'round." },\n  { range = [7, 7], text = "Resting heals a long sword." },\n')
+        self.assertIn('rules: tables/fear result 7 "Resting heals a long sword." has no row 7 on p. 1: the page doesn\'t print that range', found)
+
+    def test_rows_read_from_a_column_of_numbers_or_set_in_two_halves(self):
+        # The numbers come out in a column of their own and the words after them: there are no rows to read.
+        write(self.book / "pages" / "0001.txt", self.PAGES[1].replace("1 Shakes", "1\n2\n3-6\nShakes").replace("2 Runs", "Runs").replace("3-6 Freezes", "Freezes"))
+        self.assertFalse(audit.failed(audit.audit(self.pack, "system")))
+        # Two halves side by side: the second half's rows start in the middle of a line.
+        write(self.book / "pages" / "0001.txt", self.PAGES[1].replace("hold.\n2 Runs", "hold. 3-6 Freezes on the spot for a round.\n2 Runs")
+              .replace("3-6 Freezes on the spot for a round.\nA", "A"))
+        report = audit.audit(self.pack, "system")
+        self.assertFalse(audit.failed(report), audit.render(report))
+        found = self.change("tables/fear.toml", 'text = "Shakes and drops what they hold." },\n  { range = [2, 2], text = "Runs away screaming into the night." }',
+                            'text = "Runs away screaming into the night." },\n  { range = [2, 2], text = "Shakes and drops what they hold." }')
+        self.assertIn('result 1 "Runs away screaming into the night." is row 2 on p. 1, not row 1', found)
+
+    def test_a_word_with_a_hyphen_of_its_own_is_on_its_row_where_the_page_has_it_joined(self):
+        # solo extract joins a word whose line breaks at a hyphen ("two-" "handed"), and the recipe keeps a hyphen the word has of its own.
+        write(self.book / "pages" / "0001.txt", self.PAGES[1].replace("drops what they hold.", "drops what they hold in a twohanded grip."))
+        table = self.pack / "tables" / "fear.toml"
+        write(table, table.read_text(encoding="utf-8").replace("drops what they hold.", "drops what they hold in a two-handed grip."))
+        report = audit.audit(self.pack, "system")
+        self.assertFalse(audit.failed(report), audit.render(report))
+        self.assertIn('rules: tables/fear result 1 "Shakes and drops what they hold in a two-handed bear grip." isn\'t on p. 1 (no bear)',
+                      self.change("tables/fear.toml", "two-handed grip", "two-handed bear grip"))
+
+    def test_a_row_that_fits_several_results_proves_none_of_them_swapped(self):
+        # Two results alike: the row they both fit can't say which one moved, and each is judged against its own row.
+        found = self.change("tables/fear.toml", '"Shakes and drops what they hold."', '"Runs away screaming into the night."')
+        self.assertEqual(found, 'rules: tables/fear result 1 "Runs away screaming into the night." isn\'t what row 1 on p. 1 says ("shakes and drops what they hold")')
+
+    def test_a_weapons_numbers_are_each_on_its_page(self):
+        self.assertIn("rules: system.toml:weapons gives long_sword.durability 4, and p. 1 never says it",
+                      self.change("system.toml", "durability = 12", "durability = 4"))
+        self.assertIn("rules: system.toml:weapons gives long_sword.str 18, and p. 1 never says it", self.change("system.toml", "str = 10", "str = 18"))
+
+    def test_a_number_the_book_writes_in_words_or_with_its_unit_is_on_the_page(self):
+        write(self.book / "pages" / "0001.txt", self.PAGES[1].replace("durability 12", "durability twelve").replace("range 2,", "range 2m,"))
+        report = audit.audit(self.pack, "system")
+        self.assertFalse(audit.failed(report), audit.render(report))
+
+    def test_the_dice_a_rest_recovers_are_the_ones_the_page_gives_hit_points(self):
+        # D4 is on the page too, for a dagger: what matters is the die the page puts before HP.
+        self.assertIn("rules: system.toml:rest gives stretch.recover.hp d4, and p. 1 says d6 hp",
+                      self.change("system.toml", 'recover = { hp = "1d6" }', 'recover = { hp = "1d4" }'))
+
+    def test_a_spells_dice_and_rank_are_on_its_page(self):
+        self.assertIn("spells: spells/firebolt has 4d10, and p. 2 never says it", self.change("spells/firebolt.toml", 'damage = "2d6"', 'damage = "4d10"'))
+        self.assertIn("spells: spells/firebolt gives rank 5, and p. 2 never says it", self.change("spells/firebolt.toml", "rank = 1", "rank = 5"))
+
+    def test_a_monsters_stats_are_the_ones_their_labels_carry(self):
+        # 12 and 2 are both on the page, but not as the ghoul's HP and armor.
+        self.assertIn("ghoul: bestiary/ghoul gives stats.hp 12, and p. 3 says hp: 18", self.change("bestiary/ghoul.toml", "hp = 18", "hp = 12"))
+        self.assertIn("ghoul: bestiary/ghoul gives stats.armor 2, and p. 3 says armor: 4", self.change("bestiary/ghoul.toml", "armor = 4", "armor = 2"))
+
+    def test_a_stat_the_page_gives_another_way_is_not_judged_by_the_label_alone(self):
+        # Armor a recipe adds up from the gear ("Same as armor") beside another monster's "Armor: 2", and HP given in words.
+        write(self.book / "pages" / "0003.txt", self.PAGES[3].replace("Armor: 4", "Armor: Same as armor") + "WIGHT. Armor: 2 HP: 30. A ghoul of the deep has more, with 20 HP.\n")
+        write(self.pack / "bestiary" / "ghoul.toml", (self.pack / "bestiary" / "ghoul.toml").read_text(encoding="utf-8").replace("hp = 18", "hp = 20"))
+        report = audit.audit(self.pack, "system")
+        self.assertFalse(audit.failed(report), audit.render(report))
+
+    def test_a_monsters_movement_and_attack_skill_are_on_its_page(self):
+        self.assertIn("ghoul: bestiary/ghoul gives stats.movement 99, and p. 3 never says it", self.change("bestiary/ghoul.toml", "movement = 10", "movement = 99"))
+
+    def test_a_number_the_page_has_only_as_another_stat_is_not_the_entrys(self):
+        # The page's only 18 is the ghoul's HP, so it is no proof of an attack at skill 18.
+        self.assertIn("ghoul: bestiary/ghoul gives attack.value 18, and p. 3 has 18 only as hp: 18", self.change("bestiary/ghoul.toml", "value = 12", "value = 18"))
+
+    def test_pages_with_no_text_are_no_pass(self):
+        for number in self.PAGES:
+            write(self.book / "pages" / f"{number:04d}.txt", "\n")  # a scanned book: pictures, no text
+        found = self.change("bestiary/ghoul.toml", "hp = 18", "hp = 40")
+        self.assertIn("ghoul: p. 3 has no text to read the pack against", found)
+        self.assertIn("picture/0003.txt", found)
+        # What an agent read off the page's picture is text the audit reads.
+        write(self.book / "picture" / "0003.txt", self.PAGES[3])
+        self.assertIn("ghoul: bestiary/ghoul gives stats.hp 40, and p. 3 never says it", self.change("bestiary/ghoul.toml", "hp = 40", "hp = 40"))
+
+    def test_a_page_of_a_few_words_is_read_and_not_taken_for_a_scan(self):
+        write(self.book / "pages" / "0002.txt", "FIREBOLT\nRank 1. 2D6.\n")
+        report = audit.audit(self.pack, "system")
+        self.assertFalse(audit.failed(report), audit.render(report))
+
+    def test_a_sheets_value_read_just_before_the_next_label_is_not_that_labels(self):
+        # A hero's sheet read top to bottom: each value comes under its label, and so just before the next one ("13 HIT POINTS").
+        write(self.book / "pages" / "0004.txt", "SIGRID\nWILLPOWER POINTS\n13\nHIT POINTS\n15\n")
+        write(self.book / "manifest.json", json.dumps({"source": "made.pdf", "pages": 4}))
+        write(self.pack / "characters" / "sigrid.toml", 'name = "Sigrid"\n\n[tracks]\nhp = 15\nwp = 13\n')
+        write(self.pack / "inventory.toml", (self.pack / "inventory.toml").read_text(encoding="utf-8")
+              + '\n[items.sigrid]\nkind = "npc"\npages = [4]\nstatus = "mapped"\nto = ["characters/sigrid"]\n')
+        report = audit.audit(self.pack, "system")
+        self.assertFalse(audit.failed(report), audit.render(report))
+
+    def test_a_spell_no_item_claims_is_unclaimed(self):
+        write(self.pack / "spells" / "doom.toml", 'name = "Doom"\nschool = "elementalism"\nrank = 2\n')
+        report = audit.audit(self.pack, "system")
+        self.assertEqual(report["unclaimed"], ["spells/doom"])
+
+
+class ExtractPathTest(unittest.TestCase):
+    def test_an_extract_under_solo_home_is_kept_relative_to_it_so_the_inventory_is_the_same_everywhere(self):
+        with tempfile.TemporaryDirectory() as folder:
+            home = Path(folder) / "games"
+            with unittest.mock.patch.dict(os.environ, {"SOLO_HOME": str(home)}):
+                make_extract(home / "sources" / "crypt", {1: LONG, 2: LONG})
+                self.assertEqual(audit.scaffold(home / "systems" / "crypt", home / "sources" / "crypt")[0], "inventory.toml")
+                self.assertIn('extract = "sources/crypt"', (home / "systems" / "crypt" / "inventory.toml").read_text(encoding="utf-8"))
+                self.assertEqual(audit.load_inventory(home / "systems" / "crypt")["extract"], home / "sources" / "crypt")
+                # One anywhere else keeps its whole path.
+                self.assertEqual(audit.kept(Path(folder) / "elsewhere"), str((Path(folder) / "elsewhere").resolve()))
 
 
 class PriceAuditTest(unittest.TestCase):
