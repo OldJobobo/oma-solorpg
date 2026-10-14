@@ -11,7 +11,7 @@ The trailer is `media/oma-solorpg-45s.mp4`. The page lists only the cuts that ex
 Every screenshot is the plugin's real QML, rendered offscreen against real engine state, not a mockup:
 
 - The Red Tusk Hall (`img/red-*`) with `tests/qml/render.py`'s scenario, the adventure this repository ships.
-- The Sinking Tower and Alone in Deepfall Breach (`img/tower-*`, `img/breach-*`, `img/table-*`) from the author's own packs, compiled from books the author owns with `make rules` and `make adventure`. The packs are not in this repository. The GM's lines in them were written for the screenshots, and a monster's attack table text was kept out of frame, but some numbers from the books are in frame: `tower-fight`, `tower-codex` and `tower-dragon` show the HP and armor of a monster from the Quickstart and its pre-generated mage's HP, WP and a skill value, and `breach-fight` shows the cultists' HP and attack roll, which come from the solo booklet's simple NPC templates.
+- `img/table-new.webp` (and the Table in `og.png`) is the New adventure screen on the author's machine, with a hero rolled at random.
 - `img/extract-table.webp` is `solo extract`'s picture of a table page from the made-up rulebook in `tests/test_rules_import.py`.
 
 The faces in `art.js` come from `solo/portrait.py` and `packs/dragonbane/art.toml`, one per kin and mood. Regenerate the file rather than editing it.
@@ -19,7 +19,7 @@ The faces in `art.js` come from `solo/portrait.py` and `packs/dragonbane/art.tom
 ## Before publishing
 
 - `og:url` and `og:image` in `index.html` assume `https://cabral.github.io/oma-solorpg/`. Change both for another address.
-- The shelf section shows Free League's adventures by name, with screenshots of play. It credits them and says the packs stay private; check it against the license's terms before it goes out.
-- CONTRIBUTING's rule allows no numbers from any book in the repository, quickstarts included, and the screenshots above with a book's numbers in them break it. Retake them with those numbers out of frame, or from The Red Tusk Hall or The Bell Under the Hill.
+- The shelf section shows Free League's adventures by name. It credits them and says the packs stay private; check it against the license's terms before it goes out.
+- CONTRIBUTING's rule allows no numbers or text from any book in the repository, quickstarts included, and that covers pictures. Take a screenshot from The Red Tusk Hall or The Bell Under the Hill, not from a pack built from a book: a fight shows the monster's numbers, the codex the book's own lines about its people, and a title card the scene faded under it. That is why the shelf has no screenshots: the ones of The Sinking Tower and Alone in Deepfall Breach showed a book's numbers, and came out. They are still in the repository's history, from its first commit; taking them out of it means rewriting that history, which is the maintainer's call.
 
 There is also a door somewhere on the page that wasn't there before. Its code is in `secret.js`.

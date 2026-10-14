@@ -182,8 +182,32 @@ class SiteTest(unittest.TestCase):
         self.assertNotIn("--system pymupdf", html)
 
     def test_the_page_asks_only_for_media_that_exists(self):
-        for path in re.findall(r'src="(media/[^"]+)"', self.site()):
+        for path in re.findall(r'(?:src|poster)="((?:media|img)/[^"]+)"', self.site()):
             self.assertTrue((ROOT / "site" / path).exists(), path)
+
+    # The screenshots of The Sinking Tower and Alone in Deepfall Breach, played from the author's own
+    # packs. Every one had a book's numbers in frame (a monster's HP and armor, a pre-generated hero's,
+    # the solo booklet's cultists), or an NPC's lines from the book in the codex; the title cards had
+    # the same fights under them. They came out, and none comes back under another name.
+    TAKEN_OUT = {
+        "62f911df424c7b6ce187904cfdf9d14a2e67e0d0479f7b49d114bee2615d9dad",  # tower-fight
+        "68765768b1250a70f273e60c851095f8d26f10e35b9c22bd3da8dccbdabfada6",  # tower-codex
+        "f6a9c230c89a786260c1c4b1a0add51d9cd0f8e6cfe9ab3563871d16cde88886",  # tower-dragon
+        "7c2664980766d8d64c5cb390f5ac2093b2d471778869cb0f63f605bfc819e1ae",  # tower-title
+        "7e9d9b56dd595c2ad70cc0c6d60a0e6ca64b9542fc432d8d3bba69b1f9f03f5a",  # breach-fight
+        "2a65dd9b8b5a5e24d27b9a7d5eaac9058560cb5f2ba09bf95213c77abfda8b13",  # breach-codex
+        "791c1e5ecb771e4b90fab8c9d9ae4e134e81471a53128a27be445883cea37cb6",  # breach-demon
+        "32dab13d6798fe2ab0e66973710e57b6376b06e1079d07c6fcd8b82bb927e23f",  # breach-title
+        "2a2ac135c5bd3e53b413c18aed553709641d2aef8be039c07ae9f837cc275778",  # table-breach
+    }
+
+    def test_no_screenshot_with_a_books_numbers_in_frame_is_in_the_repository(self):
+        import hashlib
+        pictures = [*(ROOT / "site").rglob("*"), *(ROOT / "assets").glob("*"), *ROOT.glob("*")]
+        for path in pictures:
+            if path.suffix.lower() in {".png", ".webp", ".jpg", ".jpeg", ".gif"}:
+                self.assertNotIn(hashlib.sha256(path.read_bytes()).hexdigest(), self.TAKEN_OUT, path.relative_to(ROOT))
+        self.assertNotRegex(self.site(), r'img/(tower|breach)-|img/table-breach')
 
 
 class ReleaseTest(unittest.TestCase):

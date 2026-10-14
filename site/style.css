@@ -397,7 +397,7 @@ main { padding-top: var(--bar-h); }
 
 .gallery { display: grid; gap: var(--gap); grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .gallery .g-big { grid-column: span 2; }
-.gallery .shot img, .shelf-shots .shot img { aspect-ratio: 1920 / 1290; object-fit: cover; }
+.gallery .shot img { aspect-ratio: 1920 / 1290; object-fit: cover; }
 @media (min-width: 900px) {
   .gallery { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .gallery .g-big { grid-row: span 2; }
@@ -562,8 +562,6 @@ main { padding-top: var(--bar-h); }
 @media (min-width: 1000px) {
   .turn-win { grid-column: span 5; }
   .rules-tiles .term { grid-column: span 7; }
-  .solo-win { grid-column: span 8; }
-  .rules-table { grid-column: span 4; }
 }
 .turn { list-style: none; padding: 0; margin: 0 0 18px; }
 .turn li { display: grid; grid-template-columns: 64px 1fr; gap: 12px; padding: 7px 0; position: relative; }
@@ -586,18 +584,14 @@ main { padding-top: var(--bar-h); }
 .capture img { border: 1px solid var(--faint); background: #fff; }
 
 .shelf { display: grid; gap: var(--gap); }
-.shelf-card { display: grid; gap: 26px; grid-template-columns: minmax(0, 1fr); padding: clamp(18px, 2.6vw, 32px); }
+.shelf-card { padding: clamp(18px, 2.6vw, 32px); }
 @media (min-width: 1100px) {
-  .shelf-card { grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); align-items: start; }
-  .shelf-card.flip { grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); }
-  .shelf-card.flip .shelf-text { order: 2; }
+  .shelf { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .shelf > .credit { grid-column: 1 / -1; }
 }
 .shelf-kicker { color: var(--dim); font-size: 12px; letter-spacing: .14em; text-transform: uppercase; margin: 0; }
 .shelf-card h4 { font-family: var(--serif); font-weight: 500; font-variant-caps: small-caps; letter-spacing: .04em; font-size: clamp(30px, 3.2vw, 42px); line-height: 1.1; margin: .15em 0 .35em; }
 .shelf-blurb { font-family: var(--serif); font-size: clamp(18px, 1.4vw, 20px); line-height: 1.5; }
-.shelf-shots { display: grid; gap: 8px; grid-template-columns: repeat(2, minmax(0, 1fr)); align-content: start; }
-.shelf-shots .shot { border: 2px solid var(--idle); transition: border-color .15s; }
-.shelf-shots .shot:hover { border-color: var(--accent); }
 .stats { display: flex; flex-wrap: wrap; gap: 10px 26px; margin: 18px 0; }
 .stats div { display: flex; flex-direction: column-reverse; }
 .stats dt { color: var(--dim); font-size: 12px; letter-spacing: .04em; }
