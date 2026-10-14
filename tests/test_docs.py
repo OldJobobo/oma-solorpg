@@ -277,6 +277,19 @@ class RepositoryTest(unittest.TestCase):
         left = item[item.index("\nLeft:"):item.index("\nDone when:")]
         (self.assertNotIn if committed else self.assertIn)("book fingerprints", left)
 
+    def test_security_counts_as_a_vulnerability_only_what_the_design_holds_back(self):
+        security = (ROOT / "SECURITY.md").read_text(encoding="utf-8")
+        counts = security[security.index("## What counts"):security.index("## Which versions")]
+        # `extends` names a pack wherever it is (docs/PACK_FORMAT.md): the house fixture's reaches up out of its folder.
+        self.assertIn('extends = "../', (ROOT / "tests" / "fixtures" / "house" / "system.toml").read_text(encoding="utf-8"))
+        outside = next(line for line in counts.splitlines() if "outside the pack's folder" in line)
+        self.assertNotIn("an `extends`", outside)
+        self.assertIn("`extends` names a pack, which can be anywhere", counts)
+        # Codex has no list of allowed commands and reads anywhere, which the README says: under it, only a write
+        # outside the campaign folder gets past what it holds back.
+        commands = next(line for line in counts.splitlines() if "run a command it isn't allowed" in line)
+        self.assertIn("Under Codex", commands)
+
     def test_the_issue_forms_know_the_main_import_and_point_security_reports_away_from_issues(self):
         forms = ROOT / ".github" / "ISSUE_TEMPLATE"
         self.assertIn("make dragonbane", (forms / "import-went-wrong.yml").read_text(encoding="utf-8"))

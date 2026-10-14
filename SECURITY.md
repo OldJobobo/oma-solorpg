@@ -12,8 +12,8 @@ Say what you ran, on which commit (`git rev-parse --short HEAD` in the plugin fo
 
 ## What counts
 
-- Adventure or pack text that gets the GM to run a command it isn't allowed (anything but the play commands `solo` lets a GM turn run), to read a file outside the campaign and the skill, or to write one.
-- A path in a pack (an image, a rules page, an `extends`, any file it names) that reaches outside the pack's folder.
+- Adventure or pack text that gets the GM to run a command it isn't allowed (anything but the play commands `solo` lets a GM turn run), to read a file outside the campaign and the skill, or to write one. Under Codex only the last counts, a write outside the campaign folder: Codex has no list of allowed commands and its sandbox reads anywhere, so a Codex GM can run any command in the campaign folder, clear `SOLO_BOOK` to run the player's own (`solo strike`, `solo prefs`) or write the campaign's log. [The Book](README.md#the-book), in the README, says how each agent's turn is held.
+- A file a pack loads as its content (an image, a rules page, a table, a person, any file it names) that is read from outside the pack's folder. `extends` names a pack, which can be anywhere (a folder relative to this one, or a pack's name), and is not one of these.
 - A crafted pack or campaign that leaves the desktop changed after the game: border colours, the screen shader, the screen temperature, the screensaver, after `solo desk restore` has run.
 - Anything that sends the player's files, or the words of their books, somewhere they didn't ask: into a `solo report` meant for posting, or over the network.
 
