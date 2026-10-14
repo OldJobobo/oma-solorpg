@@ -71,7 +71,8 @@ class ValidateTest(CliCase):
         code, _, err = self.validate(pack)
         self.assertEqual(code, 1)
         self.assertIn(f"salt/adventure.toml is format {packs.FORMAT + 1} and this engine reads formats up to {packs.FORMAT}", err)
-        self.assertIn("update oma-solorpg", err)
+        self.assertIn("update oma-solorpg (Update in its README: fetch, then check out a newer release)", err)
+        self.assertNotIn("git pull", err)  # the README installs a detached checkout, where git pull fails
         code, _, err = self.solo("new", str(pack), "--dir", self.game, "--character", "ragna")
         self.assertEqual(code, 1)
         self.assertIn("the packs need fixing first", err)
