@@ -372,6 +372,9 @@ def begin_and_ask(item, panel, out, work, wait):
     item.setProperty("heroName", "-Brokk")
     item.setProperty("tone", "-grim, and quiet")
     name = next(f for f in panel.contentItem().findChildren(QQuickItem) if str(f.property("placeholderText") or "").startswith("Name"))
+    # Begin opens the Book, here where omarchy-shell isn't there for `solo new --play` to bring it up (as with no
+    # agent set up, or one that runs in a terminal), so its word on the GM is read.
+    item.setProperty("bookOpen", False)
     panel.requestActivate()  # the shell gives the Table the keyboard when a field is clicked
     wait(100)
     name.forceActiveFocus()
@@ -379,6 +382,8 @@ def begin_and_ask(item, panel, out, work, wait):
     wait(3000)
     if trouble(item):
         return [f"Begin failed: {trouble(item)}"]
+    if not item.property("bookOpen"):
+        problems.append("Begin didn't open the Book when `solo new --play` didn't")
     game = Path((work / "state" / "solo" / "current").read_text().strip())
     state = json.loads((game / "state.json").read_text())
     if (state["pc"]["name"], state["prefs"]["tone"]) != ("-Brokk", "-grim, and quiet"):

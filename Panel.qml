@@ -558,9 +558,12 @@ Item {
     if (root.tone.trim() !== "") args.push("--tone=" + root.tone.trim())
     root.split(root.lines).forEach(line => args.push("--line=" + line))
     root.split(root.veils).forEach(veil => args.push("--veil=" + veil))
+    // `solo new --play` brings the Book up itself when the GM writes in it; with no agent set up, or one in a
+    // terminal, it doesn't, and the Book opened here says why and how to set one up.
     root.run(args, "begin", () => {
       root.heroName = ""
       root.show("table")
+      root.openBook()
     })
   }
 
