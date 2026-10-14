@@ -102,6 +102,27 @@ class GmTest(Agents):
         self.assertEqual(second[-1], "I climb the palisade.")
         self.assertEqual(second[second.index("--resume") + 1], "sess-1")
 
+    def test_words_the_player_says_before_the_gm_ever_has_are_what_the_opening_answers(self):
+        # A campaign begun without --play opens the Book with nothing said, and the player may write first.
+        self.agent("claude", CLAUDE_STREAM)
+        gm.turn(self.root, "I knock on the miller's door.")
+        prompt = self.calls("claude")[0][-1]
+        self.assertIn("## Player so far\nI knock on the miller's door.", prompt)
+        self.assertIn("answers the player's words", prompt)
+        self.assertNotIn("Nothing has been said", prompt)
+
+    def test_try_again_after_an_opening_that_never_started_still_gives_the_gm_the_players_words(self):
+        # The agent failed before it had a session (or Stop came first): there is no session to resume, and the
+        # Book's "try again" sends no words of its own. They are in the log, and the new session's prompt has them.
+        self.agent("claude", [], code=1)
+        self.assertEqual(gm.turn(self.root, "I wade across the ford.")["status"], "error")
+        self.assertFalse((self.root / ".solo" / "agent.json").exists())
+        self.agent("claude", CLAUDE_STREAM)
+        gm.turn(self.root, None)
+        prompt = self.calls("claude")[-1][-1]
+        self.assertIn("## Player so far\nI wade across the ford.", prompt)
+        self.assertNotIn("Nothing has been said", prompt)
+
     def test_the_players_words_go_on_stdin_never_in_the_process_list(self):
         # Arguments are any local user's to read in /proc; and `claude -p "-x ..."` would take them for an option.
         self.agent("claude", CLAUDE_STREAM)

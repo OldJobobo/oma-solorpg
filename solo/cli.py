@@ -1344,13 +1344,18 @@ def resume_digest(c, book=False, scene=False):
     lines += _problem_lines(c)
     lines += [f"- {line}" for line in _now(c)] + ([""] if _now(c) else [])
     if last is None:
-        return "\n".join(lines + [
-            "Nothing has been said at this table yet: this is the opening.",
-            "",
-            ("Open the adventure from the scene below" if scene else "Run `solo scene`, then open the adventure")
-            + ": describe the first scene and end with a question to the player.",
-            "", *_threads(c),
-        ]).rstrip() + "\n"
+        opening = "Open the adventure from the scene below" if scene else "Run `solo scene`, then open the adventure"
+        # The player can write before the GM has said a word: in a Book opened on a new campaign, or after an opening
+        # turn that ended before its agent had a session. The opening answers them.
+        words = [e["text"] for e in speech if e["by"] == "player"]
+        if words:
+            lines += ["You haven't said anything at this table yet: this is the opening, and the player has already spoken (under \"Player so far\").",
+                      "", f"{opening}: describe the first scene so that it answers the player's words, and end with a question to the player.",
+                      "", "## Player so far", *[f"{text}\n" for text in words]]
+        else:
+            lines += ["Nothing has been said at this table yet: this is the opening.", "",
+                      f"{opening}: describe the first scene and end with a question to the player.", ""]
+        return "\n".join(lines + _threads(c)).rstrip() + "\n"
     hidden = set(state["hidden"])
     since = [e for e in events if e["seq"] > last["seq"] and e["type"] != "said"]
     answer = [e for e in speech if e["seq"] > last["seq"] and e["by"] == "player"]
