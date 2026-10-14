@@ -54,12 +54,15 @@ class ReportTest(CampaignTest):
             long_arg = "x" * 200
             lines = [{"at": "2026-09-30T10:00:00", "argv": ["check", "sneaking", "--boons", "1"], "error": None},
                      {"at": "2026-09-30T10:00:05", "argv": ["setup", "--plugin"], "error": "the GM can't run that"},
-                     {"at": "2026-09-30T10:00:09", "argv": ["commit", long_arg], "error": None}]
+                     {"at": "2026-09-30T10:00:09", "argv": ["commit", long_arg], "error": None},
+                     {"at": "2026-09-30T10:00:12", "argv": [], "error": "Claude Code's permissions refused Write: /etc/x"}]
             (folder / "trace.jsonl").write_text("\n".join(json.dumps(line) for line in lines) + "\n")
             text = report.report(c)
         self.assertIn("- 2026-09-30T10:00:00 solo check sneaking --boons 1\n", text)
         self.assertIn("solo setup --plugin  -> refused: the GM can't run that", text)
         self.assertNotIn("x" * 100, text)
+        # What Claude Code's permissions refused isn't a solo command, and isn't shown as one.
+        self.assertIn("- 2026-09-30T10:00:12 (not a solo command)  -> refused: Claude Code's permissions refused Write", text)
 
     def test_only_ids_numbers_and_flags_survive_the_leaving_out(self):
         self.assertEqual(report.bare({"a": "yes_no", "b": ["Extreme yes", 3, True], "c": {"d": "Some words here"}}),
@@ -86,7 +89,9 @@ class TurnTrace(CampaignTest):
         script = bin_dir / "claude"
         script.write_text("#!/usr/bin/env python3\nimport json, os\nprint(json.dumps({'type': 'result', 'subtype': 'success', 'session_id': 's', 'result': os.environ.get('SOLO_TRACE', 'none')}))\n")
         script.chmod(script.stat().st_mode | stat.S_IEXEC)
-        with unittest.mock.patch.dict(os.environ, {"PATH": f"{bin_dir}:{os.environ['PATH']}", "SOLO_AGENT": "claude"}):
+        # The turn reads the stand-in's --help and keeps the answer in XDG_CACHE_HOME: a throwaway one, not the player's.
+        with unittest.mock.patch.dict(os.environ, {"PATH": f"{bin_dir}:{os.environ['PATH']}", "AGENT": "claude",
+                                                   "XDG_CACHE_HOME": str(self.tmp / "cache")}):
             os.environ.pop("SOLO_TRACE", None)
             gm.turn(self.root, "Hi")
         with self.session() as c:

@@ -127,11 +127,12 @@ def player_view(c, spec, turn):
 def ask_agent(prompt, model=None, system=None, timeout=600):
     """One answer from a tool-less Claude Code run (the player and the judge)."""
     env = {k: v for k, v in os.environ.items() if k not in NESTING}
-    command = ["claude", "-p", prompt, "--output-format", "json", "--tools", "", "--no-session-persistence"]
+    command = ["claude", "-p", "--output-format", "json", "--tools", "", "--no-session-persistence"]
     command += ["--model", model] if model else []
     command += ["--system-prompt", system] if system else []
+    # The prompt goes in on stdin: the judge's holds the whole transcript, past the 128 KiB Linux holds one argument to.
     with tempfile.TemporaryDirectory() as empty:
-        done = subprocess.run(command, cwd=empty, env=env, capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL)
+        done = subprocess.run(command, cwd=empty, env=env, capture_output=True, text=True, timeout=timeout, input=prompt)
     try:
         return json.loads(done.stdout).get("result", "")
     except ValueError:
@@ -226,6 +227,7 @@ def run(scenario, out, agent="claude", model=None, effort=None, judge=True, max_
                 "scene": c.state["scene"], "time": c.state["time"],
                 # Model calls, tokens and cost, as the agent reports them (Codex has no cost).
                 "usage": result.get("usage"),
+                "model": result.get("model"),  # as the agent named it starting the turn (Claude Code does)
             }
             turns.append(turn)
             ended = c.state["ended"] is not None and not scenario.get("play_past_end")
@@ -247,7 +249,7 @@ def run(scenario, out, agent="claude", model=None, effort=None, judge=True, max_
     if judge and turns:
         try:
             report["judge"] = judge_run(scenario, root, report)
-        except (RuntimeError, subprocess.TimeoutExpired, ValueError) as error:
+        except (RuntimeError, subprocess.TimeoutExpired, ValueError, OSError) as error:  # the run and its row are kept whatever the judge does
             report["judge"] = {"error": str(error)}
     write(out, report)
     return report
@@ -322,7 +324,7 @@ def summarize(scenario, c, turns, reached):
     state = c.state
     return {
         "scenario": scenario["name"], "adventure": scenario["adventure"], "at": datetime.now().isoformat(timespec="seconds"),
-        "model": os.environ.get("SOLO_GM_MODEL") or "default", "effort": gm.effort(),
+        "model": ", ".join(sorted({t["model"] for t in turns if t.get("model")})) or os.environ.get("SOLO_GM_MODEL") or "default", "effort": gm.effort(),
         "turns": turns,
         "totals": {
             "turns": len(turns), "seconds": round(sum(t["seconds"] for t in turns), 1),
@@ -454,7 +456,7 @@ def markdown(report):
     if flagged or totals["refused"] or totals["forced_moves"] or totals["play_problems"]:
         lines += ["## Found in code", ""]
         lines += [f"- turn {n}, {p['kind']}: {p['detail']}" for n, p in flagged]
-        lines += [f"- refused: `solo {' '.join(r['argv'])}`: {r['error']}" for r in report["refused"]]
+        lines += [f"- refused: `solo {' '.join(r['argv'])}`: {r['error']}" if r["argv"] else f"- refused: {r['error']}" for r in report["refused"]]
         lines += [f"- forced move {m}" for m in totals["forced_moves"]]
         lines += [f"- {f}" for f in totals["play_problems"]]
         lines.append("")

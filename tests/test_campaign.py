@@ -1,6 +1,10 @@
+import errno
+import io
 import json
+import os
 import shutil
 import unittest
+import unittest.mock
 
 from helpers import CampaignTest, Dice, LikelihoodTest
 
@@ -42,6 +46,23 @@ class PushTest(CampaignTest):
         self.assertTrue(pushed["outcome"]["success"])
         self.assertEqual(conditions, ["scared"])
         self.assertTrue(campaign.describe(pushed).endswith("; took scared"))  # the log says what it cost
+
+    def test_a_roll_stands_once_the_story_goes_on(self):
+        with self.session() as c:
+            c.check("sneaking", rng=Dice(12))
+            c.say("The guard turns your way. Push it?")
+            c.say("Yes, with everything I have.", by="player")
+            self.assertTrue(c.state["last_check"]["outcome"]["pushable"])  # words at the table don't settle it
+            c.commit({"note": "the guard sees her"})
+            self.assertFalse(c.state["last_check"]["outcome"]["pushable"])  # so the panel stops offering it
+            with self.assertRaisesRegex(SoloError, "that roll stands: the story went on after it"):
+                c.push("scared")
+            c.check("sneaking", rng=Dice(12))
+            c.move("gate", rng=Dice(10))
+            with self.assertRaisesRegex(SoloError, "that roll stands"):
+                c.push("scared")
+            self.assertTrue(all(e["outcome"]["pushable"] for e in c.events if e["type"] == "check"))  # the log keeps the roll as it was
+            self.assertEqual(c.state["last_check"], campaign.fold(c.system, c.adventure, c.events)["last_check"])
 
     def test_successes_and_demons_cannot_be_pushed(self):
         with self.session() as c:
@@ -99,6 +120,107 @@ class CommitTest(CampaignTest):
             with self.assertRaisesRegex(SoloError, "unknown time unit fortnights; the system has round, stretch, shift, and seconds, minutes, hours and days will do"):
                 c.commit({"time": {"fortnights": 1}})
 
+    def test_a_commits_time_is_a_number_from_zero_up_and_at_most_a_year(self):
+        # "1" was multiplied as text (a day of it was 86400 ones), and time going back let the clocks count a shift twice.
+        with self.session() as c:
+            before = c.state["time"]
+            c.commit({"time": {"day": "1"}})
+            c.commit({"time": "2 stretches"})
+            self.assertEqual(c.state["time"], before + 86400 + 1800)
+            count = len(c.events)
+            for spent in ({"hour": -5}, {"shift": "-1"}, {"hour": float("nan")}, {"hour": "inf"}, {"hour": True}, {"hour": [1]}):
+                with self.subTest(spent=spent), self.assertRaisesRegex(SoloError, "is a number from zero up"):
+                    c.commit({"time": spent})
+            for spent in ({"day": 366}, {"round": 10 ** 400}, "400 days"):
+                with self.subTest(spent=spent), self.assertRaisesRegex(SoloError, "more than a year of game time"):
+                    c.commit({"time": spent})
+            self.assertEqual(len(c.events), count)
+            c.commit({"time": {"day": 365}}, rng=Dice(*[1] * 6))  # a year in rounds is counted, not listed
+            self.assertTrue(c.state["clocks"]["dark_ritual"]["full"])
+
+    def test_a_commit_in_a_shape_the_engine_cant_take_is_told_what_the_key_holds(self):
+        # Each of these ended in "something went wrong" instead of a sentence.
+        with self.session() as c:
+            count = len(c.events)
+            for payload, message in (
+                ({"pc": {"conditions": ["dazed"]}}, r'pc conditions is what to add and what to remove, like \{"conditions": \{"add": \["'),
+                ({"pc": {"items": ["rope"]}}, r'pc items is what to add and what to remove, like \{"items": \{"add": \["rope"\]'),
+                ({"pc": {"items": {"add": [3]}}}, "pc items add is a name or a list of names"),
+                ({"pc": {"hp": float("nan")}}, "can't use nan"), ({"pc": {"hp": float("-inf")}}, "can't use -inf"),
+                ({"chaos": float("inf")}, "can't use inf"), ({"clock": {"dark_ritual": json.loads("1e400")}}, "can't use inf"),
+                ({"consequence": {"text": "the guard remembers", "npc": ["orc_leader"]}}, "npc is the id of the one it waits for"),
+                ({"consequence": {"text": "the guard remembers", "at": True}}, "at is a name or a list of names"),
+                ({"promise": {"npc": "orc_leader", "terms": ["help"]}}, "terms are what was promised, both as text"),
+                ({"npc": {"orc_leader": {"faction": ["orcs"]}}}, "npc orc_leader: faction is a word or an id, as text"),
+                ({"npc": {"tam": {"name": ["Tam"]}}}, "npc tam: name is a word or an id, as text"),
+                ({"clue": 3}, "clue is a name or a list of names"), ({"learn": 2.5}, "learn is what the player found out"),
+            ):
+                with self.subTest(payload=payload), self.assertRaisesRegex(SoloError, message):
+                    c.commit(payload)
+            self.assertEqual(len(c.events), count)
+            before = c.state["time"]
+            c.commit({"consequence": {"text": "the guard remembers", "after": "2 shifts"}})  # time in words, as a commit's own reads
+            self.assertEqual(c.state["consequences"]["the_guard_remembers"]["due_at"], before + 2 * 21600)
+
+    def test_a_fact_that_is_no_finite_number_is_refused_so_the_panel_can_read_state_json(self):
+        # NaN and Infinity went into state.json as they were, and the panel's JSON.parse reads neither: it stopped following the game.
+        with self.session() as c:
+            count = len(c.events)
+            for payload in ({"facts": {"gate.guards": float("nan")}}, {"facts": {"gate.guards": json.loads("1e400")}},
+                            {"facts": {"gate.guards": float("-inf")}}, {"scene": {"floor_searched": float("nan")}}):
+                with self.subTest(payload=payload), self.assertRaisesRegex(SoloError, "a number must be finite, like 2; not"):
+                    c.commit(payload)
+            self.assertEqual(len(c.events), count)
+            c.commit({"facts": {"gate.guards": 2.5}})
+        json.loads((self.root / "state.json").read_text(), parse_constant=self.fail)
+
+    def test_a_number_too_long_to_read_is_refused_with_a_sentence(self):
+        # 400 digits are no float, and Python reads an int of 4300 digits at most: both ended in "something went wrong".
+        with self.session() as c:
+            count = len(c.events)
+            for payload, message in (
+                ({"time": "9" * 400 + " hours"}, "time: hours is a number from zero up"),
+                ({"consequence": {"text": "the guard remembers", "after": "9" * 400 + " hours"}}, "after: hours is a number from zero up"),
+                ({"chaos": "+" + "9" * 5000}, "can't use a step of 5000 digits"),
+                ({"pc": {"hp": "-" + "9" * 5000}}, "can't use a step of 5000 digits"),
+                ({"clock": {"dark_ritual": "+" + "9" * 5000}}, "can't use a step of 5000 digits"),
+            ):
+                with self.subTest(payload=repr(payload)[:80]), self.assertRaisesRegex(SoloError, message):
+                    c.commit(payload)
+            self.assertEqual(len(c.events), count)
+
+    def test_a_consequence_set_more_than_a_year_ahead_is_told_what_to_do_instead(self):
+        # It was told to let the time pass a year at a time: advice for time passing, not for a consequence.
+        with self.session() as c:
+            with self.assertRaisesRegex(SoloError, "consequence the_heir_returns: after is more than a year of game time, "
+                                                   "the furthest ahead a consequence waits: leave after out, and bring it in yourself"):
+                c.commit({"consequence": {"text": "the heir returns", "after": {"day": 400}}})
+            c.commit({"consequence": {"text": "the heir returns", "after": {"day": 365}}})
+            self.assertEqual(c.state["consequences"]["the_heir_returns"]["due_at"], c.state["time"] + 365 * 86400)
+
+    def test_removing_what_the_hero_lacks_warns_about_the_right_list(self):
+        with self.session() as c:
+            event = c.commit({"pc": {"abilities": {"remove": ["Veteran", "Berserker"]}, "items": {"remove": ["rope", "lantern"]}}})
+        self.assertEqual(event["warnings"], ["Berserker isn't among Ragna's abilities", "lantern isn't carried"])
+        self.assertEqual((event["changes"]["pc"]["abilities_remove"], event["changes"]["pc"]["items_remove"]), (["Veteran"], ["rope"]))
+
+    def test_a_list_memory_is_refused_and_an_old_one_still_reads(self):
+        with self.session() as c:
+            count = len(c.events)
+            with self.assertRaisesRegex(SoloError, "npc orc_leader: a memory is one line of text"):
+                c.commit({"npc": {"orc_leader": {"memory": ["the gate", "the horn"]}}})
+            with self.assertRaisesRegex(SoloError, "faction orcs: what they heard is one line of text"):
+                c.commit({"faction": {"orcs": {"memory": ["the gate"]}}})
+            self.assertEqual(len(c.events), count)
+            # A log written before the check: its lists read as lines.
+            c.append("commit", changes={"npc": {"orc_leader": {"memory": ["the gate", "the horn"]}},
+                                        "faction": {"orcs": {"standing": -1, "standing_was": -1, "memory": ["the gate"]}}})
+        with self.session() as c:
+            self.assertEqual(c.state["npcs"]["orc_leader"]["memories"], ["the gate; the horn"])
+            self.assertIn("the gate; the horn", cli.resume_digest(c))
+            self.assertIn("the gate", cli.resume_digest(c, book=True))
+            self.assertIn("the horn", cli.recall_text(c, "horn"))
+
     def test_rejected_commits_write_nothing(self):
         with self.session() as c:
             for payload, message in (
@@ -115,6 +237,23 @@ class CommitTest(CampaignTest):
 
 
 class ClockTest(CampaignTest):
+    def test_a_clock_a_commit_or_a_stage_fills_sets_off_the_clocks_that_listen(self):
+        adventure = self.tmp / "alarms"
+        shutil.copytree(self.adventure, adventure)
+        spec = adventure / "adventure.toml"
+        spec.write_text(spec.read_text() + (
+            '\n[clocks.alarm_a]\nlabel = "The first alarm"\nsegments = 2\n'
+            '\n[clocks.alarm_c]\nlabel = "The third alarm"\nsegments = 2\n'
+            '\n[clocks.alarm_b]\nlabel = "The second alarm"\nsegments = 3\nadvance = ["clock:alarm_a:full", "clock:alarm_c:full"]\n'
+            '\n[clocks.fuse]\nlabel = "The fuse"\nsegments = 2\n\n[[clocks.fuse.stages]]\nat = 1\nclock = { alarm_c = "+2" }\n'))
+        root = campaign.create(self.tmp / "alarms-game", self.system, adventure, self.character)
+        with campaign.session(root) as c:
+            c.commit({"clock": {"alarm_a": "+2"}})
+            self.assertEqual(c.state["clocks"]["alarm_b"]["value"], 1)
+            c.commit({"clock": {"fuse": "+1"}})
+            self.assertTrue(c.state["clocks"]["alarm_c"]["full"])
+            self.assertEqual(c.state["clocks"]["alarm_b"]["value"], 2)
+
     def test_time_and_facts_advance_clocks_and_roll_their_table(self):
         with self.session() as c:
             c.commit({"time": {"shift": 2}}, rng=Dice(3, 6))
@@ -270,6 +409,64 @@ class TornLogTest(CampaignTest):
         with self.assertRaisesRegex(SoloError, "line 1 is damaged"):
             self.session().__enter__()
 
+    def test_damage_in_the_middle_of_the_log_says_which_line_and_what_to_do(self):
+        with self.session() as c:
+            c.say("The road is long.")
+            c.say("I walk on.", "player")
+        lines = self.log().read_bytes().split(b"\n")
+        number = len(lines) - 2  # the GM's line, with the player's after it
+        for damage, why in ((lines[number - 1].replace(b"road", b"r\xffad"), "invalid start byte"), (b"5", "it isn't an event")):
+            with self.subTest(why=why):
+                self.log().write_bytes(b"\n".join([*lines[:number - 1], damage, *lines[number:]]))
+                with self.assertRaisesRegex(SoloError, f"line {number} is damaged \\(.*{why}.*\\).*mend that line by hand, or put back a copy"):
+                    self.session().__enter__()
+
+    def test_each_event_is_on_the_disk_before_the_command_goes_on(self):
+        with self.session() as c, unittest.mock.patch("solo.campaign.os.fsync", wraps=os.fsync) as fsync:
+            c.say("The road is long.")
+            c.say("I walk on.", "player")
+        self.assertEqual(fsync.call_count, 2)
+
+    def test_a_write_that_fails_takes_back_what_it_wrote_and_the_command_stops_there(self):
+        write = os.write
+
+        def half(fd, data):  # a disk that fills up half way through the line
+            write(fd, data[:len(data) // 2])
+            raise OSError(errno.ENOSPC, "No space left on device")
+        with unittest.mock.patch.object(campaign.Campaign, "come_due") as come_due:
+            with self.assertRaisesRegex(SoloError, "couldn't write to .*events.jsonl \\(No space left on device\\), so the command stopped there"):
+                with self.session() as c:
+                    c.say("The road is long.")
+                    with unittest.mock.patch("solo.campaign.os.write", half):
+                        c.say("I walk on.", "player")
+        come_due.assert_not_called()  # nothing more is written after the write that failed
+        self.assertTrue(self.log().read_bytes().endswith(b'"text": "The road is long.", "scene": "road"}\n'))
+        with self.session() as c:
+            self.assertEqual((c.events[-1]["text"], c.state["last_said"]["text"]), ("The road is long.", "The road is long."))
+            self.assertEqual(json.loads((self.root / "state.json").read_text())["seq"], c.events[-1]["seq"])
+
+    def test_a_state_json_behind_the_log_is_brought_up_to_date_by_any_command(self):
+        saved = (self.root / "state.json").read_text()
+        with self.session() as c:
+            c.say("The road is long.")
+            seq = c.state["seq"]
+        (self.root / "state.json").write_text(saved)  # a crash after the event was written, before state.json was
+        with self.session():
+            pass  # a command that only reads
+        self.assertEqual(json.loads((self.root / "state.json").read_text())["seq"], seq)
+
+    def test_a_campaign_whose_start_stopped_before_its_first_event_says_so_and_begins_again(self):
+        root = self.tmp / "stopped"
+        root.mkdir()
+        (root / "campaign.toml").write_text((self.root / "campaign.toml").read_text())
+        with self.assertRaisesRegex(SoloError, "has a campaign.toml and no events: it stopped while it was being created. Start it again: solo new"):
+            campaign.session(root).__enter__()
+        campaign.create(root, self.system, self.adventure, self.character)
+        with campaign.session(root) as c:
+            self.assertEqual(c.events[0]["type"], "created")
+        with self.assertRaisesRegex(SoloError, "already holds a campaign"):
+            campaign.create(root, self.system, self.adventure, self.character)
+
     def test_a_line_separator_in_a_message_stays_inside_its_event(self):
         # JSON keeps U+2028 and U+0085 as they are, and str.splitlines cuts at both: a pasted line read the whole log as damaged.
         text = "The bell tolls.\u2028Silence.\x85 What do you do?"
@@ -318,6 +515,39 @@ class ReplayTest(CampaignTest):
             self.assertIn("## Pack problems", cli.scene_digest(c))
             c.save()
         self.assertGreater(json.loads((root / "state.json").read_text())["pack_problems"], 0)
+
+    def guarded(self, when):
+        """A campaign on a copy of the adventure whose way from the gate into the hall opens `when`."""
+        adventure = self.tmp / "guarded"
+        shutil.copytree(self.adventure, adventure)
+        spec = adventure / "adventure.toml"
+        spec.write_text(spec.read_text().replace('exits = { hall = "Into the hall",', f'exits = {{ hall = {{ label = "Into the hall", when = "{when}" }},'))
+        root = campaign.create(self.tmp / "guarded-game", self.system, adventure, self.character)
+        with campaign.session(root) as c:
+            c.move("gate", rng=Dice(10))
+        return root, spec
+
+    def test_a_fact_of_the_wrong_type_shuts_the_way_and_fails_no_command(self):
+        root, _ = self.guarded("not fact.gate.guards or fact.gate.guards < 2")
+        with campaign.session(root) as c:
+            c.commit({"facts": {"gate.guards": "two"}})
+            with self.assertRaisesRegex(SoloError, "isn't open yet"):
+                c.move("hall")
+            c.check("swords", rng=Dice(3))
+            count = len(c.events)
+        with campaign.session(root) as c:
+            self.assertEqual(len(c.events), count)
+        self.assertEqual(json.loads((root / "state.json").read_text())["seq"], count)
+
+    def test_a_condition_the_packs_broke_since_leaves_state_json_with_the_log(self):
+        root, spec = self.guarded("fact.gate.guards < 2")
+        spec.write_text(spec.read_text().replace("fact.gate.guards < 2", "fact.gate.guards <"))
+        with unittest.mock.patch("sys.stderr", io.StringIO()) as err:
+            with campaign.session(root) as c:
+                c.check("swords", rng=Dice(3))
+                count = len(c.events)
+        self.assertIn("can't read condition 'fact.gate.guards <'", err.getvalue())
+        self.assertEqual(json.loads((root / "state.json").read_text())["seq"], count)
 
     def test_a_broken_pack_is_reported_where_the_gm_reads(self):
         adventure = self.tmp / "red-tusk"

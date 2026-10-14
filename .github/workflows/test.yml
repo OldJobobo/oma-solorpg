@@ -1,7 +1,8 @@
-# Runs `make test` on every pull request, and on main after a merge.
-# The engine and its tests are standard library only, so there is nothing to install: the
-# PyMuPDF tests skip themselves without it, and the QML check (make qml-check) needs
-# PySide6, so it stays a local step.
+# Runs `make test` on every pull request, and on main after a merge, and loads the QML.
+# The engine and its tests are standard library only. The job installs the two tools some
+# tests skip without, so they run here too: PyMuPDF for the tests that read PDFs, and
+# glslangValidator (glslang-tools) for the shader compile check. The qml job loads Panel.qml
+# and BarWidget.qml with PySide6 (make qml-check).
 #
 # 3.11 is the oldest Python the engine supports (tomllib); 3.x is the newest release.
 name: Tests
@@ -26,5 +27,19 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
+      - run: sudo apt-get update && sudo apt-get install -y glslang-tools
+      - run: python -m pip install pymupdf
       - run: python --version
       - run: make test
+
+  qml:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      # Qt's offscreen platform still loads EGL, OpenGL and xkbcommon.
+      - run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libfontconfig1
+      - run: python -m pip install "PySide6-Essentials==6.11.*"
+      - run: make qml-check

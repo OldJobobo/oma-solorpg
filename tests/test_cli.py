@@ -1,6 +1,8 @@
 import io
 import json
 import os
+import subprocess
+import sys
 import tempfile
 import unittest
 import unittest.mock
@@ -156,10 +158,11 @@ class CliTest(CliCase):
         self.assertIn("already taken a stretch rest this shift", err)
 
     def test_play_through_the_cli(self):
+        os.environ["SOLO_SEED"] = "164"
         self.new_game()
         code, out, _ = self.solo("-C", self.game, "check", "sneaking")
         report = json.loads(out)
-        # SOLO_SEED=5 rolls a 20: a Demon, which rolls its effect, ticks the ritual clock and rolls an omen
+        # SOLO_SEED=164 rolls a 20 here: a Demon, which rolls its effect, ticks the ritual clock and rolls an omen
         self.assertEqual((code, report["summary"]), (0, "Sneaking: 20 vs 4, Demon!"))
         self.assertEqual(report["then"][:2], ["Demon effect (3): Someone noticed", "The ritual below 1/6"])
         self.assertNotIn("push", report)
@@ -196,6 +199,15 @@ class CliTest(CliCase):
         self.assertEqual(code, 1)
         self.assertIn("SOLO_SEED must be a whole number", err)
 
+    def test_a_seeded_run_repeats_and_its_rolls_differ(self):
+        # Every command's dice were seeded alike: under SOLO_SEED every 1d20 was the same number.
+        totals = []
+        for game in (self.game, str(self.tmp / "again")):
+            self.solo("new", str(RED_TUSK), "--dir", game, "--character", str(RAGNA))
+            totals.append([json.loads(self.solo("-C", game, "roll", "1d100")[1])["event"]["result"]["total"] for _ in range(6)])
+        self.assertEqual(totals[0], totals[1])  # the same seed, the same run
+        self.assertGreater(len(set(totals[0])), 1)
+
     def test_fights_and_the_oracle_through_the_cli(self):
         code, _, err = self.solo("new", str(RED_TUSK), "--dir", self.game, "--character", str(RAGNA), "--line", "spiders")
         self.assertEqual(code, 0, err)
@@ -230,6 +242,10 @@ class CliTest(CliCase):
         self.assertIn("unknown commit keys", err)
         code, _, err = self.solo("-C", self.game, "commit", "{not json")
         self.assertIn("isn't valid JSON", err)
+        # A number too long for Python to read is a ValueError, not a JSONDecodeError.
+        code, _, err = self.solo("-C", self.game, "commit", '{"chaos": ' + "1" * 5000 + "}")
+        self.assertEqual(code, 1)
+        self.assertIn("isn't valid JSON", err)
 
     def test_a_folder_named_with_c_never_falls_back_to_the_current_game(self):
         self.new_game()
@@ -248,6 +264,31 @@ class CliTest(CliCase):
         self.assertEqual(err.count("\n"), 1)
         self.assertIn("something went wrong (KeyError: 'hp')", err)
         self.assertNotIn("Traceback", err)
+
+    def test_log_shows_the_last_n_events_and_none_for_zero(self):
+        self.new_game()
+        self.solo("-C", self.game, "commit", '{"note": "the gate creaks"}')
+        code, out, _ = self.solo("-C", self.game, "log", "-n", "0")
+        self.assertEqual((code, out), (0, ""))  # -0 was the whole log
+        code, out, _ = self.solo("-C", self.game, "log", "-n", "1")
+        self.assertEqual(out.splitlines(), ["#2 the gate creaks"])
+        code, out, err = self.solo("-C", self.game, "log", "-n", "-3")  # all but three, it was
+        self.assertEqual((code, out), (1, ""))
+        self.assertIn("-n is how many of the last events to show, from 0 up; not -3", err)
+
+    def test_a_reader_that_stops_early_ends_the_log_quietly(self):
+        # solo log | head: the pipe closes under the output, and that was "something went wrong (BrokenPipeError)".
+        self.new_game()
+        with campaign.session(self.game) as c:
+            for number in range(20):
+                c.commit({"note": f"{number}: " + "the gate creaks " * 500})
+        solo = subprocess.Popen([sys.executable, str(ROOT / "bin" / "solo"), "-C", self.game, "log", "-n", "30"],
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        solo.stdout.readline()
+        solo.stdout.close()
+        err = solo.stderr.read().decode()
+        solo.stderr.close()
+        self.assertEqual((solo.wait(), err), (1, ""))
 
     def test_a_usage_mistake_is_one_line_too(self):
         with self.assertRaises(SystemExit) as exit:
@@ -277,30 +318,86 @@ class CliTest(CliCase):
         self.assertEqual([system["id"] for system in library["systems"]], ["ironsworn"])
         self.assertIn("system dragonbane: Dragonbane has only its names so far", library["problems"][0])
 
+    def setup_on(self, *commands, plugin=False):
+        """`solo setup` on a machine where only these commands are on PATH."""
+        found = lambda name: f"/usr/bin/{name}" if name in commands else None
+        with unittest.mock.patch("shutil.which", side_effect=found), unittest.mock.patch("subprocess.run"):
+            return self.solo("setup", *(["--plugin"] if plugin else []))[1]
+
     def test_setup_links_are_idempotent(self):
-        first = self.solo("setup")[1]
-        second = self.solo("setup")[1]
+        (self.tmp / "home" / ".claude").mkdir(parents=True)
+        first = self.setup_on()
+        second = self.setup_on()
         link = self.tmp / "home" / ".claude" / "skills" / "solo-gm"
         self.assertTrue(link.is_symlink())
         self.assertEqual(link.resolve(), (ROOT / "skills" / "solo-gm").resolve())
         self.assertIn("linked", first)
-        self.assertTrue(all(line.startswith(("ok", "note")) for line in second.splitlines()))
+        self.assertFalse([line for line in second.splitlines() if line.startswith(("linked", "updated", "skipped"))])
 
     def test_setup_never_replaces_a_real_file(self):
         target = self.tmp / "home" / ".local" / "bin" / "solo"
         target.parent.mkdir(parents=True)
         target.write_text("mine")
-        self.assertIn("skipped", self.solo("setup")[1])
+        self.assertIn("skipped", self.setup_on())
         self.assertEqual(target.read_text(), "mine")
+
+    def test_setup_links_skills_only_for_the_agents_that_are_installed(self):
+        home = self.tmp / "home"
+        (home / ".claude").mkdir(parents=True)
+        self.setup_on()
+        self.assertTrue((home / ".claude" / "skills" / "solo-gm").is_symlink())
+        self.assertFalse([folder for folder in (".codex", ".agents", ".pi") if (home / folder).exists()])
+        # Codex on PATH: its own folder and the shared one it also reads.
+        self.setup_on("codex")
+        self.assertTrue((home / ".codex" / "skills" / "solo-gm").is_symlink())
+        self.assertTrue((home / ".agents" / "skills" / "solo-gm").is_symlink())
+        self.assertFalse((home / ".pi").exists())
+
+    def test_setup_says_what_is_missing_and_what_to_do(self):
+        os.environ["AGENT"] = "claude"
+        out = self.setup_on(plugin=True)
+        self.assertIn("ok       Python 3.", out)
+        self.assertIn("todo     omarchy and omarchy-shell not found", out)
+        self.assertIn("optional hyprctl not found", out)
+        self.assertIn("todo     the default agent is claude, and claude isn't on PATH", out)
+        self.assertIn("no agent found (claude, codex or pi), so no skills were linked", out)
+        self.assertIn("PyMuPDF", out)
+        self.assertIn("Enable it with: omarchy plugin enable", out)
+        out = self.setup_on("omarchy", "omarchy-shell", "hyprctl", "claude", plugin=True)
+        self.assertIn("ok       omarchy and omarchy-shell", out)
+        self.assertIn("ok       hyprctl", out)
+        self.assertIn("ok       the GM is claude, which the Book runs", out)
+        self.assertIn("todo     ~/.local/bin isn't on PATH", out)
+        os.environ["PATH"] = str(self.tmp / "home" / ".local" / "bin")
+        out = self.setup_on("omarchy", "omarchy-shell", "hyprctl", "claude", plugin=True)
+        self.assertNotIn("todo", out)
+        # make install enables the plugin itself when omarchy is there.
+        self.assertNotIn("Enable it with", out)
+
+    def test_setup_tells_an_agent_the_book_cant_run_from_one_it_can(self):
+        os.environ["AGENT"] = "opencode"
+        self.assertIn("the default agent is opencode, which the Book can't run", self.setup_on("opencode"))
+
+    def test_solo_on_a_python_older_than_3_11_says_so_in_a_sentence(self):
+        import runpy
+        err = io.StringIO()
+        with unittest.mock.patch("sys.version_info", (3, 10, 12)), redirect_stderr(err), \
+                self.assertRaises(SystemExit) as stopped:
+            runpy.run_path(str(ROOT / "bin" / "solo"), run_name="__main__")
+        self.assertEqual(stopped.exception.code, 1)
+        self.assertEqual(err.getvalue(), "solo needs Python 3.11 or newer, and this is Python 3.10: install a newer python3 and run it again.\n")
 
     def test_play_without_omarchy_explains_what_to_do(self):
         self.new_game()
+        (self.tmp / "home" / ".claude").mkdir(parents=True, exist_ok=True)
         with unittest.mock.patch("shutil.which", return_value=None):
             code, out, _ = self.solo("play", self.game)
         self.assertEqual(code, 0)
         self.assertIn("omarchy-agent isn't available", out)
-        # The GM needs solo and the skills, so play links them the first time.
+        # The GM needs solo and the skills, so play links them the first time, for the agents
+        # that are there (Claude Code's folder is) and no others, as setup does.
         self.assertTrue((self.tmp / "home" / ".claude" / "skills" / "solo-gm").is_symlink())
+        self.assertFalse([folder for folder in (".codex", ".agents", ".pi") if (self.tmp / "home" / folder).exists()])
 
     def test_play_focuses_a_gm_that_is_already_open(self):
         self.new_game()
@@ -482,6 +579,7 @@ class TranscriptCliTest(CliCase):
         self.assertNotIn("Last said", out)
 
     def test_resume_gives_back_the_last_words_and_what_came_after(self):
+        os.environ["SOLO_SEED"] = "16"  # the check below rolls a Demon, which sets off what the player doesn't see
         self.new_game()
         self.solo("-C", self.game, "say", "The road forks.")
         self.solo("-C", self.game, "say", "--player", "I go left.")

@@ -44,12 +44,20 @@ def main(argv=None):
     args = _parser(_command(sys.argv[1:] if argv is None else argv)).parse_args(argv)
     try:
         args.run(args)
+        # Output still buffered goes now, so a reader that has gone (solo log | head) is met here.
+        sys.stdout.flush()
     except SoloError as error:
         print(f"solo: {error}", file=sys.stderr)
         _trace(argv, str(error))
         return 1
     except KeyboardInterrupt:
         return 130
+    except BrokenPipeError:
+        # The reader stopped reading, and that is all: what is left of the output goes nowhere, so
+        # Python's own flush on the way out doesn't meet the closed pipe again (as its docs advise).
+        os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        _trace(argv, None)
+        return 1
     except Exception as error:
         # A bug, or a pack the checks let through. The panel shows stderr to the player as
         # it is, so it gets one line; SOLO_DEBUG=1 gives the traceback instead.
@@ -221,7 +229,7 @@ def _play(root, terminal=False):
     import subprocess
     from . import gm
     campaign.set_current(root)
-    for line in _links():
+    for line in _links(skill_dirs=_installed_skill_dirs()):
         if not line.startswith("ok"):
             print(line)
     _write_agent_files(root)
@@ -287,20 +295,76 @@ def _parent(pid):
 
 def cmd_setup(args):
     import subprocess
-    for line in _links(plugin=args.plugin):
+    skill_dirs = _installed_skill_dirs()
+    for line in _links(plugin=args.plugin, skill_dirs=skill_dirs):
         print(line)
-    if str(Path.home() / ".local/bin") not in os.environ.get("PATH", "").split(":"):
-        print("note: ~/.local/bin isn't on PATH, so call solo by its full path or add it to PATH")
+    for line in _preflight(skill_dirs):
+        print(line)
     if args.plugin and shutil.which("omarchy-shell"):
         subprocess.run(["omarchy-shell", "shell", "rescanPlugins"], capture_output=True)
+    if args.plugin and not shutil.which("omarchy"):
+        # With omarchy here, make install enables the plugin itself right after this.
         print(f"Plugin linked. Enable it with: omarchy plugin enable {PLUGIN_ID}")
 
 
-def _links(plugin=False):
+# Who reads each skills folder, and how setup tells they are installed: their command on PATH, or the
+# folder they keep in your home. Codex reads ~/.agents/skills as well as its own.
+SKILL_READERS = {".claude/skills": ("claude", ".claude"), ".agents/skills": ("codex", ".agents"),
+                 ".codex/skills": ("codex", ".codex"), ".pi/agent/skills": ("pi", ".pi")}
+
+
+def _installed_skill_dirs():
+    """The skills folders of the agents on this machine, so setup doesn't make folders for agents nobody uses."""
+    home = Path.home()
+    return [folder for folder in AGENT_SKILL_DIRS
+            if shutil.which(SKILL_READERS[folder][0]) or (home / SKILL_READERS[folder][1]).is_dir()]
+
+
+def _preflight(skill_dirs):
+    """What playing needs, a line each: ok, or what to do about it."""
+    import importlib.util
+    from . import gm
+    version = ".".join(str(n) for n in sys.version_info[:3])
+    lines = [("ok", f"Python {version}")]
+    if str(Path.home() / ".local/bin") in os.environ.get("PATH", "").split(":"):
+        lines.append(("ok", "~/.local/bin is on PATH, so solo runs by name"))
+    else:
+        lines.append(("todo", "~/.local/bin isn't on PATH, so call solo by its full path or add it to PATH"))
+    missing = [name for name in ("omarchy", "omarchy-shell") if not shutil.which(name)]
+    if missing:
+        lines.append(("todo", f"{' and '.join(missing)} not found: the d20, the Table and the Book are a plugin for Omarchy's shell. "
+                              "Without them, play in your agent from a terminal (solo new, then solo play --terminal)"))
+    else:
+        lines.append(("ok", "omarchy and omarchy-shell, for the plugin"))
+    if shutil.which("hyprctl"):
+        lines.append(("ok", "hyprctl, for the desktop effects"))
+    else:
+        lines.append(("optional", "hyprctl not found, so no desktop effects: they need Hyprland, and the game plays without them"))
+    agent = gm.default_agent()
+    if not agent:
+        lines.append(("todo", "no default agent: choose Claude Code or Codex with omarchy default agent, or set AGENT=claude"))
+    elif not shutil.which(agent):
+        lines.append(("todo", f"the default agent is {agent}, and {agent} isn't on PATH: install it, or choose another with omarchy default agent"))
+    elif gm.supported(agent):
+        lines.append(("ok", f"the GM is {agent}, which the Book runs"))
+    else:
+        lines.append(("todo", f"the default agent is {agent}, which the Book can't run: it opens in a terminal instead (solo play --terminal), "
+                              "or choose Claude Code or Codex with omarchy default agent"))
+    if not skill_dirs:
+        lines.append(("todo", "no agent found (claude, codex or pi), so no skills were linked: install one and run make install again"))
+    if importlib.util.find_spec("pymupdf"):
+        lines.append(("ok", "PyMuPDF, for importing your books"))
+    else:
+        lines.append(("optional", "PyMuPDF not found: only make dragonbane and the other imports need it. "
+                                  "On Omarchy: sudo pacman -S python-pymupdf (the README's Troubleshooting has the rest)"))
+    return [f"{word:8} {text}" for word, text in lines]
+
+
+def _links(plugin=False, skill_dirs=AGENT_SKILL_DIRS):
     """Symlinks only, so running it again is harmless. Real files are never replaced."""
     home = Path.home()
     links = [(home / ".local/bin/solo", REPO / "bin" / "solo")]
-    links += [(home / folder / skill, REPO / "skills" / skill) for folder in AGENT_SKILL_DIRS for skill in SKILLS]
+    links += [(home / folder / skill, REPO / "skills" / skill) for folder in skill_dirs for skill in SKILLS]
     if plugin:
         links.append((home / ".config/omarchy/plugins" / PLUGIN_ID, REPO))
     return [_link(link, target) for link, target in links]
@@ -400,13 +464,17 @@ def cmd_state(args):
 
 
 def cmd_log(args):
+    if args.n < 0:
+        raise SoloError(f"-n is how many of the last events to show, from 0 up; not {args.n}")
     with _open(args) as c:
-        for event in c.events[-args.n:]:
+        for event in c.events[-args.n:] if args.n else []:
             print(f"#{event['seq']} {campaign.gm_line(event)}")
 
 
 def cmd_strike(args):
     """The player's X-card: cut the GM's last message, and add a line or a veil from the same place."""
+    if os.environ.get("SOLO_BOOK"):
+        raise SoloError("the X-card is the player's: the GM can't strike its own messages")
     with _open(args) as c:
         event = c.strike(args.note)
         if args.line or args.veil:
@@ -794,8 +862,11 @@ def cmd_advance(args):
 
 
 def cmd_prefs(args):
+    changes = args.tone is not None or args.line or args.veil or args.clear
+    if changes and os.environ.get("SOLO_BOOK"):
+        raise SoloError("the table settings are the player's: the GM can read them, never change them")
     with _open(args) as c:
-        if args.tone is not None or args.line or args.veil or args.clear:
+        if changes:
             c.set_prefs(args.tone, args.line, args.veil, clear=args.clear)
         _json(c.state["prefs"])
 
@@ -809,7 +880,7 @@ def cmd_commit(args):
     text = sys.stdin.read() if args.json == "-" else args.json
     try:
         payload = json.loads(text)
-    except json.JSONDecodeError as error:
+    except ValueError as error:  # a JSONDecodeError, or a number too long to read (over 4300 digits)
         raise SoloError(f"the commit isn't valid JSON: {error}") from None
     with _open(args) as c:
         event = c.commit(payload, rng=_rng())
@@ -895,6 +966,8 @@ def cmd_gm(args):
     from . import gm
     if args.action == "pace":
         # The player's, for every campaign: it needs none.
+        if args.text and os.environ.get("SOLO_BOOK"):
+            raise SoloError("the GM's pace is the player's to set: the GM can read it, never change it")
         _json({"pace": gm.set_pace(" ".join(args.text)) if args.text else gm.pace()})
     elif args.action == "budget":
         _budget(args)
@@ -912,7 +985,8 @@ def cmd_gm(args):
             print("stopped")
         elif args.action == "agent":
             agent = gm.default_agent()
-            _json({"agent": agent, "book": gm.supported(agent)})
+            why = gm.why_not(agent)
+            _json({"agent": agent, "book": gm.supported(agent), **({"why": why} if why else {})})
         else:
             _json(gm.status(root))
 
@@ -921,6 +995,9 @@ def _budget(args):
     """What a GM session may spend, the player's to see and raise (never the GM's: solo gm isn't a GM command).
     The limits are for every campaign; the count is the campaign's, and --reset starts it again."""
     from . import gm
+    if (args.text or args.turns or args.reset) and os.environ.get("SOLO_BOOK"):
+        # A Codex GM has no list of allowed commands, so the refusal is here.
+        raise SoloError("the GM's budget is the player's to set: the GM can read it, never raise or reset it")
     if args.text and not args.text[0].replace(".", "", 1).isdigit():
         raise SoloError(f"a budget is dollars, a number: solo gm budget 20 (or --turns 400), not {args.text[0]!r}")
     limit = gm.set_budget(usd=float(args.text[0]) if args.text else None, turns=args.turns) if args.text or args.turns else gm.budget()
@@ -1711,9 +1788,11 @@ def _open(args):
 
 def _rng():
     """SOLO_SEED makes rolls repeatable (tests, demos); otherwise dice use the system RNG.
+    A command's dice are seeded by SOLO_SEED and the seq of the event it writes first, so a
+    seeded run repeats roll for roll and one command doesn't roll what the last one did.
     Events written under it carry the seed, so the log and the Book show it."""
     seed = dice.fixed_seed()
-    return random.Random(seed) if seed is not None else None
+    return random.Random(f"{seed}:{campaign.next_seq()}") if seed is not None else None
 
 
 def _prefs_arguments(sub):
@@ -1845,7 +1924,7 @@ def _parser(only=None):
     sub = command("track", cmd_track, "progress tracks (Ironsworn): add <name> --kind vow --rank dangerous, mark <id> [--times 2], set <id> [--ticks 8] [--rank epic], end <id> --how fulfilled, list")
     sub.add_argument("action", choices=["add", "mark", "set", "end", "list"])
     sub.add_argument("words", nargs="*", help="add: the track's name; mark, set, end: its id")
-    sub.add_argument("--kind", help="add: vow, journey or fight")
+    sub.add_argument("--kind", help="add: vow, journey or combat (a fight)")
     sub.add_argument("--rank", help="add, set: troublesome, dangerous, formidable, extreme or epic")
     sub.add_argument("--times", type=int, default=1, help="mark: how many marks (a foe's harm: one each)")
     sub.add_argument("--ticks", help="set: the ticks (a number sets them; +4 or -4 moves them)")

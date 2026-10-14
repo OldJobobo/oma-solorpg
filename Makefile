@@ -19,8 +19,15 @@ RULEBOOK   := $(SYSTEMS)/dragonbane-rulebook
 TOP        := $(SYSTEMS)/dragonbane
 SOLO_TASK    = The solo rules are extracted in $(SOURCES)/dragonbane-solo and go into $(TOP) (it extends dragonbane-rulebook; a pack laid over the rulebook by make supplement is added to its extends list), whose inventory is started too.
 NO_SOLO_TASK = I have no solo rules book: leave $(TOP) as it is.
+# What a player types reaches the recipes as environment variables, read as "$$PREMISE": a
+# premise with backticks or $( ) in it is words, and the shell never runs them. Each is taken
+# as typed, or make would read a $( ) in it as its own, and run a $(shell ...).
+override PREMISE  := $(value PREMISE)
+override TONE     := $(value TONE)
+override CAMPAIGN := $(value CAMPAIGN)
+export PREMISE TONE CAMPAIGN
 
-.PHONY: help install deps dragonbane rules supplement check adventure check-adventure campaign campaign-next test qml-check site
+.PHONY: help install uninstall deps dragonbane rules supplement check adventure check-adventure campaign campaign-next test qml-check site
 
 help:
 	@echo "oma-solorpg"
@@ -44,13 +51,15 @@ help:
 	@echo "  AGENT=claude|codex picks the agent that does the reading (default: Omarchy's default agent)."
 	@echo "  SOLO_HOME=$(SOLO_HOME)"
 
+# solo setup says what is missing, and how to enable the plugin when omarchy isn't here to do it.
 install:
 	$(SOLO_BIN) setup --plugin
-	@if command -v omarchy >/dev/null 2>&1; then omarchy plugin enable $(PLUGIN); \
-	else echo "Enable the plugin with: omarchy plugin enable $(PLUGIN)"; fi
+	@if command -v omarchy >/dev/null 2>&1; then omarchy plugin enable $(PLUGIN); fi
 
-# Removes only the symlinks that point into this folder; ~/Games/solo (campaigns, packs) is left alone.
+# Puts back what the desktop effects changed, then removes only the symlinks that point into this
+# folder. ~/Games/solo (campaigns, packs), ~/.local/state/solo and ~/.cache/solo* are left alone.
 uninstall:
+	-$(SOLO_BIN) desk restore
 	@if command -v omarchy >/dev/null 2>&1; then omarchy plugin disable $(PLUGIN) || true; fi
 	@for link in "$$HOME/.local/bin/solo" "$$HOME/.config/omarchy/plugins/$(PLUGIN)" \
 	    $$(for d in .claude .agents .codex .pi/agent; do for s in solo-gm solo-import solo-rules-import solo-campaign; do echo "$$HOME/$$d/skills/$$s"; done; done); do \
@@ -60,7 +69,7 @@ uninstall:
 # PyMuPDF reads the PDFs. Only the import commands need it.
 deps:
 	@python3 -c "import pymupdf" 2>/dev/null || { \
-	  echo "solo extract needs PyMuPDF: uv pip install --system pymupdf"; exit 1; }
+	  echo "solo extract needs PyMuPDF: on Omarchy, sudo pacman -S python-pymupdf (the README's Troubleshooting has other systems)"; exit 1; }
 
 # Dragonbane's packs and adventures from your own PDFs, without an agent: each book an importer here knows is read by its bookmarks and layout, and what the pack holds is checked
 # against the book's pages. Nothing of a book is in this repository: the importers hold where things are and how to read them. REPLACE=1 builds again over packs made this way.
@@ -135,16 +144,16 @@ check-adventure:
 # A campaign from a premise: the engine rolls its bones (the hub, the factions, the first
 # mission's waypoints, each roll recorded), then your agent writes it with the solo-campaign skill.
 campaign:
-	@test -n "$(ID)" -a -n "$(PREMISE)" || { echo 'usage: make campaign ID=<id> PREMISE="a sentence" [TONE=grim] [MISSIONS=3] [SYSTEM=dragonbane] [SEED=n]'; exit 2; }
-	$(SOLO_BIN) campaign new "$(ID)" --premise "$(PREMISE)" --tone "$(TONE)" --missions $(or $(MISSIONS),3) --system $(or $(SYSTEM),dragonbane) $(if $(SEED),--seed $(SEED))
-	@$(ASK) "$(SOLO_HOME)" "Use the solo-campaign skill to write the campaign just rolled in $(ADVENTURES)/$(ID) from my premise: $(PREMISE). The repository is $(CURDIR): read docs/PACK_FORMAT.md there first. Keep to what the dice rolled (rolls.toml), write every file marked rolled, not yet written, and run make check-adventure ID=$(ID) in the repository until it is clean. Then tell me about the campaign without spoiling it."
+	@test -n "$(ID)" -a -n "$$PREMISE" || { echo 'usage: make campaign ID=<id> PREMISE="a sentence" [TONE=grim] [MISSIONS=3] [SYSTEM=dragonbane] [SEED=n]'; exit 2; }
+	$(SOLO_BIN) campaign new "$(ID)" --premise "$$PREMISE" --tone "$$TONE" --missions $(or $(MISSIONS),3) --system $(or $(SYSTEM),dragonbane) $(if $(SEED),--seed $(SEED))
+	@$(ASK) "$(SOLO_HOME)" "Use the solo-campaign skill to write the campaign just rolled in $(ADVENTURES)/$(ID) from my premise: $$PREMISE. The repository is $(CURDIR): read docs/PACK_FORMAT.md there first. Keep to what the dice rolled (rolls.toml), write every file marked rolled, not yet written, and run make check-adventure ID=$(ID) in the repository until it is clean. Then tell me about the campaign without spoiling it."
 
 # The next mission of a generated campaign, once the one before is done: rolled from what the
 # hero did, then written by your agent.
 campaign-next:
-	@test -n "$(CAMPAIGN)" || { echo "usage: make campaign-next CAMPAIGN=<campaign folder>"; exit 2; }
-	$(SOLO_BIN) campaign next "$(CAMPAIGN)"
-	@$(ASK) "$(SOLO_HOME)" "Use the solo-campaign skill to write the next mission of the campaign in $(CAMPAIGN): solo campaign next has just rolled it into the campaign's adventure pack (campaign.toml there says where). The repository is $(CURDIR): read docs/PACK_FORMAT.md there first. Read what the hero did (solo -C $(CAMPAIGN) history), pay off what the dice picked to come back, and run make check-adventure ID=<the adventure folder> in the repository until it is clean."
+	@test -n "$$CAMPAIGN" || { echo "usage: make campaign-next CAMPAIGN=<campaign folder>"; exit 2; }
+	$(SOLO_BIN) campaign next "$$CAMPAIGN"
+	@$(ASK) "$(SOLO_HOME)" "Use the solo-campaign skill to write the next mission of the campaign in $$CAMPAIGN: solo campaign next has just rolled it into the campaign's adventure pack (campaign.toml there says where). The repository is $(CURDIR): read docs/PACK_FORMAT.md there first. Read what the hero did (solo -C $$CAMPAIGN history), pay off what the dice picked to come back, and run make check-adventure ID=<the adventure folder> in the repository until it is clean."
 
 test:
 	python3 -m unittest discover -s tests

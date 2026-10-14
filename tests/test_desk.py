@@ -100,6 +100,59 @@ class DeskTest(CampaignTest):
         self.assertEqual(saver.read_text(), "OMARCHY\n")
         self.assertFalse(saver.with_name("screensaver.txt.solo-play").exists())
 
+    def remembering(self):
+        """A hyprctl that keeps the border it is given, and fails every call while a file says so."""
+        border, failing = self.tmp / "border", self.tmp / "failing"
+        border.write_text("ee33ccff ee00ff99 45deg")
+        (self.bin / "hyprctl").write_text(textwrap.dedent(f"""\
+            #!/usr/bin/env python3
+            import json, os, re, sys
+            args = sys.argv[1:]
+            if os.path.exists({str(failing)!r}):
+                sys.exit(1)
+            if args[:2] == ["getoption", "general:col.active_border"]:
+                print(json.dumps({{"custom": open({str(border)!r}).read()}}))
+            elif args[:2] == ["getoption", "decoration:screen_shader"]:
+                print(json.dumps({{"str": "[[EMPTY]]"}}))
+            elif args[0] == "eval" and "active_border" in args[1]:
+                colours = re.findall(r"rgba\\(([0-9a-f]{{6}})([0-9a-f]{{2}})\\)", args[1])
+                angle = re.search(r"angle = (\\d+)", args[1])
+                open({str(border)!r}, "w").write(" ".join(a + c for c, a in colours) + (f" {{angle.group(1)}}deg" if angle else ""))
+            """))
+        return border, failing
+
+    def test_a_restore_that_failed_keeps_the_players_border_for_the_next(self):
+        # The saved border was forgotten even when hyprctl failed; the next effect then saved its own dark red as the player's.
+        border, failing = self.remembering()
+        desk.dying(True)
+        self.assertEqual(border.read_text(), "ff7a0c0c")
+        failing.write_text("yes")
+        self.assertEqual(desk.restore()["borders"], False)
+        failing.unlink()
+        desk.flash("dragon")
+        self.assertEqual(border.read_text(), "ee33ccff ee00ff99 45deg")
+        self.assertIsNone(desk._saved("border"))
+
+    def test_an_effects_own_colour_is_never_kept_as_the_players(self):
+        border, _ = self.remembering()
+        border.write_text("ff7a0c0c")  # the dying red, left by a run that lost what it saved
+        desk.set_settings({"screen": False})
+        self.assertFalse(desk.flash("dragon"))
+        self.assertIsNone(desk._saved("border"))
+        self.assertEqual(border.read_text(), "ff7a0c0c")
+
+    def test_an_omens_words_are_never_read_as_an_option(self):
+        calls = self.tmp / "notify.calls"
+        for name in ("notify-send", "omarchy-notification-send"):
+            script = self.bin / name
+            script.write_text(f"#!/usr/bin/env python3\nimport json, sys\nopen({str(calls)!r}, 'a').write(json.dumps(sys.argv) + '\\n')\n")
+            script.chmod(script.stat().st_mode | stat.S_IEXEC)
+            desk.omen("--urgency=critical")
+            script.unlink()
+        sent, omarchy = [json.loads(line) for line in calls.read_text().splitlines()]
+        self.assertEqual(sent[-3:], ["--", "An omen", "--urgency=critical"])  # GLib reads no option after --
+        self.assertEqual(omarchy[-2:], ["An omen", "\u200b--urgency=critical"])  # no "--" there: no option by that name
+
     def test_nothing_is_changed_when_the_border_cant_be_read(self):
         (self.bin / "hyprctl").write_text("#!/bin/sh\nexit 1\n")
         self.assertFalse(desk.flash("dragon"))

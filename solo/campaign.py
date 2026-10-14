@@ -9,6 +9,7 @@ import copy
 import fcntl
 import json
 import marshal
+import math
 import os
 import re
 import sys
@@ -32,6 +33,9 @@ SPEAKERS = ("gm", "player")
 _COMMIT_KEYS = {"note", "facts", "npc", "faction", "promise", "pc", "clock", "time", "clue", "chronicle", "override", "chaos", "end", "learn", "consequence"}
 # What a clock says, for a commit's time in the words the GM would use for it.
 _CLOCK = {"second": 1, "minute": 60, "hour": 3600, "day": 86400}
+# The most game time one step of the story passes: a year. More is a slip (a number written as text
+# once multiplied the text, and the clocks counted the boundaries it crossed for ever).
+_MOST_TIME = 365 * 86400
 # A commit's time written out: "10 minutes", "a stretch", "2 hours and 30 minutes".
 _TIME_WORDS = re.compile(r"\b(?:(\d+(?:\.\d+)?)\s*|(an?|one)\s+)([a-z]+)\b")
 # The commit keys that hold a JSON object, with an example, for the GM that sends a string or a list instead.
@@ -69,6 +73,9 @@ _STORY_SIZE = 150
 # those events are the same bytes (their crc32) and the packs and the engine are the ones it was made from,
 # and it is kept again once the log has grown this many events past it.
 _KEEP_EVERY = 50
+# The campaigns open in this process, the innermost last (see session): a command's dice fixed by
+# SOLO_SEED are seeded by the event it writes first (next_seq).
+_OPEN = []
 
 
 def find(start=None):
@@ -87,6 +94,11 @@ def find(start=None):
         raise SoloError("no campaign here: start one with `solo new <adventure>` or pick one with `solo use <dir>`")
 
 
+def next_seq():
+    """The seq the next event of the campaign open now will have (1 when none is)."""
+    return len(_OPEN[-1].events) + 1 if _OPEN else 1
+
+
 def set_current(root):
     pointer = library.state_home() / "current"
     pointer.parent.mkdir(parents=True, exist_ok=True)
@@ -100,7 +112,8 @@ def create(root, system_path, adventure_path, character, title=None, prefs=None)
     system = packs.load_system(system_path)
     adventure = packs.load_adventure(adventure_path, drafts=False)
     problems = packs.validate(system, adventure)
-    if (root / "campaign.toml").exists():
+    # campaign.toml is written before the first event: one without events is a start that stopped half way, begun again here.
+    if (root / "campaign.toml").exists() and _read_events(root / "events.jsonl")[0]:
         raise SoloError(f"{root} already holds a campaign")
     elif packs.missing(system):
         raise SoloError(packs.missing_text(system, packs.missing(system)))
@@ -119,7 +132,7 @@ def create(root, system_path, adventure_path, character, title=None, prefs=None)
             "adventure": str(Path(adventure_path).resolve()),
         }
         (root / "campaign.toml").write_text("".join(f"{k} = {packs.toml_string(v)}\n" for k, v in config.items()), encoding="utf-8")
-        with session(root) as campaign:
+        with session(root, new=True) as campaign:
             event = campaign.append("created", format=FORMAT, title=config["title"], pc=pc, scene=adventure["start"],
                                     past=past or None, facts=carried or None, kept=kept or None)
             campaign._follow([f"scene:{adventure['start']}"], cause=event["seq"])
@@ -239,35 +252,47 @@ def character_sheet(data, system):
 
 
 @contextmanager
-def session(root):
+def session(root, new=False):
     """Open a campaign under an exclusive lock, so the agent and the panel never write
-    at the same time. state.json is rewritten on the way out if anything changed, and a
-    command that went through keeps the replay for the next one when it has fallen behind."""
+    at the same time. state.json is rewritten on the way out if anything changed, or if it
+    was behind the log, and a command that went through keeps the replay for the next one
+    when it has fallen behind. `new`: the campaign being created, whose log is still empty."""
     root = Path(root)
     with open(root / ".lock", "w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        campaign = Campaign(root)
+        campaign = Campaign(root, new=new)
         count = len(campaign.events)
+        # A crash between an event's write and state.json's leaves state.json behind the log:
+        # any command brings it up to date, one that only reads too.
+        behind = _saved_seq(root / "state.json") != campaign.state["seq"]
+        _OPEN.append(campaign)
         try:
             yield campaign
         except BaseException:
             # What a failed command wrote before it failed stands (a roll is never taken back),
             # but the state it was changing may be half changed: take it from the log again.
-            if len(campaign.events) != count:
+            if len(campaign.events) != count or campaign.unwritten:
                 campaign.state, campaign.entries = replay(campaign.system, campaign.adventure, campaign.events)
             raise
         finally:
-            if len(campaign.events) != count:
+            _OPEN.remove(campaign)
+            if len(campaign.events) != count and not campaign.unwritten:
                 # Whatever changed (a move, time passing, a click on the panel) may be the
-                # moment a consequence was waiting for.
+                # moment a consequence was waiting for. Not after a write that failed: the
+                # log ends where the command stopped.
                 campaign.come_due()
-            if len(campaign.events) != count or not (root / "state.json").exists():
-                campaign.save()
+            if len(campaign.events) != count or behind:
+                try:
+                    campaign.save()
+                except OSError:
+                    if not campaign.unwritten:
+                        raise
+                    # The disk that refused the log refuses state.json too: the next command rebuilds it.
         campaign.keep()
 
 
 class Campaign:
-    def __init__(self, root):
+    def __init__(self, root, new=False):
         self.root = Path(root)
         self.config = packs.load_data(self.root / "campaign.toml")
         self.system = packs.load_system(_pack(self.root, self.config["system"], library.find_system))
@@ -275,8 +300,13 @@ class Campaign:
         if self.adventure.get("weapons"):
             self.system["weapons"] = {**self.system.get("weapons", {}), **self.adventure["weapons"]}
         self.events, log = _read_events(self.root / "events.jsonl")
+        if not self.events and not new:
+            raise SoloError(f"{self.root} has a campaign.toml and no events: it stopped while it was being created. "
+                            f"Start it again: solo new <adventure> --dir {self.root}")
         # Where this session's own events begin: what one command did, whatever came first.
         self.opened = len(self.events)
+        # The error of a write to the log that failed: the command stops there, and nothing more is written.
+        self.unwritten = None
         # The state after every event, and the chronology: from the replay kept for a long
         # campaign while it stands, and the events since, else from the start.
         kept = _read_kept(self, log) if len(self.events) >= _KEEP_EVERY else None
@@ -306,11 +336,16 @@ class Campaign:
         seed = dice.fixed_seed()
         if seed is not None:
             event["seed"] = seed
+        line = (json.dumps(event, ensure_ascii=False) + "\n").encode("utf-8")
         # Applied before it is written: an event the state can't take is refused, never left
         # in the log for every later replay to trip over.
         _advance(self.state, self.entries, event, self.adventure, strict=True)
-        with open(self.root / "events.jsonl", "a", encoding="utf-8") as log:
-            log.write(json.dumps(event, ensure_ascii=False) + "\n")
+        try:
+            _write_line(self.root / "events.jsonl", line)
+        except OSError as error:
+            self.unwritten = error
+            raise SoloError(f"couldn't write to {self.root / 'events.jsonl'} ({error.strerror or error}), so the command stopped there "
+                            "(solo log shows what it recorded): free some disk space, or fix what stops the write, and go on") from None
         self.events.append(event)
         return event
 
@@ -342,9 +377,18 @@ class Campaign:
                 self.append("due", consequence=consequence_id, text=consequence["text"], npc=consequence["npc"])
 
     def save(self):
+        """Write state.json. It keeps up with the log whatever the packs make of it: what they add (the
+        kit, the map, the codex, the art) is left out when it can't be worked out, and said, rather than
+        failing a command whose events are written (its retry would roll again) and leaving the panel behind."""
         path = self.root / "state.json"
         temporary = path.with_name("state.json.tmp")
-        temporary.write_text(json.dumps(snapshot(self.system, self.state, self.adventure), ensure_ascii=False, indent=1), encoding="utf-8")
+        try:
+            view = snapshot(self.system, self.state, self.adventure)
+        except Exception as error:  # whatever it was, the log stands and the state follows it
+            reason = error if isinstance(error, SoloError) else f"{type(error).__name__}: {error}"
+            print(f"solo: state.json is written without what the packs add to it ({reason}); solo validate says what to fix", file=sys.stderr)
+            view = {k: v for k, v in self.state.items() if k not in _GM_ONLY}
+        temporary.write_text(json.dumps(view, ensure_ascii=False, indent=1), encoding="utf-8")
         os.replace(temporary, path)
 
     # Rolls -----------------------------------------------------------------------
@@ -371,7 +415,8 @@ class Campaign:
         return event
 
     def push(self, condition=None, rng=None, sole_survivor=False):
-        """Push the last check once. The cost comes from the system pack: a condition the
+        """Push the last check once, while it is still the result the story waits on: a commit or a
+        move after it and it stands as it fell. The cost comes from the system pack: a condition the
         character doesn't have yet (Dragonbane) or a track increase (stress in Alien). A hero
         with Sole Survivor may pay willpower instead of a condition."""
         if self.system["family"] == "action-roll":
@@ -394,6 +439,8 @@ class Campaign:
             raise SoloError("nothing to push: make a check first")
         elif last["type"] == "push":
             raise SoloError("that roll was already pushed")
+        elif last.get("stood"):
+            raise SoloError("that roll stands: the story went on after it (a commit or a move), so it can't be pushed any more")
         elif not last["outcome"]["pushable"]:
             raise SoloError("that roll can't be pushed: it succeeded or it was a Demon")
         elif cost == "condition" and not available:
@@ -462,8 +509,8 @@ class Campaign:
         return event
 
     def burn(self, rng=None):
-        """Burn momentum on the last action roll: the challenge dice under it are cancelled,
-        and momentum goes back to its reset."""
+        """Burn momentum on the last action roll, while it is still open (see act): the challenge
+        dice under it are cancelled, and momentum goes back to its reset."""
         self._moves_only("burn momentum")
         self._able("burn momentum")
         last, momentum = self.state["last_check"], self.state["pc"]["tracks"]["momentum"]
@@ -479,6 +526,8 @@ class Campaign:
             burned = mechanics.burn(last["outcome"], momentum["value"])
             if burned is None:
                 raise SoloError(f"burning momentum {momentum['value']} wouldn't change the roll: every challenge die the score doesn't beat is at or above it")
+            elif self.state["open_roll"] != last["seq"]:
+                raise SoloError("that roll stands: the story went on after it (a commit, a move or another move made), so momentum can't be burned on it any more")
             changes = {"pc": {"tracks": {"momentum": momentum["reset"]}, "tracks_was": {"momentum": momentum["value"]}}}
             event = self.append("burn", of=last["seq"], move=last["move"], label=last["label"], stat=last.get("stat"), changes=changes, outcome=burned)
             self._follow(_triggers(burned), event["seq"], rng)
@@ -749,7 +798,7 @@ class Campaign:
             seconds = self._seconds(spent)
             before = self.state["time"]
             event = self.append("move", to=destination, forced=force, scene_check=check, time=seconds or None, **{"from": here})
-            self._follow([f"scene:{destination}"] + self._time_triggers(before, before + seconds), cause=event["seq"], rng=rng)
+            self._follow(Counter([f"scene:{destination}"]) + self._time_triggers(before, before + seconds), cause=event["seq"], rng=rng)
             if seconds:
                 self._burn(event["seq"])
             self._voices(event["seq"], rng)
@@ -1951,9 +2000,16 @@ class Campaign:
             elif "hp" not in stats:
                 raise SoloError(f"{npc_id} has no stats.hp in the adventure pack, so it can't be fought here: narrate it, or give it stats")
             count = sum(1 for foe in [*present.values(), *roster.values()] if foe["npc"] == npc_id)
-            foe_id = npc_id if count == 0 else f"{npc_id}_{count + 1}"
+            foe_id, number = npc_id, count + 1
+            if count or foe_id in present or foe_id in roster:
+                # A second cultist is cultist_2, unless that is someone else's id: an adventure's own
+                # cultist_2, or a foe already in the fight. Two foes with one id would be one foe.
+                foe_id = f"{npc_id}_{number}"
+                while foe_id in self.state["npcs"] or foe_id in present or foe_id in roster:
+                    number += 1
+                    foe_id = f"{npc_id}_{number}"
             roster[foe_id] = {
-                "npc": npc_id, "name": npc["name"] + (f" {count + 1}" if count else ""),
+                "npc": npc_id, "name": npc["name"] + (f" {number}" if foe_id != npc_id else ""),
                 "hp": int(stats["hp"]), "max": int(stats["hp"]), "armor": int(stats.get("armor", 0)), "down": False,
             }
             # A monster with ferocity 2 acts twice a round; an immune one shrugs off weapons.
@@ -2052,10 +2108,12 @@ class Campaign:
         changes, clock_moves, warnings = self._normalize(payload)
         before = self.state["time"]
         event = self.append(kind, changes=changes, warnings=warnings or None, **extra)
+        filled = Counter()
         for clock_id, delta in clock_moves:
             for _ in range(abs(delta)):
-                self._tick(clock_id, 1 if delta > 0 else -1, event["seq"], rng)
-        self._follow(self._commit_triggers(changes, before), event["seq"], rng)
+                # A clock the commit fills fires clock:<id>:full like one filled by its triggers.
+                filled.update(self._tick(clock_id, 1 if delta > 0 else -1, event["seq"], rng))
+        self._follow(self._commit_triggers(changes, before) + filled, event["seq"], rng)
         if changes.get("time"):
             self._burn(event["seq"])
         self._settle()
@@ -2334,26 +2392,41 @@ class Campaign:
             f"promise:{pid}:{p['status']}" for pid, p in changes.get("promise", {}).items()
             if p["status"] != p.get("status_was")
         ]
-        return triggers + self._time_triggers(before, before + changes.get("time", 0))
+        return Counter(triggers) + self._time_triggers(before, before + changes.get("time", 0))
 
     def _time_triggers(self, before, after):
         """time:<unit> once for every boundary of that unit crossed between two moments, and `activity` once
         when what happened took a stretch or more (the unit [threats] activity names): a search, a rest, a
-        shift of travel. A threat that advances on an activity moves one step for it, however long it took."""
-        triggers = [f"time:{unit}" for unit, seconds in self.system["time"].items() for _ in range(int(after // seconds - before // seconds))]
+        shift of travel. A threat that advances on an activity moves one step for it, however long it took.
+        Counted, not listed one by one: a year in rounds is three million of them."""
+        triggers = Counter({f"time:{unit}": int(after // seconds - before // seconds) for unit, seconds in self.system["time"].items()})
         minimum = self.system["time"].get((self.system.get("threats") or {}).get("activity", "stretch"))
-        return triggers + ["activity"] * bool(minimum and after - before >= minimum)
+        triggers["activity"] = int(bool(minimum and after - before >= minimum))
+        return +triggers
 
-    def _seconds(self, spent):
-        """{ stretch = 2 } in seconds, in the system's own time units (plural as well: rounds), or in the clock's (minutes: a GM writes what it means)."""
+    def _seconds(self, spent, what="time", most="the most one step of the story passes: let it pass a year at a time, or say what happened in between"):
+        """{ stretch = 2 } in seconds, in the system's own time units (plural as well: rounds, stretches), or in the
+        clock's (minutes: a GM writes what it means). Words read the same: "2 stretches". Each amount is a number
+        from zero up (written as text, it reads as the number), and all of it together at most a year (`most` says
+        why, and what to do instead)."""
+        units = {**_CLOCK, **self.system["time"]}
+        plurals = {_plural(unit): unit for unit in units}
+        if isinstance(spent, str):
+            spent = _time_words(spent) or spent
+        if spent is not None and not isinstance(spent, dict):
+            raise SoloError(f'{what} is game time, like {{"stretch": 1}} or "2 hours"; not {spent!r}')
         seconds = 0
         for unit, amount in (spent or {}).items():
-            one = unit[:-1] if unit.endswith("s") and unit[:-1] in {**self.system["time"], **_CLOCK} else unit
-            if one in self.system["time"] or one in _CLOCK:
-                seconds += int({**_CLOCK, **self.system["time"]}[one] * amount)
-            else:
+            one = plurals.get(unit, unit)
+            number = _amount(amount)
+            if one not in units:
                 raise SoloError(f"unknown time unit {unit}; the system has {', '.join(self.system['time']) or 'none'}, and seconds, minutes, hours and days will do")
-        return seconds
+            elif number is None:
+                raise SoloError(f'{what}: {unit} is a number from zero up, like {{"{unit}": 2}}; not {amount!r}')
+            elif number > _MOST_TIME or seconds + units[one] * number > _MOST_TIME:
+                raise SoloError(f"{what} is more than a year of game time, {most}")
+            seconds += units[one] * number
+        return int(seconds)
 
     def _normalize(self, payload):
         """Check a commit against the packs and the current state. Returns absolute changes
@@ -2410,8 +2483,7 @@ class Campaign:
         promises = self._promise_changes(payload.get("promise", []), npcs)
         pc, pc_warnings = self._pc_changes(payload.get("pc", {}), override)
         warnings += pc_warnings
-        clues = payload.get("clue", [])
-        clues = [slug(c) for c in ([clues] if isinstance(clues, str) else clues)]
+        clues = [slug(c) for c in _names(payload.get("clue"), "clue")]
         learn = self._learn(payload.get("learn", []), npcs)
         consequences = self._consequence_changes(payload.get("consequence", []), npcs)
         seconds = self._seconds(payload.get("time", {}))
@@ -2470,6 +2542,9 @@ class Campaign:
                 raise SoloError(f"fact {key!r}: use lowercase words joined by dots, like hall.alarm")
             elif value is not None and not isinstance(value, (bool, int, float, str)):
                 raise SoloError(f"fact {key!r}: a value must be true/false, a number or text")
+            elif isinstance(value, float) and not math.isfinite(value):
+                # state.json would hold NaN or Infinity, which the panel's JSON.parse can't read.
+                raise SoloError(f"fact {key!r}: a number must be finite, like 2; not {value!r}")
         return dict(facts)
 
     def _learn(self, items, new_npcs=None):
@@ -2479,7 +2554,9 @@ class Campaign:
         result = []
         if isinstance(items, dict):
             # {"gudrun": "wants"} or {"gudrun": ["wants", "fears"]}: the same as "gudrun.wants".
-            items = [f"{npc_id}.{what}" for npc_id, whats in items.items() for what in _listed(whats)]
+            items = [f"{npc_id}.{what}" for npc_id, whats in items.items() for what in _names(whats, f"learn {npc_id}")]
+        elif not isinstance(items, (str, list)):
+            raise SoloError(f'learn is what the player found out, like ["orc_leader.wants"]; not {items!r}')
         for item in [items] if isinstance(items, str) else items:
             npc_id, _, what = str(item).partition(".")
             profile = None
@@ -2508,6 +2585,10 @@ class Campaign:
                 raise SoloError(f"npc {npc_id}: unknown fields {', '.join(unknown)} (allowed: {', '.join(sorted(_NPC_FIELDS))}){place}")
             elif current is None and not fields.get("name"):
                 raise SoloError(f"npc {npc_id!r} isn't in the adventure; give it a name to add it")
+            strange = next((k for k in ("name", "fate", "location", "faction", "template", "attacker", "monster")
+                            if fields.get(k) is not None and not isinstance(fields[k], str)), None)
+            if strange:
+                raise SoloError(f"npc {npc_id}: {strange} is a word or an id, as text; not {fields[strange]!r}")
             is_new = current is None
             change = {"name": fields["name"], "new": True} if is_new else {}
             named = str(fields.get("name") or "").strip()
@@ -2546,6 +2627,9 @@ class Campaign:
                 raise SoloError(f"npc {npc_id}: template must be one of {', '.join(npcs.get('templates', {})) or 'none'}")
             if "attacker" in fields and fields["attacker"] not in npcs.get("attackers", []):
                 raise SoloError(f"npc {npc_id}: attacker must be one of {', '.join(npcs.get('attackers', [])) or 'none'}")
+            if fields.get("memory") is not None and not isinstance(fields["memory"], str):
+                raise SoloError(f'npc {npc_id}: a memory is one line of text, like {{"memory": "saw the hero spare the guard"}}; '
+                                "two things remembered are two commits")
             if "monster" in fields and fields["monster"] not in self.system.get("bestiary", {}):
                 known = ", ".join(self.system.get("bestiary", {})) or "none: the system pack has no bestiary"
                 raise SoloError(f"npc {npc_id}: monster must be one of the bestiary's ({known})")
@@ -2570,6 +2654,10 @@ class Campaign:
                 raise SoloError(f"faction {faction_id}: unknown fields {', '.join(unknown)} (allowed: memory, name, standing)")
             elif current is None and not spec.get("name"):
                 raise SoloError(f'faction {faction_id!r} isn\'t in the adventure; add it with {{"name": ..., "standing": 0}}')
+            elif spec.get("memory") is not None and not isinstance(spec["memory"], str):
+                raise SoloError(f'faction {faction_id}: what they heard is one line of text, like {{"memory": "the hero spared the guard"}}')
+            elif spec.get("name") is not None and not isinstance(spec["name"], str):
+                raise SoloError(f"faction {faction_id}: a name is text; not {spec['name']!r}")
             old = current["standing"] if current else 0
             standing = _clamp(_shift(spec.get("standing", old), old, ATTITUDES), -2, 2)
             if current is not None and abs(standing - old) > 1 and not override:
@@ -2618,12 +2706,14 @@ class Campaign:
             if text:
                 change["text"] = text
             if item.get("npc") is not None:
-                if item["npc"] not in self.state["npcs"] and item["npc"] not in new_npcs:
+                if not isinstance(item["npc"], str):
+                    raise SoloError(f"consequence {consequence_id}: npc is the id of the one it waits for, as text; not {item['npc']!r}")
+                elif item["npc"] not in self.state["npcs"] and item["npc"] not in new_npcs:
                     raise SoloError(f"consequence {consequence_id}: unknown npc {item['npc']}; someone new goes in the same commit's "
                                     f'npc with a name: {{"npc": {{"{item["npc"]}": {{"name": "..."}}}}}}')
                 change["npc"] = item["npc"]
             if item.get("at") is not None:
-                places = [slug(p) for p in _listed(item["at"])]
+                places = [slug(p) for p in _names(item["at"], f"consequence {consequence_id}: at")]
                 strange = [p for p in places if p not in self.adventure["scenes"]]
                 if strange:
                     raise SoloError(f"consequence {consequence_id}: unknown scene {strange[0]}; at names scene ids, like {self.state['scene']}")
@@ -2638,7 +2728,8 @@ class Campaign:
                         "leave when out and give at, npc or after, or no trigger at all (a loose end you bring in)") from None
                 change["when"] = str(item["when"])
             if item.get("after"):
-                seconds = self._seconds(item["after"])
+                seconds = self._seconds(item["after"], what=f"consequence {consequence_id}: after",
+                                        most="the furthest ahead a consequence waits: leave after out, and bring it in yourself when its time comes")
                 if seconds <= 0:
                     raise SoloError(f'consequence {consequence_id}: after is game time from now, like {{"shift": 1}}')
                 change["due_at"] = self.state["time"] + seconds
@@ -2674,6 +2765,8 @@ class Campaign:
                 raise SoloError(f"promise {promise_id}: status must be one of {', '.join(PROMISE_STATUSES)}")
             elif not (npc and terms):
                 raise SoloError(f"promise {promise_id}: a new promise needs npc and terms")
+            elif not (isinstance(npc, str) and isinstance(terms, str)):
+                raise SoloError(f'promise {promise_id}: npc is an id and terms are what was promised, both as text, like {{"npc": "orc_leader", "terms": "..."}}')
             elif npc not in self.state["npcs"] and npc not in new_npcs:
                 raise SoloError(f"promise {promise_id}: unknown npc {npc}")
             else:
@@ -2693,12 +2786,12 @@ class Campaign:
             # {"pc": {"tracks": {"hp": 3}}} can only mean the tracks themselves.
             updates = {**{k: v for k, v in updates.items() if k != "tracks"}, **updates["tracks"]}
         # An impact cleared in this same commit no longer holds its track down.
-        cleared = [slug(c) for c in _listed(updates["conditions"].get("remove"))] if isinstance(updates.get("conditions"), dict) else []
+        cleared = [slug(c) for c in _names(updates["conditions"].get("remove"), "pc conditions remove")] if isinstance(updates.get("conditions"), dict) else []
         for key, value in updates.items():
             if key in pc["tracks"]:
                 track = pc["tracks"][key]
                 low = track.get("min", 0)
-                if isinstance(value, (int, float)) and not isinstance(value, bool) and value < 0:
+                if (isinstance(value, int) and not isinstance(value, bool) or isinstance(value, float) and math.isfinite(value)) and value < 0:
                     # A track is never set below zero, so -3 can only mean "lose 3". Setting HP to 0
                     # instead would leave the hero dying over a scratch (a GM wrote exactly this).
                     warnings.append(f"read {key} {value} as a loss of {-int(value)}; write \"{int(value)}\" as text to move a value")
@@ -2716,28 +2809,33 @@ class Campaign:
                     result["death_failures"] = 1
                 elif result["tracks"][key] != wanted:
                     warnings.append(f"{key} stops at {result['tracks'][key]} (range {low}-{track['max']})")
+            elif key in ("conditions", "items", "spells", "prepared", "abilities") and not isinstance(value, dict):
+                # A list could mean the ones to add or all the hero has now: which, the GM says.
+                example = next(iter(self.system["conditions"]), "...") if key == "conditions" else "rope" if key == "items" else "..."
+                raise SoloError(f'pc {key} is what to add and what to remove, like {{"{key}": {{"add": ["{example}"], "remove": []}}}}; not {value!r}')
             elif key == "conditions":
                 # One name is a list of one: {"add": "dazed"} is dazed, not d, a, z, e, d.
-                add = [slug(c) for c in _listed(value.get("add"))]
-                remove = [slug(c) for c in _listed(value.get("remove"))]
+                add = [slug(c) for c in _names(value.get("add"), "pc conditions add")]
+                remove = [slug(c) for c in _names(value.get("remove"), "pc conditions remove")]
                 unknown = [c for c in add + remove if c not in self.system["conditions"]]
                 if unknown:
                     raise SoloError(f"unknown conditions {', '.join(unknown)}; the system has {', '.join(self.system['conditions'])}")
                 result["conditions_add"] = [c for c in add if c not in pc["conditions"]]
                 result["conditions_remove"] = [c for c in remove if c in pc["conditions"]]
             elif key == "items":
-                result["items_add"] = _listed(value.get("add"))
-                result["items_remove"] = [i for i in _listed(value.get("remove")) if i in pc["items"]]
+                result["items_add"] = _names(value.get("add"), "pc items add")
+                result["items_remove"] = [i for i in _names(value.get("remove"), "pc items remove") if i in pc["items"]]
+                warnings += [f"{i} isn't carried" for i in _names(value.get("remove"), "pc items remove") if i not in pc["items"]]
             elif key in ("spells", "prepared"):
                 have = pc.get(key, [])
-                result[f"{key}_add"] = [a for a in _listed(value.get("add")) if a not in have]
-                result[f"{key}_remove"] = [a for a in _listed(value.get("remove")) if a in have]
+                result[f"{key}_add"] = [a for a in _names(value.get("add"), f"pc {key} add") if a not in have]
+                result[f"{key}_remove"] = [a for a in _names(value.get("remove"), f"pc {key} remove") if a in have]
             elif key == "abilities":
                 # What the hero has learned or lost: a heroic ability, an asset, or its upgrade ("Slayer, second ability").
                 # One that can be taken again and again (Robust) can be added again.
                 stacks = {slug(spec.get("name", aid)) for aid, spec in self.system.get("abilities", {}).items() if spec.get("stack")}
-                result["abilities_add"] = [a for a in _listed(value.get("add")) if a not in pc["abilities"] or slug(a) in stacks]
-                result["abilities_remove"] = [a for a in _listed(value.get("remove")) if a in pc["abilities"]]
+                result["abilities_add"] = [a for a in _names(value.get("add"), "pc abilities add") if a not in pc["abilities"] or slug(a) in stacks]
+                result["abilities_remove"] = [a for a in _names(value.get("remove"), "pc abilities remove") if a in pc["abilities"]]
                 warnings += [f"{a} {why}" for a in result["abilities_add"] for why in [self._unmet(a)] if why]
                 raised = Counter()
                 for a in result["abilities_add"]:
@@ -2745,7 +2843,7 @@ class Campaign:
                     raised.update({track: int(n) for track, n in (spec.get("max") or {}).items()})
                 if raised:
                     result["max_up"] = dict(raised)
-                warnings += [f"{i} isn't carried" for i in _listed(value.get("remove")) if i not in pc["items"]]
+                warnings += [f"{a} isn't among {pc['name']}'s abilities" for a in _names(value.get("remove"), "pc abilities remove") if a not in pc["abilities"]]
             else:
                 money = " (coins and gear are items: {\"pc\": {\"items\": {\"add\": [\"30 silver\"]}}})" if key in _MONEY else ""
                 raise SoloError(f"pc has no {key!r}; use a track ({', '.join(pc['tracks'])}), conditions, items or abilities{money}")
@@ -2822,7 +2920,7 @@ def burn_option(state):
     neither computes a rule."""
     last, momentum = state["last_check"], ((state["pc"] or {}).get("tracks") or {}).get("momentum")
     burned = None
-    if last and last["type"] == "act" and "track" not in last and momentum and momentum["value"] > 0:
+    if last and last["type"] == "act" and last["seq"] == state["open_roll"] and "track" not in last and momentum and momentum["value"] > 0:
         burned = mechanics.burn(last["outcome"], momentum["value"])
     if burned:
         return {"momentum": momentum["value"], "reset": momentum["reset"], "hit": burned["hit"]}
@@ -2923,7 +3021,7 @@ def _moments(event, state, adventure, seen, was_dead):
             if change.get("location"):
                 bits.append(f"now at {adventure['scenes'].get(change['location'], {}).get('title', change['location'])}")
             if change.get("memory"):
-                bits.append(f"remembers: {change['memory']}")
+                bits.append(f"remembers: {_memory(change['memory'])}")
             if change.get("new"):
                 role = (change.get("profile") or {}).get("role")
                 say("npc", "; ".join([f"met {name(npc_id)}" + (f", {role}" if role else ""), *bits]), [npc_id])
@@ -2931,7 +3029,7 @@ def _moments(event, state, adventure, seen, was_dead):
                 say("npc", f"{name(npc_id)}: {'; '.join(bits)}", [npc_id])
         for faction_id, change in changes.get("faction", {}).items():
             bits = [f"now {_attitude_word(change['standing'])}"] if change["standing"] != change["standing_was"] else []
-            bits += [f"heard: {change['memory']}"] if change.get("memory") else []
+            bits += [f"heard: {_memory(change['memory'])}"] if change.get("memory") else []
             if bits:
                 say("faction", f"{state['factions'].get(faction_id, {}).get('name', faction_id)}: {'; '.join(bits)}")
         for promise in changes.get("promise", {}).values():
@@ -2964,9 +3062,9 @@ def recall(entries, state, query, limit=8):
     found = []
     for entry in entries:
         for label, text in _recallable(entry["event"], state):
-            folded = _fold(text)
+            folded, folded_label = _fold(text), _fold(label)
             # The label counts too: "Bram remembers" is about Bram, whatever he remembers.
-            hits = sum(1 for w in words if w in folded or w in _fold(label))
+            hits = sum(1 for w in words if w in folded or w in folded_label)
             if hits:
                 found.append({"hits": hits, "seq": entry["seq"], "time": entry["time"], "title": entry["title"],
                               "label": label, "text": _snippet(text, folded, words)})
@@ -3010,11 +3108,11 @@ def _recallable(event, state):
         items += [(key, changes[key]) for key in ("note", "chronicle", "end") if changes.get(key)]
         items += [("fact", f"{k}: {v}") for k, v in changes.get("facts", {}).items()]
         for npc_id, change in changes.get("npc", {}).items():
-            items += [(f"{npc_name(npc_id)} remembers", change["memory"])] if change.get("memory") else []
+            items += [(f"{npc_name(npc_id)} remembers", _memory(change["memory"]))] if change.get("memory") else []
             items += [(f"{npc_name(npc_id)}, {field}", text) for field, text in (change.get("profile") or {}).items()]
             items += [("met", f"{npc_name(npc_id)} ({npc_id})")] if change.get("new") else []
         for faction_id, change in changes.get("faction", {}).items():
-            items += [(f"{state['factions'].get(faction_id, {}).get('name', faction_id)} heard", change["memory"])] if change.get("memory") else []
+            items += [(f"{state['factions'].get(faction_id, {}).get('name', faction_id)} heard", _memory(change["memory"]))] if change.get("memory") else []
         for promise_id, promise in changes.get("promise", {}).items():
             items += [(f"promise {promise_id} ({promise['status']})", f"{npc_name(promise['npc'])}: {promise['terms']}")]
         for consequence_id, change in changes.get("consequence", {}).items():
@@ -3025,8 +3123,23 @@ def _recallable(event, state):
 
 def _fold(text):
     """Lowercase, accents gone, one character for one, so a match found in the folded text
-    points at the same place in the original: Kjölvik is kjolvik."""
-    return "".join((unicodedata.normalize("NFKD", ch)[:1] or ch).lower()[:1] for ch in str(text))
+    points at the same place in the original: Kjölvik is kjolvik. Most of what a campaign holds
+    is plain ASCII, which lower() alone folds; the rest goes a character at a time, each worked
+    out once (recall folds every word ever said, and that was most of its time)."""
+    text = str(text)
+    return text.lower() if text.isascii() else text.translate(_FOLDED)
+
+
+class _Folded(dict):
+    """A character's code point to the character it folds to, worked out when first asked for."""
+
+    def __missing__(self, point):
+        ch = chr(point)
+        self[point] = folded = (unicodedata.normalize("NFKD", ch)[:1] or ch).lower()[:1]
+        return folded
+
+
+_FOLDED = _Folded()
 
 
 def _snippet(text, folded, words, before=90, after=170):
@@ -3334,6 +3447,10 @@ def apply(state, event, adventure):
         state["clocks"][event["clock"]]["stopped"] = True
     elif kind == "due" and event["consequence"] in state["consequences"]:
         state["consequences"][event["consequence"]]["due"] = True
+    if kind in ("commit", "move") and (state["last_check"] or {}).get("outcome", {}).get("pushable"):
+        # The story went on: the roll stands as it fell, and its push is no longer on offer (the panel reads pushable).
+        last = state["last_check"]
+        state["last_check"] = {**last, "outcome": {**last["outcome"], "pushable": False}, "stood": True}
     if kind in ("fight", "join"):
         for foe in event["foes"].values():
             if foe["npc"] in state["npcs"]:
@@ -3443,14 +3560,14 @@ def _apply_changes(state, changes, event):
         npc.update({k: change[k] for k in ("name", "faction", "fate", "attitude", "location", "template", "attacker", "monster") if k in change})
         npc["met"] = True
         if change.get("memory"):
-            npc["memories"].append(change["memory"])
+            npc["memories"].append(_memory(change["memory"]))
         if change.get("profile"):
             npc["profile"] = {**npc.get("profile", {}), **change["profile"]}
     for faction_id, change in changes.get("faction", {}).items():
         faction = state["factions"].setdefault(faction_id, {"name": change.get("name", faction_id), "standing": 0, "memories": []})
         faction["standing"] = change["standing"]
         if change.get("memory"):
-            faction.setdefault("memories", []).append(change["memory"])
+            faction.setdefault("memories", []).append(_memory(change["memory"]))
     for promise_id, promise in changes.get("promise", {}).items():
         state["promises"][promise_id] = {k: promise[k] for k in ("npc", "terms", "status")}
     for consequence_id, change in changes.get("consequence", {}).items():
@@ -3809,7 +3926,7 @@ def gm_line(event):
         notes.append("facts " + ", ".join(f"{k} = {json.dumps(v, ensure_ascii=False)}" for k, v in changes["facts"].items()))
     for faction_id, change in changes.get("faction", {}).items():
         if change.get("memory"):
-            notes.append(f"{faction_id} heard: {change['memory']}")
+            notes.append(f"{faction_id} heard: {_memory(change['memory'])}")
     for consequence_id, change in changes.get("consequence", {}).items():
         notes.append(f"consequence {consequence_id} {change['status']}" + (f": {change['text']}" if change.get("text") else ""))
     return describe(event) + "".join(f" [for the GM: {note}]" for note in notes)
@@ -3940,22 +4057,58 @@ def _read_events(path):
         return [], b""
     _mend_tail(path)
     data = path.read_bytes()
-    lines = data.decode("utf-8").split("\n")
-    filled = [line for line in lines if line.strip()]
     try:
+        filled = [line for line in data.decode("utf-8").split("\n") if line.strip()]
         events = json.loads(f"[{','.join(filled)}]")  # the log in one parse, a third faster than a line at a time
-    except json.JSONDecodeError:
+    except (UnicodeDecodeError, json.JSONDecodeError):
         events = None
-    if events is None or len(events) != len(filled):
+    if events is None or len(events) != len(filled) or not all(isinstance(event, dict) for event in events):
         # Which line is damaged: read them one at a time.
         events = []
-        for number, line in enumerate(lines, 1):
+        for number, line in enumerate(data.split(b"\n"), 1):
             if line.strip():
                 try:
-                    events.append(json.loads(line))
-                except json.JSONDecodeError as error:
-                    raise SoloError(f"{path} line {number} is damaged: {error}") from None
+                    event = json.loads(line.decode("utf-8"))
+                except (UnicodeDecodeError, json.JSONDecodeError) as error:
+                    raise SoloError(_damaged(path, number, error)) from None
+                if not isinstance(event, dict):
+                    raise SoloError(_damaged(path, number, "it isn't an event"))
+                events.append(event)
     return events, data
+
+
+def _damaged(path, number, error):
+    """What to do about a line of the log that can't be read. (A last line cut off mid-write never gets here: _mend_tail sets it aside.)"""
+    return (f"{path} line {number} is damaged ({error}), and the campaign is read from its log: mend that line by hand, "
+            "or put back a copy of the file from before it broke (state.json is made from the log, so it is no help)")
+
+
+def _write_line(path, line):
+    """Add a line to the end of the log and onto the disk before the command goes on: the log is the
+    campaign. A write that fails takes back what it wrote, so the log never ends in half an event."""
+    fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o666)
+    try:
+        size = os.fstat(fd).st_size
+        try:
+            written = 0
+            while written < len(line):
+                written += os.write(fd, line[written:])
+            os.fsync(fd)
+        except BaseException:
+            os.ftruncate(fd, size)
+            raise
+    finally:
+        os.close(fd)
+
+
+def _saved_seq(path):
+    """The seq state.json was written at (the first thing in it), or None when there is none to read."""
+    try:
+        with open(path, "rb") as saved:
+            found = re.match(rb'\{\s*"seq":\s*(\d+)', saved.read(64))
+    except OSError:
+        return None
+    return int(found.group(1)) if found else None
 
 
 def _read_kept(c, log):
@@ -4005,10 +4158,13 @@ def _shift(value, old, names=None):
     text = value.strip() if isinstance(value, str) else None
     if isinstance(value, bool) or value is None:
         raise SoloError(f"can't use {value!r} as an amount")
-    elif isinstance(value, (int, float)):
+    elif isinstance(value, int) or (isinstance(value, float) and math.isfinite(value)):
         return int(value)
     elif text and re.fullmatch(r"[+-]\d+", text):
-        return old + int(text)
+        try:
+            return old + int(text)
+        except ValueError:  # more digits than Python reads as a number (4300): no step is that long
+            raise SoloError(f"can't use a step of {len(text) - 1} digits: write \"+1\", \"-1\" or a number") from None
     elif text and names and text in names:
         return names[text]
     else:
@@ -4029,6 +4185,29 @@ def _listed(value):
     return [] if value is None else [value] if isinstance(value, str) else list(value)
 
 
+def _names(value, what):
+    """A name or a list of names from a commit, as a list. Anything else is refused, saying what the key holds."""
+    if value is None:
+        return []
+    elif isinstance(value, str):
+        return [value]
+    elif isinstance(value, list) and all(isinstance(name, str) for name in value):
+        return list(value)
+    raise SoloError(f"{what} is a name or a list of names; not {value!r}")
+
+
+def _amount(value):
+    """A number from zero up, from a number or the text of one ("2"), or None: never true or false, NaN or infinity."""
+    if isinstance(value, str):
+        try:
+            value = float(value.strip())
+        except ValueError:
+            return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or (isinstance(value, float) and not math.isfinite(value)):
+        return None
+    return value if value >= 0 else None
+
+
 def _time_words(text):
     """{"minutes": 10} for "10 minutes", or None for words that say something else ("until dawn")."""
     text = text.lower()
@@ -4038,7 +4217,13 @@ def _time_words(text):
     spent = {}
     for number, _, unit in found:
         spent[unit] = spent.get(unit, 0) + (float(number) if number else 1)
-    return {unit: int(amount) if amount == int(amount) else amount for unit, amount in spent.items()}
+    # A number too long for a float is infinity, left as it is for _seconds to refuse.
+    return {unit: int(amount) if math.isfinite(amount) and amount == int(amount) else amount for unit, amount in spent.items()}
+
+
+def _memory(value):
+    """A memory as the line of text it is. A log written before memories were checked may hold a list: its lines, joined."""
+    return "; ".join(str(line) for line in value) if isinstance(value, list) else str(value)
 
 
 def _attitude(value):

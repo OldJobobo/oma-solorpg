@@ -7,7 +7,7 @@ Pull requests are welcome. This page is what to know before sending one. The des
 This repository is public, and a publisher's license lets a project like this use a game's terms and cite its pages, not carry a copy of its rules. So no numbers, tables, prose, adventure text or art from any book goes in the repository: not in a pack, not in the docs, not in a test, free adventures and quickstarts included. A pull request that adds any will be refused, however small.
 
 - Page references (`source = "p. 58"`) and a game's own terms (skill names, conditions, kin) are fine.
-- The one exception is Ironsworn, whose moves, oracles and assets are published under the Creative Commons Attribution 4.0 license and ship in `packs/ironsworn` with their credit ([NOTICE.md](NOTICE.md)). They come from the Datasworn data through `solo import datasworn`, never by hand: a fix goes in the importer, and the import runs again. Nothing else of Ironsworn's book goes in on a pull request: its NPCs, atlas and truths are CC BY-NC-SA (non-commercial use only, the same license on anything built from them), and the maintainer has decided not to carry them, so a pull request that adds them will be refused; its images and design elements aren't licensed for use at all. No credit line is ever removed, and no other game gets an exception this way without its own license saying so.
+- The one exception is Ironsworn, whose moves, oracles and assets are published under the Creative Commons Attribution 4.0 license and ship in `packs/ironsworn` with their credit ([NOTICE.md](NOTICE.md)). They come from the Datasworn data through `solo import datasworn`, never by hand: a fix goes in the importer, and the import runs again. Nothing else of Ironsworn's book goes in on a pull request: its NPCs, atlas and truths are under a non-commercial license, and the maintainer has decided not to carry them, so a pull request that adds them will be refused; its images and design elements aren't licensed for use at all. No credit line is ever removed, and no other game gets an exception this way without its own license saying so.
 - A test that needs rules gets them from `tests/fixtures/house`: made-up rules in the same shapes as a real system pack, laid over the bundled names the way a player's pack is. If a test needs a shape the fixture doesn't have, add it there with invented values. Test adventures are this project's own (`examples/red-tusk`, `examples/bell-under-the-hill`, `tests/fixtures/delve`, `gates`, `oath`).
 - What a player builds from their own books stays in `~/Games/solo`, outside this folder on purpose. `.gitignore` catches a pack written here by mistake; don't rely on it.
 
@@ -22,9 +22,9 @@ make test         # the engine's tests: python3 -m unittest discover -s tests
 make qml-check    # Panel.qml and BarWidget.qml, loaded offscreen with stand-ins for the shell
 ```
 
-The engine and its tests are standard library only, on Python 3.11 or newer. Run one file with `python3 -m unittest discover -s tests -p "test_packs.py"`. Two kinds of test skip themselves when their tool is missing: the ones that read PDFs need PyMuPDF (`uv pip install --system pymupdf`), and the shader compile check needs `glslangValidator`. `make qml-check` needs PySide6 (`pip install PySide6-Essentials`) and writes screenshots to a temporary folder.
+The engine and its tests are standard library only, on Python 3.11 or newer. Run one file with `python3 -m unittest discover -s tests -p "test_packs.py"`. Two kinds of test skip themselves when their tool is missing: the ones that read PDFs need PyMuPDF (`sudo pacman -S python-pymupdf` on Omarchy; [the README](README.md#pymupdf) has other systems), and the shader compile check needs `glslangValidator`. `make qml-check` needs PySide6 (`pip install PySide6-Essentials`) and writes screenshots to a temporary folder.
 
-Every pull request runs `make test` on Python 3.11 and on the newest release ([.github/workflows/test.yml](.github/workflows/test.yml)), so the result shows on the pull request without anyone running it. It can't run the QML check, so run that yourself when you touch a `.qml` file.
+Every pull request runs `make test` on Python 3.11 and on the newest release, with PyMuPDF and `glslangValidator` installed so the tests that need them run, and `make qml-check` with PySide6 ([.github/workflows/test.yml](.github/workflows/test.yml)). The result shows on the pull request without anyone running it.
 
 ## Changing the engine
 
@@ -78,5 +78,5 @@ unless = "visited.final_battle"      # ...until this holds
 ## Sending a pull request
 
 - One change to a pull request, with the reason in its description. Say what you ran (`make test`, `make qml-check`) and anything you couldn't.
-- A bug in an import, or a GM that did something wrong, belongs in an issue first, with the details the [issue templates](.github/ISSUE_TEMPLATE) ask for. Those are public: don't paste a book's text or numbers into one.
+- A bug in an import, or a GM that did something wrong, belongs in an issue first, with the details the [issue templates](.github/ISSUE_TEMPLATE) ask for. Those are public: don't paste a book's text or numbers into one. A security problem is reported privately instead ([SECURITY.md](SECURITY.md)).
 - The project's own words (The Red Tusk Hall, the hero names, the text portraits) and code are under the [MIT License](LICENSE); your contribution is too.

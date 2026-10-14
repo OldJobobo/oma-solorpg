@@ -1,0 +1,8 @@
+# Opens a pull request when an action the workflows use has a new release.
+# The engine has no dependencies to watch: it is standard library only.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
