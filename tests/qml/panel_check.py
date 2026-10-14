@@ -480,6 +480,15 @@ def a_turn_that_never_starts(item, panel, out, work, wait):
     turn = item.property("turn").toVariant()
     if turn.get("status") != "thinking" or turn.get("doing") != "rolling the dice":
         problems.append(f"a turn that started was taken for one that didn't: {turn}")
+    # The status the watchdog asked for comes back after turn.json did (the turn began while `solo gm status` ran):
+    # it is the older of the two, and the turn under way stays.
+    item.speak("I knock again.")
+    (game / ".solo" / "turn.json").write_text('{"status": "thinking", "player": "I knock again.", "doing": "writing it down"}')
+    wait(500)
+    item.unheard({"status": "done"})
+    turn = item.property("turn").toVariant()
+    if turn.get("status") != "thinking" or turn.get("doing") != "writing it down":
+        problems.append(f"a status asked for before the turn began overrode its turn.json: {turn}")
     (game / ".solo" / "turn.json").write_text('{"status": "idle"}')
     wait(500)
     return problems

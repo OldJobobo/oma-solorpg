@@ -200,6 +200,7 @@ Item {
     speaker.environment = { SOLO_SAY: text }
     speaker.startDetached()
     watchdog.said = text
+    watchdog.waiting = true
     watchdog.restart()
   }
 
@@ -213,6 +214,8 @@ Item {
     id: watchdog
     objectName: "watchdog"
     property string said: ""
+    // Words sent, and turn.json not changed since. Once it has, it is newer than any status asked for before.
+    property bool waiting: false
     interval: 10000
     onTriggered: root.ask("watchdog", ["-C", root.campaign, "gm", "status"], "watchdog")
   }
@@ -303,6 +306,7 @@ Item {
     root.fxSaid = -1
     root.turn = { status: "idle" }
     watchdog.stop()
+    watchdog.waiting = false
   }
   onBookOpenChanged: {
     if (root.bookOpen) {
@@ -462,6 +466,10 @@ Item {
   function unheard(status) {
     var why = root.queryError.place === "watchdog" ? root.queryError.text : ""
     if (why !== "") root.queryError = { text: "", place: "" }
+    // The turn began while `solo gm status` ran (or another campaign was picked): what it
+    // said is older than turn.json, and a turn under way would be called unsent.
+    if (!watchdog.waiting) return
+    watchdog.waiting = false
     if (status && (status.status === "thinking" || status.status === "writing")) {
       root.turn = status
     } else if (root.turn.status === "thinking") {
@@ -933,6 +941,7 @@ Item {
     onFileChanged: reload()
     onLoaded: {
       watchdog.stop()  // the turn has started
+      watchdog.waiting = false
       try {
         root.turn = JSON.parse(text())
       } catch (e) {
