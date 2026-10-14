@@ -1,5 +1,7 @@
 """The Book's GM: headless turns through fake agents that print what the real ones do."""
 
+import contextlib
+import io
 import json
 import os
 import re
@@ -13,7 +15,7 @@ import unittest.mock
 from helpers import FIXTURES, HRAFNA, IRONSWORN, CampaignTest, Dice
 from test_cli import CliCase
 
-from solo import SoloError, campaign, cli, gm
+from solo import SoloError, campaign, cli, gm, report
 
 CLAUDE_STREAM = [
     {"type": "system", "subtype": "init", "session_id": "sess-1"},
@@ -668,7 +670,7 @@ class Isolation(Agents):
         self.assertEqual(gm.turn(self.root, "Again")["status"], "done")
         second = self.calls("claude")[1]
         self.assertFalse({"--restricted", "--setting-sources"} & set(second))
-        self.assertIn("your own Claude Code settings", gm.status(self.root)["note"])
+        self.assertEqual(gm.status(self.root)["note"], gm._UNISOLATED)
         self.assertEqual((self.tmp / "claude.help").read_text(), "asked\nasked\n")
 
     def test_a_gm_kept_from_the_settings_files_is_handed_agents_md_itself(self):
@@ -718,11 +720,29 @@ class Isolation(Agents):
         script.chmod(script.stat().st_mode | stat.S_IEXEC)
         self.assertEqual(gm.turn(self.root, "Hi")["status"], "done")
         self.assertFalse({"--restricted", "--setting-sources"} & set(self.calls("claude")[0]))
-        self.assertIn("your own Claude Code settings", gm.status(self.root)["note"])
+        # Not "names neither --restricted nor --setting-sources": its help said nothing at all.
+        self.assertEqual(gm.status(self.root)["note"], gm._HELP_FAILED)
+        self.assertIn("your own Claude Code settings", gm._HELP_FAILED)
         broken.unlink()  # the same claude, answering now
         gm.turn(self.root, "Again")
         self.assertIn("--restricted", self.calls("claude")[1])
         self.assertNotIn("note", gm.status(self.root))
+
+
+    def test_a_turn_run_with_the_players_settings_says_so_at_a_terminal_and_in_a_report(self):
+        # The note went into turn.json only, which nothing but `solo gm status` printed.
+        self.agent("claude", CLAUDE_STREAM, help="  --verbose")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(cli.main(["-C", str(self.root), "gm", "turn", "Hi"]), 0)
+        self.assertEqual(json.loads(out.getvalue()), {"status": "done", "note": gm._UNISOLATED})
+        with self.session() as c:
+            self.assertIn(f"- the last GM turn: {gm._UNISOLATED}", report.report(c))
+        # turn.json is in the folder a Codex GM can write: a note the engine never writes stays out of a public report.
+        turn = self.root / ".solo" / "turn.json"
+        turn.write_text(json.dumps({**json.loads(turn.read_text()), "note": "Words from the book."}))
+        with self.session() as c:
+            self.assertNotIn("Words from the book", report.report(c))
 
 
 class Notes(unittest.TestCase):

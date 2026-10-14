@@ -84,6 +84,11 @@ _CLAUDE_KIT = ("--strict-mcp-config", "--no-chrome", "--tools", "Bash,Read", "--
 # dontAsk, the GM runs under it, and whatever the list doesn't allow is refused.
 _UNISOLATED = ("This Claude Code's help names neither --restricted nor --setting-sources, so the GM's turn ran with your own "
                "Claude Code settings. Update Claude Code.")
+# What a turn says when `claude --help` failed, timed out or printed nothing, so the flags it knows are unknown.
+_HELP_FAILED = ("Claude Code's help didn't answer (claude --help failed or took too long), so the GM's turn ran with your own "
+                "Claude Code settings. If this comes back, check that claude runs.")
+# The notes a turn can leave for the player in turn.json.
+NOTES = (_UNISOLATED, _HELP_FAILED)
 # The GM's pace, which the player picks on the Table, and the effort level it asks of the
 # agent. A quick turn arrives sooner and spends fewer tokens. A careful one thinks longer
 # about the rules.
@@ -481,8 +486,9 @@ class Claude(Adapter):
     priced = True
 
     def run(self, root, prompt, session, live, left=None):
-        if _settings_flags() is None:
-            live.update(force=True, note=_UNISOLATED)
+        isolated = _settings_flags()
+        if isolated is None or isolated is False:
+            live.update(force=True, note=_UNISOLATED if isolated is None else _HELP_FAILED)
         return super().run(root, prompt, session, live, left)
 
     def command(self, session, left=None):
@@ -712,10 +718,10 @@ def _end_group(process):
 
 def _settings_flags():
     """The flags that keep the settings files out of a Claude Code turn and set its permission mode to dontAsk,
-    as far as the claude on PATH knows them, or None when its help names neither --restricted nor
-    --setting-sources. Its --help is read once for each claude, by path, modification time and size (some
-    installs give every file the same time), and the answer kept in ~/.cache/solo: an option it doesn't know
-    would fail every turn."""
+    as far as the claude on PATH knows them: None when its help names neither --restricted nor --setting-sources,
+    and False when its help couldn't be read. Its --help is read once for each claude, by path, modification time
+    and size (some installs give every file the same time), and the answer kept in ~/.cache/solo: an option it
+    doesn't know would fail every turn."""
     found = shutil.which("claude")
     if not found:
         return []  # the turn says it couldn't start the GM
@@ -735,7 +741,7 @@ def _settings_flags():
         if done is None or done.returncode or not done.stdout.strip():
             # A help that failed says nothing about the flags. Kept, it would stand for as long as this claude
             # does: it is asked again next turn, and this one runs with neither flag and says so.
-            return None
+            return False
         text = done.stdout
         known = {"claude": str(binary), "stamp": stamp, "restricted": "--restricted" in text, "setting_sources": "--setting-sources" in text,
                  "dont_ask": '"dontAsk"' in text}

@@ -991,7 +991,8 @@ def cmd_gm(args):
             text = sys.stdin.read() if args.text == ["-"] else " ".join(args.text)
             _write_agent_files(root)
             result = gm.turn(root, text or None, agent=args.agent)
-            _json({k: result[k] for k in ("status", "error") if result.get(k)})
+            # The note is for the player too (the turn ran with their own Claude Code settings), here as in the Book.
+            _json({k: result[k] for k in ("status", "error", "note") if result.get(k)})
             if result["status"] == "error":
                 raise SoloError(result["error"])
         elif args.action == "stop":
