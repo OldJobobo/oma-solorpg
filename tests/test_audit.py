@@ -418,6 +418,36 @@ class BookCheckTest(unittest.TestCase):
                             'text = "Runs away screaming into the night." },\n  { range = [2, 2], text = "Shakes and drops what they hold." }')
         self.assertIn('result 1 "Runs away screaming into the night." is row 2 on p. 1, not row 1', found)
 
+    def test_rows_whose_numbers_come_after_their_words_are_read_up_from_the_number(self):
+        # The PDF wrote each row's words first and its number after them, on a line of its own.
+        write(self.book / "pages" / "0001.txt", self.PAGES[1].replace("1 Shakes and drops what they hold.\n", "Shakes and drops\nwhat they hold.\n1\n\n")
+              .replace("2 Runs away screaming into the night.\n", "Runs away screaming\ninto the night.\n2\n\n")
+              .replace("3-6 Freezes on the spot for a round.\n", "Freezes on the spot\nfor a round.\n3-6\n\n"))
+        report = audit.audit(self.pack, "system")
+        self.assertFalse(audit.failed(report), audit.render(report))
+        found = self.change("tables/fear.toml", '"Freezes on the spot for a round."', '"Resting heals a long sword."')
+        self.assertIn('result 3-6 "Resting heals a long sword." isn\'t what row 3-6 on p. 1 says ("freezes on the spot for a round")', found)
+
+    def test_a_row_that_wraps_before_a_number_goes_on_over_it(self):
+        # A wrapped line that starts with a number is the row above's, whether that number is the next row's, one passed, or none of the table's.
+        table = self.pack / "tables" / "fear.toml"
+        fear = table.read_text(encoding="utf-8")
+        for wrapped, old, new in (
+                ("1 Shakes and\n2 WP are lost, and they drop what they hold.\n", "Shakes and drops what they hold.", "Shakes and 2 WP are lost, and they drop what they hold."),
+                ("3-6 Freezes on the spot for\n1 round passes before they can act again.\n", "Freezes on the spot for a round.",
+                 "Freezes on the spot for 1 round passes before they can act again."),
+                ("2 Runs away screaming into the night for\n1 hour of terror and dread.\n", "Runs away screaming into the night.",
+                 "Runs away screaming into the night for 1 hour of terror and dread.")):
+            page = self.PAGES[1].replace({"Shakes": "1 Shakes and drops what they hold.\n", "Freezes": "3-6 Freezes on the spot for a round.\n",
+                                          "Runs": "2 Runs away screaming into the night.\n"}[old.split()[0]], wrapped)
+            write(self.book / "pages" / "0001.txt", page)
+            write(table, fear.replace(old, new))
+            report = audit.audit(self.pack, "system")
+            self.assertFalse(audit.failed(report), f"{wrapped!r}\n" + audit.render(report))
+        write(table, fear.replace('text = "Shakes and drops what they hold." },\n  { range = [2, 2], text = "Runs away screaming into the night." }',
+                                  'text = "Runs away screaming into the night for 1 hour of terror and dread." },\n  { range = [2, 2], text = "Shakes and drops what they hold." }'))
+        self.assertIn("is row 2 on p. 1, not row 1", "\n".join(audit.audit(self.pack, "system")["unverified"]))
+
     def test_a_word_with_a_hyphen_of_its_own_is_on_its_row_where_the_page_has_it_joined(self):
         # solo extract joins a word whose line breaks at a hyphen ("two-" "handed"), and the recipe keeps a hyphen the word has of its own.
         write(self.book / "pages" / "0001.txt", self.PAGES[1].replace("drops what they hold.", "drops what they hold in a twohanded grip."))

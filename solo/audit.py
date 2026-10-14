@@ -670,7 +670,10 @@ def _said(result):
 # swapped, a range moved, or a word put into a row ("Never runs away" for "Runs away") show. A
 # page's text doesn't always come out as rows: when a table's numbers come out in a column of
 # their own and its words after them, there are no rows to read, and a result's words are only
-# looked for on the page, as before.
+# looked for on the page, as before. Where the PDF wrote each row's words before its number, a
+# number on a line of its own has its row above it. And a row that wraps before a number
+# ("...shaken and" / "2 WP are lost") goes on over it: a line starts a row only where its range
+# isn't started again on the next one, and goes on from the row before rather than back.
 
 _ROW_LINES = 6
 # A range at the start of a line: "3", "3-6", "3 to 6", "6+", and "00" for a hundred.
@@ -704,37 +707,75 @@ def _rows(lines, results):
     top = max((result["range"][1] for result in results if _ranged(result)), default=0)
     leads = [(number, _printed(found, top), found.end()) for number, line in enumerate(lines) for found in [_LEAD.match(line)] if found]
     leads = [(number, span, end) for number, span, end in leads if 1 <= span[0] <= span[1] <= top]
-    starts = {number for number, _, _ in leads}
+    starts = _starts(leads)
 
-    def row(number, end, size):
-        window = [lines[number][end:]]
-        for more in range(number + 1, min(number + _ROW_LINES, len(lines))):
-            if len(" ".join(window)) >= size or more in starts:
-                break
-            window.append(lines[more])
+    def row(number, end, size, back):
+        if back and not lines[number][end:].strip(" .:)"):
+            # A number on a line of its own, after its words: the row is the lines above it.
+            window = []
+            for more in range(number - 1, max(number - _ROW_LINES, -1), -1):
+                if len(" ".join(window)) >= size or more in starts:
+                    break
+                window.insert(0, lines[more])
+        else:
+            window = [lines[number][end:]]
+            for more in range(number + 1, min(number + _ROW_LINES, len(lines))):
+                if len(" ".join(window)) >= size or more in starts:
+                    break
+                window.append(lines[more])
         text = " ".join(window).strip(" .:)")
         return text, _words(text)
 
-    rows = []
-    for result in results:
-        said = _said(result)
-        found = {"label": _label(result), "said": said, "own": [], "other": [],
-                 "words": [w for text in said for w in _tokens(re.sub(r"\([^)]*\)|[a-z]+:", " ", _norm(text)))]}
-        if _ranged(result) and "page" not in result:
-            span, size = tuple(result["range"]), len(_norm(" ".join(said)))
-            found["own"] = [row(number, end, size) for number, printed, end in leads if printed == span]
-            if not found["own"]:
-                anywhere = _anywhere(*span)
-                found["own"] = [(text, _words(text)) for line in lines for at in [anywhere.search(line)] if at
-                                for text in [line[at.end():].strip(" .:)")] if re.search(r"[a-z]", text)]
-            found["other"] = [(printed, *row(number, end, size)) for number, printed, end in leads if printed != span]
-        rows.append(found)
-    return rows
+    def read(back):
+        rows = []
+        for result in results:
+            said = _said(result)
+            found = {"label": _label(result), "said": said, "own": [], "other": [],
+                     "words": [w for text in said for w in _tokens(re.sub(r"\([^)]*\)|[a-z]+:", " ", _norm(text)))]}
+            if _ranged(result) and "page" not in result:
+                span, size = tuple(result["range"]), len(_norm(" ".join(said)))
+                found["own"] = [row(number, end, size, back) for number, printed, end in leads if printed == span]
+                if not found["own"]:
+                    anywhere = _anywhere(*span)
+                    found["own"] = [(text, _words(text)) for line in lines for at in [anywhere.search(line)] if at
+                                    for text in [line[at.end():].strip(" .:)")] if re.search(r"[a-z]", text)]
+                found["other"] = [(printed, *row(number, end, size, back)) for number, printed, end in leads if printed != span]
+            rows.append(found)
+        return rows
+
+    # A number on a line of its own has its words above it where that reads most of the table as rows, and more of it than below does.
+    forward, backward = read(False), read(True)
+    return backward if _as_rows(backward) and _fitting(backward) > _fitting(forward) else forward
+
+
+def _starts(leads):
+    """The lines, of [(line, range, end)] that begin with a range, that start a row and so end the row above. A line whose range the next one
+    starts again ("2 WP are lost" over "2 Runs away") is a wrap of the row above, and so is one that goes back to a range already passed ("1
+    round passes" under "3-6 Freezes ... for"), unless the range after it is the next (a second table, from 1 again)."""
+    found, passed = set(), 0
+    for at, (number, (low, high), _) in enumerate(leads):
+        after = leads[at + 1][1] if at + 1 < len(leads) else None
+        if after == (low, high) or (low <= passed and (after is None or after[0] != high + 1)):
+            continue
+        found.add(number)
+        passed = high
+    return found
 
 
 def _fits(row, words):
     """Whether a row holds at least half of a result's words."""
     return bool(words) and sum(_has(row, word) for word in words) * 2 >= len(words)
+
+
+def _fitting(rows):
+    """How many results of a table have a row of their own that holds them."""
+    return sum(1 for found in rows if any(_fits(words, found["words"]) for _, words in found["own"]))
+
+
+def _as_rows(rows):
+    """Whether most of a table reads as rows: most of its results, and two at least, each on a row of its own."""
+    fitting = _fitting(rows)
+    return fitting >= 2 and fitting * 2 > sum(1 for found in rows if found["words"])
 
 
 def _row_problems(at, rows, page_words, where):
@@ -755,8 +796,7 @@ def _row_problems(at, rows, page_words, where):
               and not any(_fits(words, found["words"]) for other, found in enumerate(rows) if other != at)]
     if theirs:
         return [f"is row {'-'.join(dict.fromkeys(map(str, theirs[0])))} on {where}, not row {row['label']}"]
-    fitting = sum(1 for found in rows if any(_fits(words, found["words"]) for _, words in found["own"]))
-    if fitting < 2 or fitting * 2 <= sum(1 for found in rows if found["words"]):
+    if not _as_rows(rows):
         return []
     if row["own"]:
         # A row of short words only ("you run from the", the rest wrapped elsewhere) says too little to say it says something else.
