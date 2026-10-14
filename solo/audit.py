@@ -374,7 +374,8 @@ def _checked(item, pack, loaded, book, lines):
             found += [f"{item['id']}: {ref} gives {label} {number}, and {where} never says it"
                       for label, number in _numbers_in(ref, data) if not _says_number(number, text, words)]
         else:
-            found += [f"{item['id']}: {ref} {line}" for line in _entry_problems(ref, own, text, words, where, loaded.get("tracks") or {}, cited, _names(loaded))]
+            found += [f"{item['id']}: {ref} {line}"
+                      for line in _entry_problems(ref, own, text, words, where, loaded.get("tracks") or {}, cited, _names(loaded), loaded.get("armor") or {})]
 
     money = loaded.get("money") or {}
     entries = [(ref, _data_for(ref, loaded)) for ref in item["to"] if ref.startswith("gear.toml:gear.")]
@@ -451,7 +452,9 @@ def _numbers_in(ref, data):
 # another creature on the page has values of its own.
 # What a recipe or an agent works out rather than copies is not read: 0 and 1 (a book says
 # "none", "a", "once"), time (counted in seconds, or in rests), a list (a table the recipe may have
-# completed: a row between two the book prints, a top for "17+"), and what each coin is worth.
+# completed: a row between two the book prints, a top for "17+"), what each coin is worth, and
+# armor added up from the armor an entry's gear lists ("scale armor, open helmet": 4 and 1),
+# where it is that sum and no label on its page says otherwise: each rating is read on its table.
 
 _UNREAD = ("time",)
 _NUMBER_WORDS = {2: ("two", "twice", "double", "half"), 3: ("three", "thrice", "third"), 4: ("four", "quarter"), 5: ("five",), 6: ("six",),
@@ -614,12 +617,24 @@ def _entry_at(line, names):
     return tails[0] if len(tails) == 1 else None
 
 
-def _entry_problems(ref, data, text, words, where, tracks, lines=(), named=frozenset()):
+def _worn(entry, armor):
+    """The armor an entry's gear adds up to, as a recipe works it out: the ratings of the pack's armor its description lists ("Gear: Sabre,
+    scale armor, open helmet"), each named by its words in either order ("Helmet, Open"). None where it lists none."""
+    known = {item.replace("_", ""): item for item, rating in armor.items() if _whole(rating)}
+    worn = set()
+    for phrase in re.split(r"[,.;:()]", _norm(entry.get("description", ""))):
+        words = re.findall(r"[a-z]+", phrase)
+        worn |= {item for item in (known.get("".join(words)), known.get("".join(reversed(words)))) if item}
+    return sum(armor[item] for item in worn) if worn else None
+
+
+def _entry_problems(ref, data, text, words, where, tracks, lines=(), named=frozenset(), armor=None):
     """What an entry's numbers say that its pages don't (see above). `lines` are its pages' lines and `named` the names of the pack's
-    entries, which say where a monster's, an NPC's or a hero's stat block is."""
+    entries, which say where a monster's, an NPC's or a hero's stat block is; `armor` is the pack's armor and its ratings."""
     problems = []
     for name, entry in _entries(ref, data):
         numbers = _numbers(entry)
+        worn = _worn(entry, armor or {})
         own = _norm(entry["name"]) if "/" in ref.partition(":")[0] and isinstance(entry.get("name"), str) and entry["name"].strip() else None
         blocks, outside = _blocks(lines, own, set(named)) if own else ([], text)
         labels = {key: (*_STAT_LABELS.get(key, ()), *((key, tracks[key].lower()) if key in tracks else ())) for _, key, _ in numbers}
@@ -628,6 +643,8 @@ def _entry_problems(ref, data, text, words, where, tracks, lines=(), named=froze
         for path, key, number in numbers:
             said = f"gives {name}{path} {number}, and {where}"
             printed = _paired(outside, labels[key], blocks) if key in labels else set()
+            if key == "armor" and number == worn and not printed:
+                continue
             if not _says_number(number, text, words):
                 problems.append(f"{said} never says it")
             elif printed and number not in printed:
