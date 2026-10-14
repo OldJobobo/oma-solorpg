@@ -42,6 +42,8 @@ Item {
   readonly property var story: game && game.story ? game.story : []
   readonly property bool busy: turn && (turn.status === "thinking" || turn.status === "writing")
   readonly property bool dead: pc !== null && pc.dead === true
+  // At zero HP and helpless (a hero who rallied themselves acts again): the engine refuses what the dying can't do.
+  readonly property bool dying: pc !== null && !!pc.dying && !pc.dying.rallied
   // There is a GM message to cut, and the GM isn't in the middle of writing another.
   readonly property bool canCut: !busy && !dead && agent.book !== false && story.some(b => b.kind === "gm")
   readonly property bool carriesLight: pc !== null && pc.items.some(i => /(^|\s)torch(es)?$/i.test(i))
@@ -301,7 +303,7 @@ Item {
           }
 
           Link {
-            visible: !!book.game && !book.game.light && book.carriesLight && !book.dead
+            visible: !!book.game && !book.game.light && book.carriesLight && !book.dead && !book.dying
             text: "→ light a torch"
             onClicked: book.act(["light", "torch"])
           }

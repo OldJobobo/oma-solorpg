@@ -634,9 +634,14 @@ def desk_moments(item, panel, out, work, wait):
                if button(panel.contentItem(), text) is not None]
     if offered:
         problems.append(f"a dying hero is still offered {offered}")
+    # Nor does the Book offer the torch the hero carries.
+    book = item.findChild(QObject, "book")
+    if not book.property("carriesLight") or item.property("game").toVariant().get("light"):
+        problems.append("the dying hero has no unlit torch, so the Book's torch link isn't checked")
+    elif labelled(book, "→ light a torch") is not None:
+        problems.append("the Book offers a dying hero a torch to light")
     # Dying, the Book's page beats and breathes; shut, it runs nothing (the plugin stays loaded with the Book shut).
     from render import running
-    book = item.findChild(QObject, "book")
     book.window().grabWindow().save(str(out / "book-dying.png"))
     if not running(book):
         problems.append("nothing runs on the open Book of a dying hero: the check of the shut Book would prove nothing")
