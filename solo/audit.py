@@ -336,6 +336,7 @@ def _checked(item, pack, loaded, book, lines):
     words = set(re.findall(r"[a-z0-9]+", text))
     # A number with its unit set close after it ("2H", "10m") is the number too.
     words |= {found.group(1) for found in map(re.compile(r"(\d+)[a-z]+").fullmatch, list(words)) if found}
+    cited = [line for page in pages for line in lines.get(page, [])]
     found = []
     for ref in item["to"]:
         data = _data_for(ref, loaded)
@@ -347,7 +348,7 @@ def _checked(item, pack, loaded, book, lines):
         parts = [(data, text, where)]
         if ref.startswith("tables/"):
             parts = [({k: v for k, v in data.items() if k not in ("formula", "results")}, text, where)]
-            rows = _rows([line for page in item["pages"] for line in lines.get(page, [])], data.get("results", []))
+            rows = _rows(cited, data.get("results", []))
             for at, result in enumerate(data.get("results", [])):
                 page = result.get("page")
                 own = book.get(page, "") if isinstance(page, int) else text
@@ -375,7 +376,7 @@ def _checked(item, pack, loaded, book, lines):
             found += [f"{item['id']}: {ref} gives {label} {number}, and {where} never says it"
                       for label, number in _numbers_in(ref, data) if not _says_number(number, text, words)]
         else:
-            found += [f"{item['id']}: {ref} {line}" for line in _entry_problems(ref, own, text, words, where, loaded.get("tracks") or {})]
+            found += [f"{item['id']}: {ref} {line}" for line in _entry_problems(ref, own, text, words, where, loaded.get("tracks") or {}, cited, _names(loaded))]
 
     money = loaded.get("money") or {}
     entries = [(ref, _data_for(ref, loaded)) for ref in item["to"] if ref.startswith("gear.toml:gear.")]
@@ -444,7 +445,10 @@ def _numbers_in(ref, data):
 # a creation choice, a hero) is on the pages its item cites. Where a page labels a value ("HP: 18",
 # "Rank: 2", "D6 HP"), the value has to be one the label carries: a monster's HP of 12 doesn't
 # pass because its page has a 12 somewhere else. And a number the page has only as another
-# label's value (the 18 of "HP: 18", for the skill of the monster's attack) isn't the entry's.
+# label's value (the 18 of "HP: 18", for the skill of the monster's attack) isn't the entry's. A
+# monster's, an NPC's or a hero's label is read on its own stat block, from the line its name starts
+# to the next entry's (or, with no line of its own, on what isn't another entry's): a sidebar or
+# another creature on the page has values of its own.
 # What a recipe or an agent works out rather than copies is not read: 0 and 1 (a book says
 # "none", "a", "once"), time (counted in seconds, or in rests), a list (a table the recipe may have
 # completed: a row between two the book prints, a top for "17+"), and what each coin is worth.
@@ -540,32 +544,84 @@ def _labelled(text, labels):
     return found
 
 
-def _paired(text, labels):
+def _paired(text, labels, blocks=()):
     """The values the pages give a stat by one of its labels: after it and a colon ("hp: 18"), or just
-    before it ("with 20 hp"). None when the label is also followed by something other than a number
-    ("armor: same as armor", "willpower points: -"): such a stat isn't always printed as a number
-    there, a recipe works it out, and the page's other values of it are no measure of this one. Empty
-    when no label has a colon and a number after it: a number just before a label is as likely the
-    value of the one above it (a sheet read top to bottom, "willpower points 13 hit points 15"), so it
-    only adds to what a colon gives."""
-    if any(re.search(rf"(?<![a-z]){re.escape(label)}\s*:(?!\s*\d)", text) for label in labels):
+    before it where nothing follows it ("with 20 hp."). None when the label is set without its value
+    beside it: followed by something other than a number ("armor: same as armor", "willpower points:
+    -"), where a recipe works the stat out and the page's other values of it are no measure of this
+    one, or in a column of labels whose values come after them all ("armor: hp: 4 18"). Empty when no
+    label has a colon and a number after it: a number just before a label is as likely the value of
+    the one above it (a sheet read top to bottom, "willpower points 13 hit points 15"), so it only adds
+    to what a colon gives. On an entry's own stat blocks (`blocks`), the value is the first after the
+    label in each, with a colon or without ("hp 18")."""
+    if any(_unvalued(part, label) for part in (blocks or [text]) for label in labels):
         return None
+    if blocks:
+        first = {int(at.group(1)) * (1000 if at.group(2) else 1) for block in blocks for label in labels
+                 for at in [re.search(rf"(?<![a-z]){re.escape(label)}\s*:?\s*(\d+)(\s*kilomet)?", block)] if at}
+        return first | _before(" ".join(blocks), labels)
     labelled = {value for value, _, _ in _labelled(text, labels)}
-    before = {int(at.group(1)) for label in labels for at in re.finditer(rf"(?<![\w.])(\d+)\s+{re.escape(label)}(?![a-z]|\s*:)", text)}
-    return labelled | before if labelled else set()
+    return labelled | _before(text, labels) if labelled else set()
 
 
-def _entry_problems(ref, data, text, words, where, tracks):
-    """What an entry's numbers say that its pages don't (see above)."""
+def _unvalued(text, label):
+    """Whether the pages set a label without its value beside it (see _paired)."""
+    return re.search(rf"(?<![a-z]){re.escape(label)}\s*:(?!\s*\d)|[a-z.]\s*:\s*{re.escape(label)}\s*:", text) is not None
+
+
+def _before(text, labels):
+    """The numbers set just before a label that has no value after it ("with 20 hp.")."""
+    return {int(at.group(1)) for label in labels for at in re.finditer(rf"(?<![\w.])(\d+)\s+{re.escape(label)}(?![a-z]|\s*:|\s*\d)", text)}
+
+
+def _names(loaded):
+    """The names of the pack's monsters, NPCs, heroes and spells, as a page's text has them."""
+    return {_norm(entry["name"]) for folder in ("bestiary", "npcs", "characters", "spells") for entry in (loaded.get(folder) or {}).values()
+            if isinstance(entry, dict) and isinstance(entry.get("name"), str) and entry["name"].strip()}
+
+
+def _blocks(lines, name, names):
+    """An entry's own stat blocks among its pages' lines, from each line that starts it to the next that starts another entry of the pack (see
+    _entry_at), and the text of the lines in no other entry's block: ([block], text)."""
+    blocks, rest, at = [], [], None
+    for line in lines:
+        starts = _entry_at(line, names | {name})
+        if starts is not None:
+            at = starts
+            if at == name:
+                blocks.append([])
+        if at == name:
+            blocks[-1].append(line)
+        if at in (None, name):
+            rest.append(line)
+    return [" ".join(block) for block in blocks], " ".join(rest)
+
+
+def _entry_at(line, names):
+    """The name of the entry a line starts: the longest of `names` it starts with, or the one whose last words the line is, alone (the
+    heading "scout" of the gobs' scout); None for a line that starts none, or could start several."""
+    starts = [name for name in names if re.match(rf"{re.escape(name)}(?![a-z])", line)]
+    if starts:
+        return max(starts, key=len)
+    words = line.strip(" .:").split()
+    tails = [name for name in names if words and len(name.split()) > len(words) and name.split()[-len(words):] == words]
+    return tails[0] if len(tails) == 1 else None
+
+
+def _entry_problems(ref, data, text, words, where, tracks, lines=(), named=frozenset()):
+    """What an entry's numbers say that its pages don't (see above). `lines` are its pages' lines and `named` the names of the pack's
+    entries, which say where a monster's, an NPC's or a hero's stat block is."""
     problems = []
     for name, entry in _entries(ref, data):
         numbers = _numbers(entry)
+        own = _norm(entry["name"]) if "/" in ref.partition(":")[0] and isinstance(entry.get("name"), str) and entry["name"].strip() else None
+        blocks, outside = _blocks(lines, own, set(named)) if own else ([], text)
         labels = {key: (*_STAT_LABELS.get(key, ()), *((key, tracks[key].lower()) if key in tracks else ())) for _, key, _ in numbers}
         labels = {key: names for key, names in labels.items() if names}
         claims = {key: _labelled(text, names) for key, names in labels.items()}
         for path, key, number in numbers:
             said = f"gives {name}{path} {number}, and {where}"
-            printed = _paired(text, labels[key]) if key in labels else set()
+            printed = _paired(outside, labels[key], blocks) if key in labels else set()
             if not _says_number(number, text, words):
                 problems.append(f"{said} never says it")
             elif printed and number not in printed:

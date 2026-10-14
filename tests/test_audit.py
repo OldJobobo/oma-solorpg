@@ -494,6 +494,37 @@ class BookCheckTest(unittest.TestCase):
         report = audit.audit(self.pack, "system")
         self.assertFalse(audit.failed(report), audit.render(report))
 
+    def test_a_monsters_stats_are_read_on_its_own_stat_block(self):
+        # Another monster on the page: its numbers are no proof of the ghoul's.
+        write(self.book / "pages" / "0003.txt", self.PAGES[3] + "WIGHT. Ferocity: 3 Movement: 12 Armor: 6 HP: 30\n")
+        report = audit.audit(self.pack, "system")
+        self.assertFalse(audit.failed(report), audit.render(report))
+        self.assertIn("ghoul: bestiary/ghoul gives stats.hp 30, and p. 3 says hp: 18", self.change("bestiary/ghoul.toml", "hp = 18", "hp = 30"))
+        self.assertIn("gives stats.movement 12, and p. 3 says movement: 10", self.change("bestiary/ghoul.toml", "movement = 10", "movement = 12"))
+
+    def test_a_sidebar_or_a_stat_box_read_as_columns_is_not_the_monsters_value(self):
+        ghoul = self.pack / "bestiary" / "ghoul.toml"
+        stats = ghoul.read_text(encoding="utf-8")
+        # Its stat line has no colons, and a sidebar on the page has a hireling's.
+        write(self.book / "pages" / "0003.txt", self.PAGES[3].replace("Ferocity: 2 Movement: 10 Armor: 4 HP: 18", "Ferocity 2 Size Normal Movement 10 Armor 4 HP 18")
+              + "A hireling the heroes meet has Armor: 1 and HP: 10.\n")
+        report = audit.audit(self.pack, "system")
+        self.assertFalse(audit.failed(report), audit.render(report))
+        self.assertIn("ghoul: bestiary/ghoul gives stats.hp 10, and p. 3 says hp: 18", self.change("bestiary/ghoul.toml", "hp = 18", "hp = 10"))
+        # The labels in a column and the values in the next: no label has its value beside it.
+        write(ghoul, stats)
+        write(self.book / "pages" / "0003.txt", "GHOUL\nFerocity:\nSize:\nMovement:\nArmor:\nHP:\n\n2\nNormal\n10\n4\n18\nIts claws do 2D6 damage. It has 4 friends and 12 teeth.\n")
+        report = audit.audit(self.pack, "system")
+        self.assertFalse(audit.failed(report), audit.render(report))
+        # A monster the page names only in passing, beside an NPC of the pack with a stat block of its own.
+        write(self.book / "pages" / "0003.txt", "BRAND THE GUARD. Armor: 2 HP: 14. Ferocity 2, Movement 10.\n"
+              "In the crypt is a ghoul with armor rating 4 and with 18 HP. Its claws do 2D6 damage, 12 teeth.\n")
+        write(self.pack / "bestiary" / "brand.toml", 'name = "Brand the Guard"\nrole = "A guard"\ndescription = "Old."\nstats = { hp = 14, armor = 2 }\n')
+        inventory = self.pack / "inventory.toml"
+        write(inventory, inventory.read_text(encoding="utf-8").replace('to = ["bestiary/ghoul"]', 'to = ["bestiary/ghoul", "bestiary/brand"]'))
+        report = audit.audit(self.pack, "system")
+        self.assertFalse(audit.failed(report), audit.render(report))
+
     def test_a_monsters_movement_and_attack_skill_are_on_its_page(self):
         self.assertIn("ghoul: bestiary/ghoul gives stats.movement 99, and p. 3 never says it", self.change("bestiary/ghoul.toml", "movement = 10", "movement = 99"))
 
