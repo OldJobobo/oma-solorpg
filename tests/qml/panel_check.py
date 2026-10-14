@@ -496,10 +496,21 @@ def a_turn_that_never_starts(item, panel, out, work, wait):
 
 def no_agent_yet(item, work, wait):
     """With no default agent set (`solo gm agent` names none) the Book says how to set one up, in the engine's words
-    when it gives a reason, and "open the GM" says what it did instead of nothing."""
+    when it gives a reason, and "open the GM" says what it did instead of nothing. A default agent the Book could run
+    but that isn't installed keeps the composer, with the engine's reason over it."""
     problems = []
     book = item.findChild(QObject, "book")
     hint = book.findChild(QObject, "gmHint")
+    why = book.findChild(QObject, "gmWhy")
+    missing = "Your default agent (claude) isn't on PATH: install it, or choose another with: omarchy default agent <name>"
+    item.setProperty("agentInfo", {"agent": "claude", "book": True, "why": missing})
+    wait(100)
+    if why is None or not why.property("visible") or why.property("text") != missing:
+        problems.append(f"the Book doesn't say why its agent can't start: {why and (why.property('visible'), why.property('text'))}")
+    item.setProperty("agentInfo", {"agent": "claude", "book": True})
+    wait(100)
+    if why is not None and why.property("visible"):
+        problems.append("the Book gives a reason its agent can't start when the engine gives none")
     item.setProperty("agentInfo", {"agent": "", "book": False})
     wait(100)
     if "omarchy default agent" not in hint.property("text"):

@@ -199,6 +199,10 @@ def main(out):
                                    "and ask it to follow the solo-gm skill.")
     shot("no-agent", 500)
     book.setProperty("actionNote", "")
+    # One the Book could run, that isn't installed: the composer stays, with the reason over it.
+    book.setProperty("agent", {"agent": "claude", "book": True,
+                               "why": "Your default agent (claude) isn't on PATH: install it, or choose another with: omarchy default agent <name>"})
+    shot("agent-missing", 500)
     book.setProperty("agent", {"agent": "", "book": True})
 
     # A dice pool (Year Zero): every die that scores is lit, a d10 shows its two digits.

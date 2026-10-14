@@ -605,6 +605,20 @@ Item {
 
         // Writing to the GM ------------------------------------------------------------------
 
+        // A GM that could write here but can't start: the agent Omarchy names isn't installed. The engine
+        // says so, and the player reads it before writing, not after the turn fails.
+        Text {
+          objectName: "gmWhy"
+          Layout.fillWidth: true
+          visible: book.agent.book !== false && (book.agent.why || "") !== ""
+          wrapMode: Text.Wrap
+          textFormat: Text.PlainText
+          font.family: book.theme.mono
+          font.pixelSize: book.theme.small
+          color: book.theme.dim
+          text: book.agent.why || ""
+        }
+
         Rectangle {
           Layout.fillWidth: true
           visible: book.agent.book !== false
