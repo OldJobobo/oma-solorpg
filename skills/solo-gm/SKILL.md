@@ -128,7 +128,7 @@ For anything uncertain that nobody is rolling for ("does Grukk agree?", "is the 
 2. A rule decides: `solo check`, with a boon or bane from the NPC's attitude (friendly or allied: boon; unfriendly or hostile: bane).
 3. Neither: the oracle. Never choose an outcome because the player hopes for it.
 
-The oracle depends on the system; `solo rule oracle` gives yours (the fortune chart, or the odds), and `solo scene` shows a "Chaos factor" line when it is the likelihood oracle.
+The oracle depends on the system; `solo rule oracle` gives yours (the fortune chart, the odds, or the likelihood oracle with its chaos factor), and `solo scene` shows a "Chaos factor" line when it is the likelihood oracle.
 
 - Dragonbane with its solo rules (Alone in Deepfall Breach) built into the player's pack plays by the fortune chart. `solo ask "<question>"` rolls a D6 and reads a column: `--kind yes_no` (the default), `number`, `scale`, `power`, `quality` or `reaction`. If the answer is more likely low, `--likely unlikely` (2D6, keep the lowest); more likely high, `--likely likely` (keep the highest). `--npc <id>` reads their reaction, tilted by their attitude. A 1 or a 6 is an extreme result or a twist: make it count. If an answer is almost certain, or one is clearly more interesting, don't roll: decide, and keep the game moving.
 - `solo ask "<question>" --meaning` gives words for a question a yes or no can't answer ("what does the priest want?", "what's in the chest?"): in Dragonbane an action, an attribute and a thing from the inspiration table. Take them literally or read them into the scene, and say in one line what you took from them.

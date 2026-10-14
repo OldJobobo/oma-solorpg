@@ -927,6 +927,16 @@ class SkillFacts(CliCase):
         self.assertTrue(self.solo("-C", ironsworn, "rule", "oracle")[1].startswith("# Asking the oracle"))
         self.new_game()
         self.assertTrue(self.solo("-C", self.game, "rule", "oracle")[1].startswith("# Fortune chart"))
+        # A system with no chart of its own has the likelihood oracle, and its page too.
+        yze, likely = cli.REPO / "tests" / "fixtures" / "yze", str(self.tmp / "likely")
+        self.assertEqual(self.solo("new", str(yze / "adventure"), "--system", str(yze / "system"), "--character", str(yze / "rook.toml"), "--dir", likely)[0], 0)
+        for topic in ("oracle", "chaos factor", "random event"):
+            code, out, err = self.solo("-C", likely, "rule", topic)
+            self.assertEqual(code, 0, err)
+            self.assertTrue(out.startswith("# Asking the oracle"), topic)
+        page = self.solo("-C", likely, "rule", "oracle")[1]
+        for words in ("very unlikely 15%", "certain 95%", "yes, and", "no, and", "chaos factor", "scene check", '{"chaos": "-1"}'):
+            self.assertIn(words, page)
 
     def test_the_track_kinds_the_help_names_are_the_ones_the_engine_takes(self):
         kinds = next(a.help for a in cli._parser("track")._subparsers._group_actions[0].choices["track"]._actions if "--kind" in a.option_strings)
