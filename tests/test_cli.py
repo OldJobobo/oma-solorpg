@@ -178,6 +178,15 @@ class CliTest(CliCase):
         code, _, err = self.solo("-C", self.game, "commit", '{"note": "caf\udce9"}')  # as Python reads b"caf\xe9" from the command line
         self.assertEqual((code, "which the log can't hold" in err), (1, True), err)
 
+    def test_a_traced_command_holding_a_byte_that_isnt_utf8_ends_as_it_would_and_its_line_reads_back(self):
+        self.new_game()
+        trace = self.tmp / "trace.jsonl"
+        os.environ["SOLO_TRACE"] = str(trace)  # as every Book turn sets it
+        code, _, err = self.solo("-C", self.game, "commit", '{"note": "caf\udce9"}')
+        self.assertEqual((code, "which the log can't hold" in err), (1, True), err)
+        line = json.loads(trace.read_text(encoding="utf-8"))
+        self.assertEqual((line["argv"][-1], "which the log can't hold" in line["error"]), ('{"note": "caf\udce9"}', True))
+
     def test_a_push_on_offer_tells_the_gm_how_long_it_lasts(self):
         self.new_game()
         with unittest.mock.patch("solo.cli._rng", return_value=Dice(12)):

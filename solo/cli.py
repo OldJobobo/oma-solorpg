@@ -97,7 +97,9 @@ def _trace(argv, error):
     if path:
         line = {"at": datetime.now().isoformat(timespec="seconds"), "argv": list(sys.argv[1:] if argv is None else argv), "error": error}
         try:
-            with open(path, "a", encoding="utf-8") as trace:
+            # An argument holding a byte that isn't UTF-8 reaches Python as half a character: it is written as the
+            # JSON escape it reads back as (\udce9), so the line is still UTF-8 and the command still ends as it did.
+            with open(path, "a", encoding="utf-8", errors="backslashreplace") as trace:
                 trace.write(json.dumps(line, ensure_ascii=False) + "\n")
         except OSError as error:  # the command already ran; a lost trace line mustn't fail it
             print(f"solo: couldn't write the trace ({error})", file=sys.stderr)
