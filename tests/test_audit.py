@@ -481,6 +481,12 @@ class BookCheckTest(unittest.TestCase):
         write(self.book / "picture" / "0003.txt", self.PAGES[3])
         self.assertIn("ghoul: bestiary/ghoul gives stats.hp 40, and p. 3 never says it", self.change("bestiary/ghoul.toml", "hp = 40", "hp = 40"))
 
+    def test_a_page_past_the_books_last_is_said_once_and_not_taken_for_a_scan(self):
+        write(self.pack / "inventory.toml", (self.pack / "inventory.toml").read_text(encoding="utf-8").replace("pages = [3]", "pages = [31]"))
+        report = audit.audit(self.pack, "system")
+        self.assertEqual(report["pages"]["beyond"], [31])
+        self.assertNotIn("ocrmypdf", audit.render(report))
+
     def test_a_page_of_a_few_words_is_read_and_not_taken_for_a_scan(self):
         write(self.book / "pages" / "0002.txt", "FIREBOLT\nRank 1. 2D6.\n")
         report = audit.audit(self.pack, "system")

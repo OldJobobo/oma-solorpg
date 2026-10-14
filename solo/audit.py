@@ -323,14 +323,16 @@ def _norm(text):
 
 
 def _checked(item, pack, loaded, book, lines):
-    if item["status"] != "mapped" or not item["pages"]:
+    # A page the extract doesn't have is past the book's last, which the page check says: it is no scan to run OCR on.
+    pages = [page for page in item["pages"] if page in book]
+    if item["status"] != "mapped" or not pages:
         return []
-    text = " ".join(book.get(page, "") for page in item["pages"])
+    text = " ".join(book[page] for page in pages)
     where = f"p. {spans(item['pages'])}"
     if not re.search(r"[a-z]", text):
         # A scanned page has no words, and nothing the pack says can be read back against it.
-        return [f"{item['id']}: {where} has no text to read the pack against (a scanned page has none): run ocrmypdf on the PDF and "
-                f"extract it again, or write what the page's picture says in picture/{item['pages'][0]:04d}.txt in the extract"]
+        return [f"{item['id']}: p. {spans(pages)} has no text to read the pack against (a scanned page has none): run ocrmypdf on the PDF and "
+                f"extract it again, or write what the page's picture says in picture/{pages[0]:04d}.txt in the extract"]
     words = set(re.findall(r"[a-z0-9]+", text))
     # A number with its unit set close after it ("2H", "10m") is the number too.
     words |= {found.group(1) for found in map(re.compile(r"(\d+)[a-z]+").fullmatch, list(words)) if found}
