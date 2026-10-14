@@ -6,7 +6,8 @@
 # The agent is $AGENT, else Omarchy's default agent, else claude if it is on PATH, else codex
 # if it is (the rule `solo gm` follows too). Claude Code and Codex take the prompt on the
 # command line and stay open for the rest of the conversation; any other agent gets the
-# prompt printed, to paste in.
+# prompt printed, to paste in. With no agent to start (none found, or claude or codex chosen
+# and not installed) it prints the prompt too, and fails, so the make target that ran it does.
 set -eu
 
 folder=$1
@@ -35,11 +36,11 @@ case "$agent" in
       exec "$agent" "$prompt"
     fi
     printf "\n%s isn't on PATH: install it, or %s.\nThen open your agent in %s and give it this:\n\n%s\n\n" "$agent" "$other" "$folder" "$prompt"
-    exit 0
+    exit 1
     ;;
   "")
     printf '\nNo coding agent was found: install Claude Code or Codex, or choose one with: omarchy default agent <name>.\nThen open it in %s and give it this:\n\n%s\n\n' "$folder" "$prompt"
-    exit 0
+    exit 1
     ;;
 esac
 printf '\n%s is not something this script can start with a prompt.\nOpen your agent in %s and give it this:\n\n%s\n\n' "$agent" "$folder" "$prompt"

@@ -77,6 +77,7 @@ Imports and the audit:
 Install and docs:
 
 - `solo` on a Python older than 3.11 says so in a sentence. `solo setup` and `solo play` link skills only for the agents you have, and setup says what playing needs.
+- `make rules`, `make campaign` and the other targets that open your agent fail when there is none to open (none found, or Claude Code or Codex chosen and not installed), after printing the prompt to paste in, instead of reporting success.
 - `make uninstall` puts the desktop back first. A premise with backticks or `$( )` reaches `solo` as typed and runs nothing.
 - PyMuPDF is installed with pacman on Omarchy, wherever the docs say how. The website installs the way the README does.
 - `solo new` without `--play`, and docs/PLAN.md, name the Table's Open the Book button instead of an Open the GM button it doesn't have.

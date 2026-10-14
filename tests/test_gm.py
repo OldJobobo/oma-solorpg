@@ -859,9 +859,29 @@ class DefaultAgent(CliCase):
         script.chmod(script.stat().st_mode | stat.S_IEXEC)
 
     def ask(self):
-        done = subprocess.run([str(cli.REPO / "bin" / "ask-agent"), str(self.tmp), "Build the pack."], capture_output=True, text=True,
+        return self.asked().stdout.strip()
+
+    def asked(self):
+        return subprocess.run([str(cli.REPO / "bin" / "ask-agent"), str(self.tmp), "Build the pack."], capture_output=True, text=True,
                               env={**os.environ, "HOME": str(self.tmp / "home")})
-        return done.stdout.strip()
+
+    def test_ask_agent_fails_when_it_starts_no_agent_so_make_does_too(self):
+        # `make rules` and `make campaign` end on it, and said they had worked when the agent they named wasn't there.
+        nothing = self.asked()
+        self.assertEqual(nothing.returncode, 1)
+        self.assertIn("No coding agent was found", nothing.stdout)
+        with unittest.mock.patch.dict(os.environ, {"AGENT": "claude"}):
+            missing = self.asked()
+        self.assertEqual(missing.returncode, 1)
+        self.assertIn("claude isn't on PATH: install it, or set AGENT to another, or unset it.", missing.stdout)
+        self.assertIn("Build the pack.", missing.stdout)  # still there to paste in
+        self.install("claude")
+        self.assertEqual((self.asked().returncode, self.ask()), (0, "claude Build the pack."))
+        # An agent it can't start with a prompt is given the prompt to paste in, which is how that agent is used.
+        omarchy = self.tmp / "home" / ".config" / "omarchy" / "defaults" / "agent"
+        omarchy.parent.mkdir(parents=True)
+        omarchy.write_text("pi\n")
+        self.assertEqual(self.asked().returncode, 0)
 
     def test_both_pick_the_same_agent(self):
         self.new_game()
