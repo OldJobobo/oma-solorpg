@@ -287,10 +287,14 @@ def session(root, new=False):
             if len(campaign.events) != count or behind:
                 try:
                     campaign.save()
-                except OSError:
+                except OSError as error:
+                    # state.json is made from the log, which stands: a disk that refuses it (a full one) fails no command, one
+                    # that only reads included, and a command whose events are written isn't one to run again. The next
+                    # command catches it up. The disk that refused the log refuses state.json too, and has said so already.
                     if not campaign.unwritten:
-                        raise
-                    # The disk that refused the log refuses state.json too: the next command rebuilds it.
+                        print(f"solo: couldn't write {root / 'state.json'} ({error.strerror or error}): the log has everything, and the next "
+                              "command brings state.json up to date once the disk takes it (until then the Table shows the campaign as it was)",
+                              file=sys.stderr)
         campaign.keep()
 
 

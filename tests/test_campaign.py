@@ -475,6 +475,20 @@ class TornLogTest(CampaignTest):
             pass  # a command that only reads
         self.assertEqual(json.loads((self.root / "state.json").read_text())["seq"], seq)
 
+    def test_a_state_json_the_disk_refuses_fails_no_command_and_is_caught_up_later(self):
+        full = OSError(errno.ENOSPC, "No space left on device")
+        with unittest.mock.patch.object(campaign.Campaign, "save", side_effect=full), unittest.mock.patch("sys.stderr", new_callable=io.StringIO) as err:
+            with self.session() as c:
+                c.say("The road is long.")  # its event is written: running it again would write it twice
+                seq = c.state["seq"]
+            with self.session():
+                pass  # a command that only reads, with state.json behind (solo log, solo state)
+        self.assertEqual(err.getvalue().count("couldn't write"), 2)
+        self.assertIn("state.json (No space left on device): the log has everything", err.getvalue())
+        with self.session():
+            pass
+        self.assertEqual(json.loads((self.root / "state.json").read_text())["seq"], seq)
+
     def test_a_campaign_whose_start_stopped_before_its_first_event_says_so_and_begins_again(self):
         root = self.tmp / "stopped"
         root.mkdir()
