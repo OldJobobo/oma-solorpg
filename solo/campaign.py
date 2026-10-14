@@ -2683,6 +2683,8 @@ class Campaign:
                 known = ", ".join(self.system.get("bestiary", {})) or "none: the system pack has no bestiary"
                 raise SoloError(f"npc {npc_id}: monster must be one of the bestiary's ({known})")
             change.update({k: fields[k] for k in ("location", "faction", "memory", "template", "attacker", "monster") if k in fields})
+            if isinstance(change.get("memory"), str):
+                change["memory"] = _memory(change["memory"])
             profile = {k: str(fields[k]).strip() for k in PROFILE_FIELDS if str(fields.get(k) or "").strip()}
             written = [k for k in profile if authored.get(k)]
             if written:
@@ -2719,7 +2721,7 @@ class Campaign:
                 result[faction_id]["name"] = spec["name"]
             if str(spec.get("memory") or "").strip():
                 # Word spreads: what the faction has heard of the hero, for the next of them they meet.
-                result[faction_id]["memory"] = str(spec["memory"]).strip()
+                result[faction_id]["memory"] = _memory(spec["memory"])
         return result
 
     def _consequence_changes(self, items, new_npcs):
@@ -4284,8 +4286,9 @@ def _time_words(text):
 
 
 def _memory(value):
-    """A memory as the line of text it is. A log written before memories were checked may hold a list: its lines, joined."""
-    return "; ".join(str(line) for line in value) if isinstance(value, list) else str(value)
+    """A memory as the line of text it is, its line breaks folded into spaces: on a line of its own, its "## Loose ends"
+    would be a heading in what the next GM reads. A log written before memories were checked may hold a list: its lines, joined."""
+    return "; ".join(" ".join(str(line).split()) for line in (value if isinstance(value, list) else [value]))
 
 
 def _attitude(value):

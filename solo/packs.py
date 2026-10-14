@@ -534,6 +534,24 @@ def engine_rules(system):
             "It rolls a d100 and the answer is yes on a roll above 100 minus the chance. A match (11, 22 ... 99, or 100) is an extreme result or a twist, yes or no.",
             "If the answer is obvious, or one is more interesting, don't roll: decide. Pick the odds a GM would give, never the ones that favour the hero.",
             "Open questions: solo ask --meaning rolls the inspiration tables for two words to interpret."], ["oracle", "ask the oracle", "odds", "yes or no", "question"]))
+    if oracle.get("chart") != "odds" and not (oracle.get("chart") == "fortune" and oracle.get("fortune")):
+        # The likelihood oracle, which a system with no chart of its own plays by (campaign.ask).
+        from .campaign import LIKELIHOOD  # campaign imports packs
+        from .oracle import CHAOS_RANGE
+        low, high = CHAOS_RANGE
+        pages.append(("Asking the oracle", [
+            "The oracle: a question a GM would answer. solo ask \"<question>\" --likely <odds>, the chance of a yes: "
+            + ", ".join(f"{name} {chance}%" for name, chance in LIKELIHOOD.items()) + ". Without --likely it is even; --npc <id> sets the odds from their attitude and promises.",
+            "It rolls a d100. A roll at the chance or under is a yes (in the lowest fifth of those, \"yes, and\"); one over it is a no (in the top fifth of those, \"no, and\").",
+            f"The chaos factor ({low} to {high}, on the Chaos factor line of solo scene) is how far the story runs off its rails. "
+            "Doubles (11, 22 ... 99) whose digit is the chaos factor or under set off a random event: something about the people and threads in play, with two words to read it by.",
+            *(["Every ordinary move rolls a scene check (unless the adventure turns them off): a d10 over the chaos factor finds the scene as expected; "
+               "at or under it, odd alters the scene (change one detail the hero expected), even interrupts it with a random event."]
+              if oracle.get("scene_checks", True) else []),
+            'At the end of a scene, commit {"chaos": "-1"} if the hero was in control, "+1" if things ran away from them.',
+            "If the answer is obvious, or one is more interesting, don't roll: decide. Pick the odds a GM would give, never the ones that favour the hero.",
+            "Open questions: solo ask --meaning gives words to interpret."],
+            ["oracle", "ask the oracle", "odds", "likelihood", "yes or no", "question", "chaos", "chaos factor", "random event", "scene check"]))
     threats = system.get("threats")
     if threats:
         pages.append(("Threats", [

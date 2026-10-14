@@ -102,6 +102,27 @@ class GmTest(Agents):
         self.assertEqual(second[-1], "I climb the palisade.")
         self.assertEqual(second[second.index("--resume") + 1], "sess-1")
 
+    def test_words_the_player_says_before_the_gm_ever_has_are_what_the_opening_answers(self):
+        # A campaign begun without --play opens the Book with nothing said, and the player may write first.
+        self.agent("claude", CLAUDE_STREAM)
+        gm.turn(self.root, "I knock on the miller's door.")
+        prompt = self.calls("claude")[0][-1]
+        self.assertIn("## Player so far\nI knock on the miller's door.", prompt)
+        self.assertIn("answers the player's words", prompt)
+        self.assertNotIn("Nothing has been said", prompt)
+
+    def test_try_again_after_an_opening_that_never_started_still_gives_the_gm_the_players_words(self):
+        # The agent failed before it had a session (or Stop came first): there is no session to resume, and the
+        # Book's "try again" sends no words of its own. They are in the log, and the new session's prompt has them.
+        self.agent("claude", [], code=1)
+        self.assertEqual(gm.turn(self.root, "I wade across the ford.")["status"], "error")
+        self.assertFalse((self.root / ".solo" / "agent.json").exists())
+        self.agent("claude", CLAUDE_STREAM)
+        gm.turn(self.root, None)
+        prompt = self.calls("claude")[-1][-1]
+        self.assertIn("## Player so far\nI wade across the ford.", prompt)
+        self.assertNotIn("Nothing has been said", prompt)
+
     def test_the_players_words_go_on_stdin_never_in_the_process_list(self):
         # Arguments are any local user's to read in /proc; and `claude -p "-x ..."` would take them for an option.
         self.agent("claude", CLAUDE_STREAM)
@@ -838,9 +859,29 @@ class DefaultAgent(CliCase):
         script.chmod(script.stat().st_mode | stat.S_IEXEC)
 
     def ask(self):
-        done = subprocess.run([str(cli.REPO / "bin" / "ask-agent"), str(self.tmp), "Build the pack."], capture_output=True, text=True,
+        return self.asked().stdout.strip()
+
+    def asked(self):
+        return subprocess.run([str(cli.REPO / "bin" / "ask-agent"), str(self.tmp), "Build the pack."], capture_output=True, text=True,
                               env={**os.environ, "HOME": str(self.tmp / "home")})
-        return done.stdout.strip()
+
+    def test_ask_agent_fails_when_it_starts_no_agent_so_make_does_too(self):
+        # `make rules` and `make campaign` end on it, and said they had worked when the agent they named wasn't there.
+        nothing = self.asked()
+        self.assertEqual(nothing.returncode, 1)
+        self.assertIn("No coding agent was found", nothing.stdout)
+        with unittest.mock.patch.dict(os.environ, {"AGENT": "claude"}):
+            missing = self.asked()
+        self.assertEqual(missing.returncode, 1)
+        self.assertIn("claude isn't on PATH: install it, or set AGENT to another, or unset it.", missing.stdout)
+        self.assertIn("Build the pack.", missing.stdout)  # still there to paste in
+        self.install("claude")
+        self.assertEqual((self.asked().returncode, self.ask()), (0, "claude Build the pack."))
+        # An agent it can't start with a prompt is given the prompt to paste in, which is how that agent is used.
+        omarchy = self.tmp / "home" / ".config" / "omarchy" / "defaults" / "agent"
+        omarchy.parent.mkdir(parents=True)
+        omarchy.write_text("pi\n")
+        self.assertEqual(self.asked().returncode, 0)
 
     def test_both_pick_the_same_agent(self):
         self.new_game()
@@ -906,6 +947,16 @@ class SkillFacts(CliCase):
         self.assertTrue(self.solo("-C", ironsworn, "rule", "oracle")[1].startswith("# Asking the oracle"))
         self.new_game()
         self.assertTrue(self.solo("-C", self.game, "rule", "oracle")[1].startswith("# Fortune chart"))
+        # A system with no chart of its own has the likelihood oracle, and its page too.
+        yze, likely = cli.REPO / "tests" / "fixtures" / "yze", str(self.tmp / "likely")
+        self.assertEqual(self.solo("new", str(yze / "adventure"), "--system", str(yze / "system"), "--character", str(yze / "rook.toml"), "--dir", likely)[0], 0)
+        for topic in ("oracle", "chaos factor", "random event"):
+            code, out, err = self.solo("-C", likely, "rule", topic)
+            self.assertEqual(code, 0, err)
+            self.assertTrue(out.startswith("# Asking the oracle"), topic)
+        page = self.solo("-C", likely, "rule", "oracle")[1]
+        for words in ("very unlikely 15%", "certain 95%", "yes, and", "no, and", "chaos factor", "scene check", '{"chaos": "-1"}'):
+            self.assertIn(words, page)
 
     def test_the_track_kinds_the_help_names_are_the_ones_the_engine_takes(self):
         kinds = next(a.help for a in cli._parser("track")._subparsers._group_actions[0].choices["track"]._actions if "--kind" in a.option_strings)

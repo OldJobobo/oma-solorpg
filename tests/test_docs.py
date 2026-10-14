@@ -107,11 +107,44 @@ class DesignDocsTest(unittest.TestCase):
             self.assertGreater(len(links), 5, doc)
             self.assertEqual([link for link in links if link not in anchors(text)], [], doc)
 
+    def test_the_docs_name_every_button_a_dying_hero_has(self):
+        # With the solo rules the Table offers Save yourself and Rally beside the death roll.
+        panel = (ROOT / "Panel.qml").read_text(encoding="utf-8")
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        plan = (ROOT / "docs" / "PLAN.md").read_text(encoding="utf-8")
+        dying = [next(line for line in readme.splitlines() if "At 0 HP you're dying" in line),
+                 next(line for line in plan.splitlines() if line.startswith("| Dying |"))]
+        for label in ("Death roll", "Save yourself", "Rally"):
+            self.assertIn(f'text: "{label}"', panel)
+            for line in dying:
+                self.assertIn(label, line)
+
+    def test_ci_checks_the_pyside6_contributing_says_it_does(self):
+        workflow = (ROOT / ".github" / "workflows" / "test.yml").read_text(encoding="utf-8")
+        contributing = (ROOT / "CONTRIBUTING.md").read_text(encoding="utf-8")
+        checked = re.findall(r'PySide6-Essentials==(\d+\.\d+)\.\*', workflow)
+        self.assertEqual(len(checked), 1)
+        self.assertIn(f"CI checks it on {checked[0]}", contributing)
+        self.assertNotIn("6.11 and 6.12 are checked", contributing)
+
+    def test_the_roadmap_never_asks_for_a_scenario_that_exists(self):
+        roadmap = (ROOT / "ROADMAP.md").read_text(encoding="utf-8")
+        scenarios = ROOT / "tests" / "gm_eval" / "scenarios"
+        for name, words in (("bell-cheat", "add the cheat"), ("bell-table-settings", "lines-and-veils scenario")):
+            self.assertTrue((scenarios / f"{name}.toml").exists(), name)
+            self.assertNotIn(words, roadmap)
+
     def test_plan_says_what_is_true_now(self):
         plan = (ROOT / "docs" / "PLAN.md").read_text(encoding="utf-8")
         for stale in ("omarchy agent`", "the agent window", "GM window: omarchy agent", "Single-window mode: revisit",
-                      "Until the cut button", "no cap on its tool calls"):
+                      "Until the cut button", "no cap on its tool calls", "Open the GM", "the GM window opens"):
             self.assertNotIn(stale, plan)
+        # The Table's header buttons are the ones Panel.qml has.
+        header = next(line for line in plan.splitlines() if line.startswith("- Header: campaign title"))
+        panel = (ROOT / "Panel.qml").read_text(encoding="utf-8")
+        for label in ("Open the Book", "Terminal"):
+            self.assertIn(label, header)
+            self.assertIn(f'text: "{label}"', panel)
         # Phases 7 to 8d were never defined anywhere a reader could look them up.
         self.assertNotRegex(plan, r"(?i)\bphases? \d")
 
@@ -182,8 +215,32 @@ class SiteTest(unittest.TestCase):
         self.assertNotIn("--system pymupdf", html)
 
     def test_the_page_asks_only_for_media_that_exists(self):
-        for path in re.findall(r'src="(media/[^"]+)"', self.site()):
+        for path in re.findall(r'(?:src|poster)="((?:media|img)/[^"]+)"', self.site()):
             self.assertTrue((ROOT / "site" / path).exists(), path)
+
+    # The screenshots of The Sinking Tower and Alone in Deepfall Breach, played from the author's own
+    # packs. Every one had a book's numbers in frame (a monster's HP and armor, a pre-generated hero's,
+    # the solo booklet's cultists), or an NPC's lines from the book in the codex; the title cards had
+    # the same fights under them. They came out, and none comes back under another name.
+    TAKEN_OUT = {
+        "62f911df424c7b6ce187904cfdf9d14a2e67e0d0479f7b49d114bee2615d9dad",  # tower-fight
+        "68765768b1250a70f273e60c851095f8d26f10e35b9c22bd3da8dccbdabfada6",  # tower-codex
+        "f6a9c230c89a786260c1c4b1a0add51d9cd0f8e6cfe9ab3563871d16cde88886",  # tower-dragon
+        "7c2664980766d8d64c5cb390f5ac2093b2d471778869cb0f63f605bfc819e1ae",  # tower-title
+        "7e9d9b56dd595c2ad70cc0c6d60a0e6ca64b9542fc432d8d3bba69b1f9f03f5a",  # breach-fight
+        "2a65dd9b8b5a5e24d27b9a7d5eaac9058560cb5f2ba09bf95213c77abfda8b13",  # breach-codex
+        "791c1e5ecb771e4b90fab8c9d9ae4e134e81471a53128a27be445883cea37cb6",  # breach-demon
+        "32dab13d6798fe2ab0e66973710e57b6376b06e1079d07c6fcd8b82bb927e23f",  # breach-title
+        "2a2ac135c5bd3e53b413c18aed553709641d2aef8be039c07ae9f837cc275778",  # table-breach
+    }
+
+    def test_no_screenshot_with_a_books_numbers_in_frame_is_in_the_repository(self):
+        import hashlib
+        pictures = [*(ROOT / "site").rglob("*"), *(ROOT / "assets").glob("*"), *ROOT.glob("*")]
+        for path in pictures:
+            if path.suffix.lower() in {".png", ".webp", ".jpg", ".jpeg", ".gif"}:
+                self.assertNotIn(hashlib.sha256(path.read_bytes()).hexdigest(), self.TAKEN_OUT, path.relative_to(ROOT))
+        self.assertNotRegex(self.site(), r'img/(tower|breach)-|img/table-breach')
 
 
 class ReleaseTest(unittest.TestCase):
@@ -198,6 +255,39 @@ class ReleaseTest(unittest.TestCase):
         self.assertIn("your own copy", manifest["description"])
         self.assertIn("\n## Update\n", (ROOT / "README.md").read_text(encoding="utf-8"))
 
+    def test_the_install_pins_the_version_the_readme_says_it_does(self):
+        import json
+        import subprocess
+        version = json.loads((ROOT / "manifest.json").read_text(encoding="utf-8"))["version"]
+        changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        site = (ROOT / "site" / "index.html").read_text(encoding="utf-8")
+        pin = re.search(r"git checkout --detach ([0-9a-f]{40})", readme).group(1)
+        versions = re.findall(r"\n## (\d+\.\d+\.\d+)", changelog)
+        if f"\n## {version} (not yet tagged)\n" in changelog:
+            # Until this version is tagged the pin is the one before it, and the README and the site say
+            # so instead of describing it as what the reader installs.
+            pinned = versions[versions.index(version) + 1]
+            for text in (readme, site):
+                self.assertIn(f"one from before {version}", text)
+        else:
+            pinned = version
+            self.assertNotIn(f"from before {version}", readme)
+
+        def git(*args):
+            try:
+                return subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True, timeout=60)
+            except OSError:
+                self.skipTest("git isn't installed")
+        shown = git("show", f"{pin}:manifest.json")
+        if shown.returncode != 0:
+            self.skipTest("the pinned commit isn't in this clone (a shallow one, or a tarball)")
+        self.assertEqual(json.loads(shown.stdout)["version"], pinned, "the README pins a commit of another version")
+        self.assertEqual(git("merge-base", "--is-ancestor", pin, "HEAD").returncode, 0, "the pinned commit is in this branch's history")
+        tag = git("rev-parse", "-q", "--verify", f"refs/tags/{pinned}^{{commit}}")
+        if tag.returncode == 0:
+            self.assertEqual(tag.stdout.strip(), pin, f"the README pins the commit tagged {pinned}")
+
 
 class RepositoryTest(unittest.TestCase):
     def test_ci_installs_what_the_skipping_tests_need_and_loads_the_qml(self):
@@ -206,6 +296,32 @@ class RepositoryTest(unittest.TestCase):
         self.assertIn("glslang-tools", workflow)
         self.assertIn("make qml-check", workflow)
         self.assertIn("package-ecosystem: github-actions", (ROOT / ".github" / "dependabot.yml").read_text(encoding="utf-8"))
+
+    def test_the_docs_say_ci_checks_the_book_fingerprints_only_once_they_are_committed(self):
+        # Without tests/fixtures/book_fingerprints.txt the book-text test skips in CI, and a doc that says every
+        # pull request is checked against it promises a check nobody runs.
+        hedge = "once the maintainer commits them"
+        committed = (ROOT / "tests" / "fixtures" / "book_fingerprints.txt").exists()
+        for path in (ROOT / "NOTICE.md", ROOT / "CONTRIBUTING.md", ROOT / "docs" / "INGESTION.md", ROOT / "tests" / "test_no_book_text.py"):
+            with self.subTest(path.name):
+                (self.assertNotIn if committed else self.assertIn)(hedge, path.read_text(encoding="utf-8"))
+        roadmap = (ROOT / "ROADMAP.md").read_text(encoding="utf-8")
+        item = roadmap[roadmap.index("\n## 1. "):roadmap.index("\n## 2. ")]
+        left = item[item.index("\nLeft:"):item.index("\nDone when:")]
+        (self.assertNotIn if committed else self.assertIn)("book fingerprints", left)
+
+    def test_security_counts_as_a_vulnerability_only_what_the_design_holds_back(self):
+        security = (ROOT / "SECURITY.md").read_text(encoding="utf-8")
+        counts = security[security.index("## What counts"):security.index("## Which versions")]
+        # `extends` names a pack wherever it is (docs/PACK_FORMAT.md): the house fixture's reaches up out of its folder.
+        self.assertIn('extends = "../', (ROOT / "tests" / "fixtures" / "house" / "system.toml").read_text(encoding="utf-8"))
+        outside = next(line for line in counts.splitlines() if "outside the pack's folder" in line)
+        self.assertNotIn("an `extends`", outside)
+        self.assertIn("`extends` names a pack, which can be anywhere", counts)
+        # Codex has no list of allowed commands and reads anywhere, which the README says: under it, only a write
+        # outside the campaign folder gets past what it holds back.
+        commands = next(line for line in counts.splitlines() if "run a command it isn't allowed" in line)
+        self.assertIn("Under Codex", commands)
 
     def test_the_issue_forms_know_the_main_import_and_point_security_reports_away_from_issues(self):
         forms = ROOT / ".github" / "ISSUE_TEMPLATE"
@@ -236,6 +352,14 @@ class LicenseTest(unittest.TestCase):
         self.assertEqual(datasworn._clean("Roll on {{table:classic/oracles/left/out}}.", {}), "Roll on .")
         self.assertIn("A link to a table that wasn't imported is removed", notice)
         self.assertIn("Datasworn", notice)
+        # The credit that travels with the pack lists the same changes, every one.
+        def changes(text):
+            return text[text.index("`solo import datasworn` made these changes to the text:"):text.index("Apart from that, the book's text is kept as written.")]
+        pack = (ROOT / "packs" / "ironsworn" / "NOTICE.md").read_text(encoding="utf-8")
+        self.assertIn(credit, pack)
+        self.assertEqual(changes(pack), changes(notice))
+        for change in ("named after the group first", "the row loses the link, and the importer lists it"):
+            self.assertIn(change, changes(pack))
 
     def test_the_dragonbane_license_has_one_name_outside_the_notice_it_recommends(self):
         # Free League's license is the Dragonbane Third-Party Tabletop Module License. The notice it

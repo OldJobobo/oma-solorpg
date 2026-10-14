@@ -136,7 +136,7 @@ def cmd_new(args):
     if args.play:
         _play(root)
     else:
-        print("Open the GM with: solo play (or the Open the GM button in the oma-solorpg panel)")
+        print("Open the Book with: solo play (or Open the Book on the oma-solorpg Table)")
 
 
 def cmd_library(args):
@@ -1344,13 +1344,18 @@ def resume_digest(c, book=False, scene=False):
     lines += _problem_lines(c)
     lines += [f"- {line}" for line in _now(c)] + ([""] if _now(c) else [])
     if last is None:
-        return "\n".join(lines + [
-            "Nothing has been said at this table yet: this is the opening.",
-            "",
-            ("Open the adventure from the scene below" if scene else "Run `solo scene`, then open the adventure")
-            + ": describe the first scene and end with a question to the player.",
-            "", *_threads(c),
-        ]).rstrip() + "\n"
+        opening = "Open the adventure from the scene below" if scene else "Run `solo scene`, then open the adventure"
+        # The player can write before the GM has said a word: in a Book opened on a new campaign, or after an opening
+        # turn that ended before its agent had a session. The opening answers them.
+        words = [e["text"] for e in speech if e["by"] == "player"]
+        if words:
+            lines += ["You haven't said anything at this table yet: this is the opening, and the player has already spoken (under \"Player so far\").",
+                      "", f"{opening}: describe the first scene so that it answers the player's words, and end with a question to the player.",
+                      "", "## Player so far", *[f"{text}\n" for text in words]]
+        else:
+            lines += ["Nothing has been said at this table yet: this is the opening.", "",
+                      f"{opening}: describe the first scene and end with a question to the player.", ""]
+        return "\n".join(lines + _threads(c)).rstrip() + "\n"
     hidden = set(state["hidden"])
     since = [e for e in events if e["seq"] > last["seq"] and e["type"] != "said"]
     answer = [e for e in speech if e["seq"] > last["seq"] and e["by"] == "player"]
@@ -1895,7 +1900,7 @@ def _parser(only=None):
     command("library", cmd_library, "systems, adventures and campaigns (JSON)")
     sub = command("character", cmd_character, "roll or build a hero without starting a campaign (JSON)")
     sub.add_argument("words", nargs="*", help="creation choices like: dwarf fighter old; or a pre-made hero's id")
-    sub.add_argument("--system", help="system pack name or folder (default: the only one)")
+    sub.add_argument("--system", help="system pack name or folder (default: the one --adventure names)")
     sub.add_argument("--adventure", help="also offer this adventure's own pre-made heroes")
     sub.add_argument("--name", help="the hero's name")
     sub.add_argument("--seed", type=int, help="rebuild the same random hero")

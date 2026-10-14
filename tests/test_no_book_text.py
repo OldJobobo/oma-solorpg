@@ -17,7 +17,8 @@ The books are only on the machine of someone who owns them, so the test knows th
 
 - the extracts themselves (SOLO_SOURCES, or SOLO_HOME/sources, where `solo extract` leaves them), when they are on this machine.
 
-With neither (or with the file but not its key), the test is unarmed: it skips, and says so.
+With neither (or with the file but not its key), the test is unarmed: it skips, and says so. No fingerprints are committed yet, so CI runs it unarmed
+until then: it checks pull requests against them once the maintainer commits them.
 
 A book's text is read the way the audit reads a page (NFKC, so a ligature is its letters; a curly quote and a dash are plain ones). A run is
 eight words that read like prose (three or more of the little words every sentence has): labels and table headers are the game's own terms, and

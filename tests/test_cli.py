@@ -97,6 +97,24 @@ class CliTest(CliCase):
         code, out, _ = self.solo("new", "red-tusk", "--seed", "3")
         self.assertIn(f"in {root}-2", out)
 
+    def test_new_without_play_names_the_tables_open_the_book(self):
+        # The Table's header has Open the Book and Terminal; there is no Open the GM button.
+        code, out, err = self.solo("new", str(RED_TUSK), "--dir", self.game, "--character", str(RAGNA))
+        self.assertEqual(code, 0, err)
+        self.assertIn("Open the Book with: solo play (or Open the Book on the oma-solorpg Table)", out)
+        self.assertIn('text: "Open the Book"', (ROOT / "Panel.qml").read_text(encoding="utf-8"))
+        self.assertNotIn("Open the GM", out)
+
+    def test_the_readmes_look_at_a_hero_runs_as_written(self):
+        # Two systems are bundled, so a bare `solo character` can't pick one.
+        import shlex
+        lines = [line.split("#")[0] for line in (ROOT / "README.md").read_text(encoding="utf-8").splitlines() if line.startswith("solo character ")]
+        self.assertTrue(lines)
+        for line in lines:
+            code, out, err = self.solo(*shlex.split(line)[1:])
+            self.assertEqual(code, 0, f"{line}: {err}")
+            self.assertEqual(json.loads(out)["info"]["kin"], "Elf")
+
     def test_the_preview_is_the_hero_that_begins(self):
         code, out, _ = self.solo("character", "elf", "mage", "--seed", "11", "--name", "Ilyra", "--system", "dragonbane")
         preview = json.loads(out)

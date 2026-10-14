@@ -671,7 +671,7 @@
         clearInterval(beats);
         flash("fx-dead", 6500);
         Sound.play("bell");
-        toast("Ragna is dead", "Fell at the Fiendish Altar, to a demon cultist.", "red");
+        toast("Ragna is dead", "Fell in Chieftain's Hall, to Grukk Red Tusk.", "red");
       },
       omen: function () {
         flash("rippling", 1700);
@@ -741,7 +741,7 @@
       fig.setAttribute("role", "button");
       fig.setAttribute("aria-label", "Look closer: " + ($("img", fig) || {}).alt);
       function open() {
-        var box = fig.closest(".gallery, .shelf-shots");
+        var box = fig.closest(".gallery");
         group = box ? $$("figure.shot", box) : [fig];
         show(group.indexOf(fig));
         dialog.showModal();

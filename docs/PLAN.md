@@ -40,9 +40,9 @@ A second, rarer user is the author: the same person on another evening, importin
 | Rest | Round, stretch or shift rest buttons. Time passes, so hidden clocks may tick. The GM sees it in the log. | panel |
 | Ask the oracle | Type a yes/no question, pick the odds, Ask. The answer shows under the question and in the log, with a random event when one comes up. Meaning gives two words for open questions. | panel |
 | Fight | The GM starts it. The table shows initiative, the foes' HP and the hero's weapons. Pick a foe, click a weapon to attack. A foe's hit shows in red with Evade, Parry and Take it. | Book + panel |
-| Dying | At 0 HP the only roll left is Death roll, with the count toward rallying or dying. Death ends the campaign and the Home card says so. | panel |
+| Dying | At 0 HP the only roll left is Death roll, with the count toward rallying or dying; with the solo rules, Save yourself and Rally are beside it, and a hero who rallies acts again at 0 HP. Death ends the campaign and the Home card says so. | panel |
 | End a session | The GM asks the end-of-session questions and marks skills; Roll advancement (or the GM) rolls them. | Book + panel |
-| Resume | Home lists campaigns with the first line of the GM's last message. Click one: the table shows that message in full under Where you left off. Open the GM, and its first message is the same text, word for word. If the GM window is already open, it gets focus instead of a second one. | panel |
+| Resume | Home lists campaigns with the first line of the GM's last message. Click one: the table shows that message in full under Where you left off. Open the Book, and the story is there as it was left, for the GM's next turn to carry on from. In a terminal instead (Terminal), the GM's first message is that text, word for word, and a GM window already open gets focus instead of a second one. | panel |
 | Bring your own adventure | `solo import ...` plus the `solo-import` skill (terminal, agent). The adventure then appears on the New adventure screen. | terminal |
 
 ### Scope
@@ -66,7 +66,7 @@ Later: adapters for more agents in the Book (only Claude Code and Codex stream a
 - Buttons exist only for deterministic mechanics. Anything that needs judgement (damage from a narrated hit, an NPC's reaction) goes through the GM.
 - The player sees what the GM sees about dice: every roll lands in one log, whoever clicked or typed it.
 - GM-only information never reaches the panel: hidden clocks, the tables their ticks roll, scene secrets.
-- Words from the fiction, not the engine: "Begin adventure", "Open the GM", "Stretch rest". No ids, flags or JSON on screen.
+- Words from the fiction, not the engine: "Begin adventure", "Open the Book", "Stretch rest". No ids, flags or JSON on screen.
 
 ## The Book
 
@@ -154,10 +154,10 @@ The panel keeps a `view` of `home`, `new` or `table`. It opens on `table` when a
    - Pre-made heroes as buttons (from `packs/<system>/characters/`).
    - Random: one row of choices per creation table (Kin, Profession, Age; School or Craft appears when Mage or Artisan is picked). Each row starts on "Any". A Name field (empty means a name from the kin's list). Reroll.
    - A preview of the sheet: name, kin/profession/age, attributes, HP/WP, trained skills, abilities, gear. It comes from `solo character ... --seed N`, so the preview is exactly the hero Begin creates.
-3. Primary: Begin adventure: `solo new <adventure> --character <choice> --seed N [--name ...] --play`. On success the panel shows Table and the GM window opens.
+3. Primary: Begin adventure: `solo new <adventure> --character <choice> --seed N [--name ...] --play`. On success the panel shows Table and the Book opens, where the GM writes the opening scene; with an agent the Book can't drive, the GM opens in a terminal instead.
 
 **Table**
-- Header: campaign title, scene and elapsed time; Campaigns (back to Home); Open the GM.
+- Header: campaign title, scene and elapsed time; Campaigns (back to Home); Open the Book, and Terminal (the GM in a terminal instead, or its window brought forward).
 - Character: name and kin/profession, attributes, HP and WP meters, conditions (lit when held), abilities and ratings (movement, damage bonus).
 - Roll: Boons and Banes steppers, then the skills as buttons (trained first, the rest under "Other skills"), plus the attributes. Click rolls `solo check <skill> --boons N --banes N` and clears the steppers.
 - Last roll: the result in words and dice. After a pushable failure, the push buttons (Dragonbane: one per condition not held).
