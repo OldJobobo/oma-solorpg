@@ -59,7 +59,7 @@ The Table and the Book:
 - With no agent set up, the Book says how to set one. Errors are kept per source, and a `solo` that can't start says so.
 - Quiet text stays readable and quieter than the body on light themes too. The Table and the d20 load on Qt 6.12.
 - At 0 HP the Table offers the death roll and what a dying hero can do, nothing else. In a fight the weapons sit right under the last roll.
-- New adventure names each adventure's system, and says why one can't be played yet.
+- New adventure names each adventure's system, and says why one can't be played yet. An adventure that names its system in other capitals (`system = "Ironsworn"`) begins there as `solo new` begins it, instead of being said to have no system pack and sent to `make dragonbane`.
 - Folds, cards and the Book's links work from the keyboard (Tab, Enter, Space) and are named to a screen reader; Enter in the hero's name begins.
 - The Table tells the time as the Book does, names a skill once in its last roll, leaves out empty rows of buttons, goes Home when a campaign's folder is gone, and never shows an empty scene card. A campaign whose `state.json` is missing (deleted, or never written: `solo use` doesn't write it) has solo make it again and opens on its table, and one that can't be opened (its start stopped before the first event) goes Home with the engine's sentence why, from its card too, instead of "Loading the table" for good.
 
@@ -69,7 +69,7 @@ Imports and the audit:
 - `solo import book` (`make dragonbane`) exits non-zero when a book is unknown, unreadable, can't be built or fails its audit, after building the rest, and says when a PDF looks scanned. `--replace` keeps the old pack until the new one is built and playable. System packs are validated after a build, and one the engine can't play is never left where the library would list it, on a first build too, or by a build killed half way.
 - A changed layout names the book, table and page instead of "something went wrong" (a cell with more than its number in it too), and an importer that stops some other way fails only its own book; a grip written "1-handed" is still a weapon, and one the importer can't read ("1H/2H") is named instead of making the weapon plain gear; a roll table whose rows stop short of its die fails the import; what an importer leaves out, it says in its notes.
 - No importer writes into the repository. An inventory keeps its extract relative to `SOLO_HOME`, so a built pack is the same on every machine.
-- `solo new` on rules that aren't built says so before asking for a hero, and `solo library` gives each adventure `ready`, `why` and `system_name`.
+- `solo new` on rules that aren't built says so before asking for a hero, and `solo library` gives each adventure `ready`, `why`, `system_name` and `system_id` (the system pack `solo new` plays it on).
 - `tests/test_no_book_text.py` can check every pull request against fingerprints of the maintainer's books, tables included, once the maintainer generates them. They are keyed with a secret kept out of the repository (`SOLO_FINGERPRINT_KEY`, an Actions secret), so the committed file can't be worked back into a book's rows or read on from a known sentence; a pull request from a fork is checked by the base branch's own test, which reads its files and runs none of them.
 
 Install and docs:

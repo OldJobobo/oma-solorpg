@@ -2,9 +2,10 @@
 begin yet and why, and solo new says the rules come first, before it tries to make a hero."""
 
 import json
+import shutil
 import unittest
 
-from helpers import RAGNA, RED_TUSK, install_rules
+from helpers import RAGNA, RED_TUSK, ROOT, install_rules
 from test_cli import CliCase
 
 from solo import SoloError, creation
@@ -87,3 +88,18 @@ class HalfBuiltTest(CliCase):
         code, _, err = self.solo("character", "--system", "nope")
         self.assertEqual(code, 1)
         self.assertNotIn(".lanterns.building", err)
+
+
+class SystemIdTest(CliCase):
+    def test_an_adventure_naming_its_system_in_other_capitals_names_the_pack_solo_new_plays_it_on(self):
+        # The engine finds a system by its slug, so "Ironsworn" is ironsworn: the Table matched the name exactly, and couldn't begin it.
+        bell = self.tmp / "games" / "adventures" / "bell-cap"
+        shutil.copytree(ROOT / "examples" / "bell-under-the-hill", bell)
+        spec = bell / "adventure.toml"
+        spec.write_text(spec.read_text(encoding="utf-8").replace('system = "ironsworn"', 'system = "Ironsworn"'), encoding="utf-8")
+        adventures = {a["id"]: a for a in json.loads(self.solo("library")[1])["adventures"]}
+        self.assertEqual({key: adventures["bell-cap"][key] for key in ("system", "system_id", "ready", "system_name")},
+                         {"system": "Ironsworn", "system_id": "ironsworn", "ready": True, "system_name": "Ironsworn"})
+        self.assertEqual((adventures["red-tusk"]["system_id"], adventures["bell-under-the-hill"]["system_id"]), ("dragonbane", "ironsworn"))
+        code, _, err = self.solo("new", "bell-cap", "--dir", self.game)
+        self.assertEqual(code, 0, err)

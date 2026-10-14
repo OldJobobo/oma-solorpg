@@ -147,7 +147,9 @@ Item {
 
   readonly property var adventure: library && library.adventures.length > 0
     ? (library.adventures.filter(a => a.id === root.pickedAdventure)[0] || library.adventures[0]) : null
-  readonly property var system: adventure ? library.systems.filter(s => s.id === adventure.system)[0] || null : null
+  // The system pack the engine plays the adventure on (system_id): it finds one by its slug, so an adventure may name it
+  // in other capitals ("Ironsworn" for ironsworn).
+  readonly property var system: adventure ? library.systems.filter(s => s.id === adventure.system_id)[0] || null : null
 
   readonly property color textColor: Commons.Color.popups.text
   // Captions and asides: as quiet as WCAG AA lets small text be (4.5:1), on light themes as on dark. Measured
@@ -540,7 +542,7 @@ Item {
 
   // A pre-made hero or a creation choice belongs to one system, so a different system starts over.
   function chooseAdventure(adventure) {
-    if (!root.adventure || root.adventure.system !== adventure.system) {
+    if (!root.adventure || root.adventure.system_id !== adventure.system_id) {
       root.pickedHero = "random"
       root.picks = {}
     }
@@ -1679,7 +1681,7 @@ Item {
                   size: Commons.Style.font.caption
                   color: root.dim
                   text: modelData.system_name
-                    || (root.library.systems.filter(s => s.id === modelData.system)[0] || { name: modelData.system || "no system named" }).name
+                    || (root.library.systems.filter(s => s.id === modelData.system_id)[0] || { name: modelData.system || "no system named" }).name
                 }
                 Line {
                   visible: modelData.ready === false && (modelData.why || "") !== ""
@@ -1709,7 +1711,7 @@ Item {
               color: Commons.Color.urgent
               size: Commons.Style.font.bodySmall
               text: root.adventure && root.adventure.why
-                ? root.adventure.why : "This adventure's system pack isn't installed, or its rules aren't built from your books yet (make dragonbane)."
+                ? root.adventure.why : "This adventure's system pack isn't installed, or its rules aren't built from your books yet."
             }
 
             Flow {

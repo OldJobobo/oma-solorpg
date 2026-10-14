@@ -337,6 +337,7 @@ def main(out):
     errors += quiet_text_reads(engine, item, panel, out, wait)
     errors += by_keyboard(item, panel, wait)
     errors += adventures_not_ready(item, panel, out, wait)
+    errors += a_system_named_in_capitals(item, panel, work, wait)
     errors += a_campaign_gone(item, panel, out, work, wait)
     errors += a_state_json_gone(item, panel, work, wait)
     print("bar tooltip:", bar.rootObject().tooltip())
@@ -978,6 +979,40 @@ def adventures_not_ready(item, panel, out, wait):
     name = next((s["name"] for s in library["systems"] if s["id"] == known["system"]), None)
     if known.get("system_name") is None and name and labelled(panel.contentItem(), name) is None:
         problems.append(f"an adventure without a system_name no longer shows its system's name ({name!r})")
+    return problems
+
+
+def a_system_named_in_capitals(item, panel, work, wait):
+    """An adventure that names its system in other capitals ("Ironsworn") plays on the pack the engine finds by its slug,
+    as `solo new` does: New adventure offers its heroes and Begin, and never tells the player to build Dragonbane."""
+    bell = work / "games" / "adventures" / "bell-cap"
+    shutil.copytree(REPO / "examples" / "bell-under-the-hill", bell)
+    spec = bell / "adventure.toml"
+    spec.write_text(spec.read_text().replace('system = "ironsworn"', 'system = "Ironsworn"')
+                    .replace('title = "The Bell Under the Hill"', 'title = "The Bell, Capitalised"', 1))
+    problems = []
+    try:
+        item.show("new")
+        wait(2500)
+        card = cards(panel.contentItem(), "The Bell, Capitalised")
+        if card is None:
+            return ["New adventure has no card for an adventure that names its system in capitals"]
+        panel.requestActivate()
+        wait(100)
+        card.forceActiveFocus()
+        QTest.keyClick(panel, Qt.Key_Space)
+        wait(2500)
+        if item.property("pickedAdventure") != "bell-cap":
+            return [f"Space on the card of an adventure naming its system in capitals picked {item.property('pickedAdventure')!r}"]
+        begin = button(panel.contentItem(), "Begin")
+        if item.property("system") is None or item.property("preview") is None or begin is None or not begin.isEnabled():
+            problems.append(f"an adventure naming its system \"Ironsworn\" has system {item.property('system')!r}, "
+                            f"preview {item.property('preview')!r} and Begin {begin and begin.isEnabled()!r}")
+        if labelled(panel.contentItem(), "This adventure's system pack isn't installed, or its rules aren't built from your books yet.") is not None:
+            problems.append("an adventure the engine can begin is said to have no system pack")
+    finally:
+        shutil.rmtree(bell)
+        item.setProperty("pickedAdventure", "")
     return problems
 
 
