@@ -781,12 +781,16 @@ Item {
   }
 
   Epitaph {
+    objectName: "epitaph"
     anchors.fill: parent
     visible: book.epitaphShown
     theme: book.theme
     gpu: book.gpu
     game: book.game
-    onDismissed: book.epitaphDismissed = true
+    onDismissed: {
+      book.epitaphDismissed = true
+      input.forceActiveFocus()  // the epilogue, if the player wants one
+    }
   }
 
   TitleCard {

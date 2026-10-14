@@ -17,7 +17,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
 from PySide6.QtCore import QMetaObject, QObject, QPoint, QPointF, Q_ARG, Q_RETURN_ARG, Qt, QTimer, QUrl, SIGNAL  # noqa: E402
-from PySide6.QtGui import QGuiApplication  # noqa: E402
+from PySide6.QtGui import QAccessible, QGuiApplication  # noqa: E402
 from PySide6.QtQuick import QQuickItem, QQuickView  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
 
@@ -103,6 +103,16 @@ def main(out):
     settle()
     book.setProperty("codexOpen", True)
     shot("codex")
+    # Its × is a button to the keyboard and to a screen reader.
+    close = book.findChild(QObject, "codexClose")
+    face = QAccessible.queryAccessibleInterface(close) if close is not None else None
+    if face is None or face.role() != QAccessible.Button or face.text(QAccessible.Name) != "Close the codex":
+        errors.append(f"a screen reader doesn't know the codex's × as a button that closes it: {face and (face.role(), face.text(QAccessible.Name))}")
+    if close is not None:
+        close.forceActiveFocus()
+        QTest.keyClick(view, Qt.Key_Space)
+    if book.property("codexOpen"):
+        errors.append("Space on the codex's × didn't close it")
     book.setProperty("codexOpen", False)
 
     roll = [b for b in fight["story"] if b["kind"] == "roll"][0]
@@ -170,6 +180,15 @@ def main(out):
     root.setProperty("game", dead)
     shot("dead", 700)
     shot("gravestone", 7000)  # the last death roll has settled, the stone has risen
+    # While it is up the gravestone has the keyboard, so nothing typed goes to the page under it. Escape puts it away
+    # as a click does, and the composer has the keyboard again, for an epilogue.
+    stone = book.findChild(QObject, "epitaph")
+    face = QAccessible.queryAccessibleInterface(stone) if stone is not None else None
+    if stone is None or not stone.property("activeFocus") or face is None or face.role() != QAccessible.Button:
+        errors.append(f"the gravestone isn't a button with the keyboard: {stone and stone.property('activeFocus')}, {face and face.role()}")
+    QTest.keyClick(view, Qt.Key_Escape)
+    if book.property("epitaphShown") or not book.findChild(QObject, "composer").property("activeFocus"):
+        errors.append(f"Escape didn't put the gravestone away for the composer (shown {book.property('epitaphShown')})")
 
     # Another campaign: the Book starts over with it, rather than holding its dice and scene
     # cards back until its story passes the last one's.
