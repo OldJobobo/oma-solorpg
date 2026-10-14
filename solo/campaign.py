@@ -115,8 +115,7 @@ def create(root, system_path, adventure_path, character, title=None, prefs=None)
     system = packs.load_system(system_path)
     adventure = packs.load_adventure(adventure_path, drafts=False)
     problems = packs.validate(system, adventure)
-    # campaign.toml is written before the first event: one without events is a start that stopped half way, begun again here.
-    if (root / "campaign.toml").exists() and _read_events(root / "events.jsonl")[0]:
+    if _begun(root):
         raise SoloError(f"{root} already holds a campaign")
     elif packs.missing(system):
         raise SoloError(packs.missing_text(system, packs.missing(system)))
@@ -134,8 +133,7 @@ def create(root, system_path, adventure_path, character, title=None, prefs=None)
             "system": str(Path(system_path).resolve()),
             "adventure": str(Path(adventure_path).resolve()),
         }
-        (root / "campaign.toml").write_text("".join(f"{k} = {packs.toml_string(v)}\n" for k, v in config.items()), encoding="utf-8")
-        with session(root, new=True) as campaign:
+        with session(root, new=config) as campaign:
             event = campaign.append("created", format=FORMAT, title=config["title"], pc=pc, scene=adventure["start"],
                                     past=past or None, facts=carried or None, kept=kept or None)
             campaign._follow([f"scene:{adventure['start']}"], cause=event["seq"])
@@ -148,6 +146,16 @@ def create(root, system_path, adventure_path, character, title=None, prefs=None)
         (root / ".solo" / "turn.json").write_text('{"status": "idle"}\n', encoding="utf-8")
         set_current(root)
         return root
+
+
+def _begun(root):
+    """Whether a folder holds a campaign already begun: a whole event in its log. A campaign.toml with none is a start that
+    stopped half way, begun again by `solo new`. Read only: a log another command is writing is never mended (see
+    _mend_tail) from outside its lock."""
+    try:
+        return b"\n" in (root / "events.jsonl").read_bytes()
+    except FileNotFoundError:
+        return False
 
 
 def hero(root, name=None):
@@ -255,15 +263,21 @@ def character_sheet(data, system):
 
 
 @contextmanager
-def session(root, new=False):
+def session(root, new=None):
     """Open a campaign under an exclusive lock, so the agent and the panel never write
     at the same time. state.json is rewritten on the way out if anything changed, or if it
-    was behind the log or made by another engine or other packs, and a command that went through keeps the replay for the next one
-    when it has fallen behind. `new`: the campaign being created, whose log is still empty."""
+    was behind the log or made by another engine or other packs, and a command that went
+    through keeps the replay for the next one when it has fallen behind. `new`: the
+    campaign.toml of a campaign being created, written here under the lock, unless a
+    campaign has begun in the folder meanwhile."""
     root = Path(root)
     with open(root / ".lock", "w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        campaign = Campaign(root, new=new)
+        if new is not None and _begun(root):
+            raise SoloError(f"{root} already holds a campaign")
+        elif new is not None:
+            (root / "campaign.toml").write_text("".join(f"{k} = {packs.toml_string(v)}\n" for k, v in new.items()), encoding="utf-8")
+        campaign = Campaign(root, new=new is not None)
         count = len(campaign.events)
         # A crash between an event's write and state.json's leaves state.json behind the log, and an update
         # to the engine or the packs leaves it made by the old ones: any command brings it up to date, one that only reads too.

@@ -1,4 +1,5 @@
 import errno
+import fcntl
 import io
 import json
 import os
@@ -505,6 +506,18 @@ class TornLogTest(CampaignTest):
         with self.session():
             pass
         self.assertEqual(json.loads((self.root / "state.json").read_text())["seq"], seq)
+
+    def test_solo_new_on_a_campaign_being_written_refuses_without_touching_its_log(self):
+        log = self.root / "events.jsonl"
+        with open(self.root / ".lock", "w") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)  # another command holds the campaign, half way through writing an event
+            with open(log, "a") as writing:
+                writing.write('{"seq": 99, "type": "said", "by": "gm", "te')
+            before = log.read_bytes()
+            with self.assertRaisesRegex(SoloError, "already holds a campaign"):
+                campaign.create(self.root, self.system, self.adventure, self.character)
+            self.assertEqual(log.read_bytes(), before)  # the half line is the writer's: it isn't set aside as torn
+            self.assertFalse((self.root / "events.jsonl.torn").exists())
 
     def test_a_campaign_whose_start_stopped_before_its_first_event_says_so_and_begins_again(self):
         root = self.tmp / "stopped"
