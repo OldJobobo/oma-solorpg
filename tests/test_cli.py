@@ -157,6 +157,13 @@ class CliTest(CliCase):
         code, _, err = self.solo("-C", self.game, "rest", "stretch")
         self.assertIn("already taken a stretch rest this shift", err)
 
+    def test_a_commit_nested_too_deep_or_holding_a_byte_that_isnt_utf8_is_refused_with_a_sentence(self):
+        self.new_game()
+        code, _, err = self.solo("-C", self.game, "commit", "-", stdin="[" * 100000)
+        self.assertEqual((code, "the commit isn't valid JSON here: it nests deeper than Python reads" in err), (1, True), err)
+        code, _, err = self.solo("-C", self.game, "commit", '{"note": "caf\udce9"}')  # as Python reads b"caf\xe9" from the command line
+        self.assertEqual((code, "which the log can't hold" in err), (1, True), err)
+
     def test_a_push_on_offer_tells_the_gm_how_long_it_lasts(self):
         self.new_game()
         with unittest.mock.patch("solo.cli._rng", return_value=Dice(12)):

@@ -365,7 +365,7 @@ class Campaign:
         seed = dice.fixed_seed()
         if seed is not None:
             event["seed"] = seed
-        line = (json.dumps(event, ensure_ascii=False) + "\n").encode("utf-8")
+        line = _line(event)
         # Applied before it is written: an event the state can't take is refused, never left
         # in the log for every later replay to trip over.
         _advance(self.state, self.entries, event, self.adventure, strict=True)
@@ -2481,6 +2481,7 @@ class Campaign:
         (so the log reads without context), clock moves, and warnings about clamping."""
         if not isinstance(payload, dict):
             raise SoloError("a commit is a JSON object")
+        _line(payload)  # text the log can't hold is refused here, before the roll a commit lets stand (see commit)
         warnings = []
         payload = dict(payload)
         for alias, key in _KEY_ALIASES.items():
@@ -4123,6 +4124,19 @@ def _read_events(path):
                     raise SoloError(_damaged(path, number, "it isn't an event"))
                 events.append(event)
     return events, data
+
+
+def _line(event):
+    """An event as the line the log holds. Text that isn't Unicode the log can hold (a lone surrogate: half an emoji cut
+    off, or a byte that wasn't UTF-8 on the command line), and lists nested deeper than Python writes them, are refused
+    with a sentence, not met by the write."""
+    try:
+        return (json.dumps(event, ensure_ascii=False) + "\n").encode("utf-8")
+    except UnicodeEncodeError as error:
+        raise SoloError(f"the text holds {error.object[error.start:error.end]!r}, half of a character (or a byte that wasn't UTF-8), "
+                        "which the log can't hold: write it again without it") from None
+    except RecursionError:
+        raise SoloError("it nests lists or objects deeper than the log can hold (a commit is an object a few levels deep)") from None
 
 
 def _damaged(path, number, error):

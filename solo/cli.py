@@ -883,11 +883,12 @@ def cmd_move(args):
 
 
 def cmd_commit(args):
-    text = sys.stdin.read() if args.json == "-" else args.json
     try:
-        payload = json.loads(text)
-    except ValueError as error:  # a JSONDecodeError, or a number too long to read (over 4300 digits)
+        payload = json.loads(sys.stdin.read() if args.json == "-" else args.json)
+    except ValueError as error:  # a JSONDecodeError, a number too long to read (over 4300 digits), or stdin that isn't UTF-8
         raise SoloError(f"the commit isn't valid JSON: {error}") from None
+    except RecursionError:
+        raise SoloError("the commit isn't valid JSON here: it nests deeper than Python reads (a commit is an object a few levels deep)") from None
     with _open(args) as c:
         event = c.commit(payload, rng=_rng())
         _report(c, event, chronicle=None if event["changes"].get("chronicle") else _chronicle_nudge(c))
