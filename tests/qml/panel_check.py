@@ -16,6 +16,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -23,7 +24,7 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
 sys.path.insert(0, str(HERE))
 
-from PySide6.QtCore import Property, QFileSystemWatcher, QMetaObject, QObject, QPointF, Q_ARG, QSize, Qt, QTimer, QUrl, Signal, Slot  # noqa: E402
+from PySide6.QtCore import Property, QCoreApplication, QEventLoop, QFileSystemWatcher, QMetaObject, QObject, QPointF, Q_ARG, QSize, Qt, QTimer, QUrl, Signal, Slot  # noqa: E402
 from PySide6.QtGui import QColor, QGuiApplication  # noqa: E402
 from PySide6.QtQml import QQmlEngine, qmlRegisterModule, qmlRegisterSingletonInstance, qmlRegisterType  # noqa: E402
 from PySide6.QtQuick import QQuickItem, QQuickView, QQuickWindow  # noqa: E402
@@ -138,6 +139,10 @@ class Process(QObject):
             self._running = False
             self.runningChanged.emit()
             return
+        # Quickshell's event loop turns while a command runs, and solo writes state.json some milliseconds before
+        # it ends: the FileViews have read what it wrote by the time its exit comes, so a Repeater's delegate that
+        # ran the command (a parry, gone with the blow it answered) may be gone too.
+        settle()
         for stream, text in ((self.stdout, done.stdout), (self.stderr, done.stderr)):
             if stream is not None:
                 stream.text = text
@@ -146,6 +151,13 @@ class Process(QObject):
         self._running = False
         self.exited.emit(done.returncode, 0)
         self.runningChanged.emit()
+
+
+def settle():
+    """What the files a command wrote have to say (the watchers' news, and the reads it sets off) is heard now."""
+    end = time.monotonic() + 0.05
+    while time.monotonic() < end:
+        QCoreApplication.processEvents(QEventLoop.AllEvents, 10)
 
 
 def release():
@@ -333,6 +345,7 @@ def main(out):
     errors += magic_and_dragons(item, panel, out, work, wait)
     errors += errors_by_source(item, work, wait)
     errors += commands_wait_their_turn(item, panel, work, wait)
+    errors += a_parry_and_what_waits(item, panel, work, wait)
     errors += the_first_game(load, work, wait)
     errors += quiet_text_reads(engine, item, panel, out, wait)
     errors += by_keyboard(item, panel, wait)
@@ -863,6 +876,51 @@ def commands_wait_their_turn(item, panel, work, wait):
         problems.append(f"what was asked while the roll ran didn't run after it, in order: {asked[-2:]} ({trouble(item)})")
     if item.property("busy") or not strength.property("enabled"):
         problems.append("the Table stayed busy after the commands ended")
+    return problems
+
+
+def a_parry_and_what_waits(item, panel, work, wait):
+    """A parry clicked on the Table, and a question asked while it runs. By the time the parry ends its button is gone
+    with the blow it answered (state.json was read again first), and what comes after it still runs: the question
+    waiting behind it is asked, and the Table is free again."""
+    from helpers import Dice
+    from solo import campaign
+    problems = []
+    game = Path((work / "state" / "solo" / "current").read_text().strip())
+
+    def state():
+        return json.loads((game / "state.json").read_text())
+
+    with campaign.session(game) as c:
+        c.fight(["cultist"], rng=Dice(1, 2))
+        c.enemy("cultist", rng=Dice(2))  # the dagger hits, and waits for the hero's answer
+    wait(1500)
+    parry = button(panel.contentItem(), "Parry: ")
+    if parry is None or not parry.property("enabled"):
+        return ["the Table offers no parry against the blow coming"]
+    Process.hold = True
+    try:
+        QTest.mouseClick(panel, Qt.LeftButton, Qt.NoModifier, parry.mapToScene(QPointF(parry.width() / 2, parry.height() / 2)).toPoint())
+        wait(100)
+        item.act(["ask", "--likely", "even", "--", "do more come?"], "oracle", None, None)
+        wait(100)
+    finally:
+        release()
+    for _ in range(20):
+        wait(300)
+        if not item.property("busy"):
+            break
+    log = state()["log"]
+    if ((state()["last_check"] or {}).get("defend") or {}).get("how") != "parry" or (state()["combat"] or {}).get("incoming"):
+        problems.append(f"the Table's parry didn't answer the blow: {trouble(item) or log[-1]}")
+    if not any(e["type"] == "oracle" and '"do more come?"' in e["text"] for e in log):
+        problems.append(f"the question asked while the parry ran never ran ({trouble(item)})")
+    if item.property("busy") or item.property("queue").toVariant():
+        problems.append(f"the Table stayed busy after the parry: {item.property('queue').toVariant()}")
+    with campaign.session(game) as c:
+        if c.state["combat"]:
+            c.end_fight()
+    wait(1000)
     return problems
 
 

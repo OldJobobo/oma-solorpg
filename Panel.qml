@@ -363,14 +363,24 @@ Item {
   }
 
   // A command has ended: `said` is what to tell the player ("" for nothing), `ok` whether it went through.
+  // `done` and `failed` are made here on root, never in a delegate: state.json is read again before the
+  // exit comes, and a delegate whose model changed is gone, and its functions with it. Whatever they do,
+  // the next command waiting runs.
   function ran(said, ok) {
     var job = action.job
     action.job = null
     currentFile.reload()
     if (said !== "") root.error = { text: said, place: job.place }
-    if (ok && job.done) job.done(action.out)
-    else if (!ok && job.failed) job.failed()
-    root.next()
+    try {
+      if (ok && job.done) job.done(action.out)
+      else if (!ok && job.failed) job.failed()
+    } finally {
+      root.next()
+    }
+  }
+
+  function setPace(pace) {
+    root.run(["gm", "pace", pace], "pace", () => root.ask("pace", ["gm", "pace"]))
   }
 
   // The GM in a terminal of its own (or its window brought forward): what solo did about it is said where it was asked.
@@ -477,6 +487,19 @@ Item {
       root.turn = { status: "error", unsent: watchdog.said,
                     error: (why !== "" ? why.replace(/\.$/, "") + ". " : "") + "The GM didn't start, and your words weren't recorded: try again to send them." }
     }
+  }
+
+  // Home: another campaign picked, or one deleted for good.
+  function useCampaign(path) {
+    root.run(["use", path], "home", () => root.show("table"))
+  }
+
+  function deleteCampaign(path, wasCurrent) {
+    root.run(["delete", path, "--yes"], "home", () => {
+      root.deleting = ""
+      if (wasCurrent) root.bookOpen = false
+      root.show("home")
+    })
   }
 
   // New adventure ---------------------------------------------------------------------
@@ -684,6 +707,10 @@ Item {
       root.banes = 0
       root.spent("attack", "")
     })
+  }
+
+  function parry(weapon) {
+    root.act(["defend", "parry", "--with", weapon].concat(root.useArgs("defend", "parry")), "fight", () => root.spent("defend", "parry"))
   }
 
   // Abilities. Those that go with a roll are switched on first (`riders`) and paid for when it is made.
@@ -1486,7 +1513,7 @@ Item {
                 name: modelData.title
                 selected: modelData.current
                 clickable: root.deleting !== modelData.path
-                onClicked: modelData.current ? root.show("table") : root.run(["use", modelData.path], "home", () => root.show("table"))
+                onClicked: modelData.current ? root.show("table") : root.useCampaign(modelData.path)
 
                 Line { text: modelData.title; font.bold: true }
                 Line {
@@ -1536,14 +1563,7 @@ Item {
                   Act {
                     text: action.job !== null && action.job.place === "home" ? "Deleting…" : "Delete for good"
                     foreground: Commons.Color.urgent
-                    onClicked: {
-                      var wasCurrent = modelData.current
-                      root.run(["delete", modelData.path, "--yes"], "home", () => {
-                        root.deleting = ""
-                        if (wasCurrent) root.bookOpen = false
-                        root.show("home")
-                      })
-                    }
+                    onClicked: root.deleteCampaign(modelData.path, modelData.current)
                   }
                   Choice {
                     text: "Keep it"
@@ -2403,7 +2423,7 @@ Item {
                   tooltipText: modelData.condition === "broken" ? "Broken: mend it first" : ""
                   enabled: modelData.condition !== "broken" && !root.busy
                   opacity: enabled ? 1 : 0.4
-                  onClicked: root.act(["defend", "parry", "--with", modelData.id].concat(root.useArgs("defend", "parry")), "fight", () => root.spent("defend", "parry"))
+                  onClicked: root.parry(modelData.id)
                 }
               }
 
@@ -2993,7 +3013,7 @@ Item {
                     normal: "The GM thinks a little before it answers",
                     careful: "The GM thinks longer about the rules: slower, and more tokens",
                   })[modelData[0]]
-                  onClicked: root.run(["gm", "pace", modelData[0]], "pace", () => root.ask("pace", ["gm", "pace"]))
+                  onClicked: root.setPace(modelData[0])
                 }
               }
             }
