@@ -503,6 +503,20 @@ Item {
                 }
                 Link { objectName: "tryAgain"; text: "try again"; onClicked: book.retry() }
               }
+
+              // What the engine has to tell the player about the turn: a Claude Code too old to be kept from
+              // the player's own settings ran it with them. It stays until a turn says nothing.
+              Text {
+                objectName: "turnNote"
+                visible: (book.turn.note || "") !== ""
+                width: parent.width
+                wrapMode: Text.Wrap
+                textFormat: Text.PlainText
+                font.family: book.theme.mono
+                font.pixelSize: book.theme.small
+                color: book.theme.dim
+                text: book.turn.note || ""
+              }
             }
 
             // A new beat brings the page back down to it, unless the player has scrolled far up to reread.

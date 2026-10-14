@@ -191,6 +191,16 @@ def main(out):
     again, story = book.findChild(QObject, "tryAgain"), book.findChild(QObject, "story")
     if again is None or not again.isVisible() or again.mapToScene(QPointF(again.width(), 0)).x() > story.mapToScene(QPointF(story.width(), 0)).x():
         errors.append("after a long error, \"try again\" is off the page")
+    # A turn's note is the engine's word to the player (a Claude Code that ran with their own settings); most turns have none.
+    note = "This Claude Code's help names neither --restricted nor --setting-sources, so the GM's turn ran with your own Claude Code settings. Update Claude Code."
+    root.setProperty("turn", {"status": "done", "text": "The door holds.", "note": note})
+    shot("turn-note", 300)
+    said = book.findChild(QObject, "turnNote")
+    if said is None or not said.isVisible() or said.property("text") != note:
+        errors.append(f"the Book doesn't show the note a turn left: {said and said.property('text')!r}")
+    root.setProperty("turn", {"status": "done", "text": "The door holds."})
+    if said is not None and said.isVisible():
+        errors.append("the Book still shows a note after a turn without one")
     root.setProperty("turn", {"status": "idle"})
 
     # No default agent: the Book says how to set one up, and what "open the GM" did.
