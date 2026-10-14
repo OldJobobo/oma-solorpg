@@ -9,7 +9,7 @@ import unittest.mock
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
-from helpers import BUNDLED, Dice, DRAGONBANE, RAGNA, RED_TUSK, ROOT, install_rules
+from helpers import BUNDLED, CampaignTest, Dice, DRAGONBANE, RAGNA, RED_TUSK, ROOT, install_rules, leave_the_shell_out
 
 from solo import campaign, cli
 
@@ -21,6 +21,8 @@ class CliCase(unittest.TestCase):
         folder = tempfile.TemporaryDirectory()
         self.addCleanup(folder.cleanup)
         self.tmp = Path(folder.name)
+        # Run as a player at a terminal, with none of the developer's settings, even inside Claude Code or a Book turn.
+        leave_the_shell_out(self)
         env = {
             "XDG_STATE_HOME": str(self.tmp / "state"), "HOME": str(self.tmp / "home"),
             "SOLO_HOME": str(self.tmp / "games"), "SOLO_SEED": "5",
@@ -30,9 +32,6 @@ class CliCase(unittest.TestCase):
         patch = unittest.mock.patch.dict(os.environ, env)
         patch.start()
         self.addCleanup(patch.stop)
-        # Run as a player at a terminal, even when the tests run inside Claude Code or a Book turn.
-        for name in ("CLAUDECODE", "SOLO_BOOK"):
-            os.environ.pop(name, None)
         self.game = str(self.tmp / "game")
         install_rules(self.tmp / "games")
 
@@ -45,6 +44,21 @@ class CliCase(unittest.TestCase):
     def new_game(self):
         code, _, err = self.solo("new", str(RED_TUSK), "--dir", self.game, "--character", str(RAGNA))
         self.assertEqual(code, 0, err)
+
+
+class ShellTest(unittest.TestCase):
+    def test_a_seed_a_trace_or_gm_limits_the_developer_exported_reach_no_test(self):
+        exported = {"SOLO_SEED": "7", "SOLO_TRACE": os.devnull, "SOLO_GM_BUDGET_USD": "3", "SOLO_GM_EFFORT": "high"}
+        with unittest.mock.patch.dict(os.environ, exported):
+            for case in (CampaignTest, CliCase):
+                test = case("setUp")
+                test.setUp()
+                try:
+                    seen = {name: os.environ.get(name) for name in exported}
+                finally:
+                    test.doCleanups()
+                self.assertEqual({name: value for name, value in seen.items() if value == exported[name]}, {}, case.__name__)
+            self.assertEqual({name: os.environ.get(name) for name in exported}, exported)  # and the shell gets them back
 
 
 class CliTest(CliCase):
@@ -181,6 +195,15 @@ class CliTest(CliCase):
         self.assertEqual((code, "the commit isn't valid JSON here: it nests deeper than Python reads" in err), (1, True), err)
         code, _, err = self.solo("-C", self.game, "commit", '{"note": "caf\udce9"}')  # as Python reads b"caf\xe9" from the command line
         self.assertEqual((code, "which the log can't hold" in err), (1, True), err)
+
+    def test_a_traced_command_holding_a_byte_that_isnt_utf8_ends_as_it_would_and_its_line_reads_back(self):
+        self.new_game()
+        trace = self.tmp / "trace.jsonl"
+        os.environ["SOLO_TRACE"] = str(trace)  # as every Book turn sets it
+        code, _, err = self.solo("-C", self.game, "commit", '{"note": "caf\udce9"}')
+        self.assertEqual((code, "which the log can't hold" in err), (1, True), err)
+        line = json.loads(trace.read_text(encoding="utf-8"))
+        self.assertEqual((line["argv"][-1], "which the log can't hold" in line["error"]), ('{"note": "caf\udce9"}', True))
 
     def test_a_push_on_offer_tells_the_gm_how_long_it_lasts(self):
         self.new_game()

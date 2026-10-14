@@ -97,7 +97,9 @@ def _trace(argv, error):
     if path:
         line = {"at": datetime.now().isoformat(timespec="seconds"), "argv": list(sys.argv[1:] if argv is None else argv), "error": error}
         try:
-            with open(path, "a", encoding="utf-8") as trace:
+            # An argument holding a byte that isn't UTF-8 reaches Python as half a character: it is written as the
+            # JSON escape it reads back as (\udce9), so the line is still UTF-8 and the command still ends as it did.
+            with open(path, "a", encoding="utf-8", errors="backslashreplace") as trace:
                 trace.write(json.dumps(line, ensure_ascii=False) + "\n")
         except OSError as error:  # the command already ran; a lost trace line mustn't fail it
             print(f"solo: couldn't write the trace ({error})", file=sys.stderr)
@@ -258,9 +260,18 @@ def _play(root, terminal=False):
         return
     window = _gm_window(root)
     agent = shutil.which("omarchy-agent")
+    named, omarchys = os.environ.get("AGENT", "").strip(), gm.omarchy_agent()
     if window is not None:
         subprocess.run(["hyprctl", "dispatch", "focuswindow", f"address:{window}"], capture_output=True)
         print(f"The GM is already open for {root}; focused its window.")
+    elif named and named != omarchys:
+        # omarchy-agent opens Omarchy's default, not the agent AGENT names. That one is opened here, at a terminal, as
+        # bin/ask-agent opens it; from the Table, or an agent that takes no prompt, the player is told how.
+        if named in ("claude", "codex") and shutil.which(named) and sys.stdin.isatty():
+            os.chdir(root)
+            os.execvpe(named, [named, PLAY_PROMPT], {**os.environ, "PWD": str(root), "SOLO_GM": str(root)})
+        print(f"AGENT names {named}, and omarchy-agent opens Omarchy's default agent{f' ({omarchys})' if omarchys else ''} instead. "
+              f"Open {named} in {root} and give it this:\n\n{PLAY_PROMPT}")
     elif agent is None:
         print(f"omarchy-agent isn't available. Open your coding agent in {root} and ask it to follow the solo-gm skill.")
     else:
@@ -271,7 +282,7 @@ def _play(root, terminal=False):
         )
         if plugged:
             subprocess.run([shell, "shell", "summon", PLUGIN_ID, "{}"], capture_output=True)
-        print(f"Opened the default agent in {root}.")
+        print(f"Opened Omarchy's default agent{f' ({omarchys})' if omarchys else ''} in {root}.")
 
 
 def _gm_window(root):

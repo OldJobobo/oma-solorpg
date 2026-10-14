@@ -337,7 +337,9 @@ def main(out):
     errors += quiet_text_reads(engine, item, panel, out, wait)
     errors += by_keyboard(item, panel, wait)
     errors += adventures_not_ready(item, panel, out, wait)
+    errors += a_system_named_in_capitals(item, panel, work, wait)
     errors += a_campaign_gone(item, panel, out, work, wait)
+    errors += a_state_json_gone(item, panel, work, wait)
     print("bar tooltip:", bar.rootObject().tooltip())
     print("launched:")
     for command in LAUNCHED:
@@ -980,6 +982,40 @@ def adventures_not_ready(item, panel, out, wait):
     return problems
 
 
+def a_system_named_in_capitals(item, panel, work, wait):
+    """An adventure that names its system in other capitals ("Ironsworn") plays on the pack the engine finds by its slug,
+    as `solo new` does: New adventure offers its heroes and Begin, and never tells the player to build Dragonbane."""
+    bell = work / "games" / "adventures" / "bell-cap"
+    shutil.copytree(REPO / "examples" / "bell-under-the-hill", bell)
+    spec = bell / "adventure.toml"
+    spec.write_text(spec.read_text().replace('system = "ironsworn"', 'system = "Ironsworn"')
+                    .replace('title = "The Bell Under the Hill"', 'title = "The Bell, Capitalised"', 1))
+    problems = []
+    try:
+        item.show("new")
+        wait(2500)
+        card = cards(panel.contentItem(), "The Bell, Capitalised")
+        if card is None:
+            return ["New adventure has no card for an adventure that names its system in capitals"]
+        panel.requestActivate()
+        wait(100)
+        card.forceActiveFocus()
+        QTest.keyClick(panel, Qt.Key_Space)
+        wait(2500)
+        if item.property("pickedAdventure") != "bell-cap":
+            return [f"Space on the card of an adventure naming its system in capitals picked {item.property('pickedAdventure')!r}"]
+        begin = button(panel.contentItem(), "Begin")
+        if item.property("system") is None or item.property("preview") is None or begin is None or not begin.isEnabled():
+            problems.append(f"an adventure naming its system \"Ironsworn\" has system {item.property('system')!r}, "
+                            f"preview {item.property('preview')!r} and Begin {begin and begin.isEnabled()!r}")
+        if labelled(panel.contentItem(), "This adventure's system pack isn't installed, or its rules aren't built from your books yet.") is not None:
+            problems.append("an adventure the engine can begin is said to have no system pack")
+    finally:
+        shutil.rmtree(bell)
+        item.setProperty("pickedAdventure", "")
+    return problems
+
+
 def a_campaign_gone(item, panel, out, work, wait):
     """`current` names a campaign whose folder is gone (moved, or deleted by hand): the Table goes Home and says so,
     instead of "Loading the table" for good, whether it was open on the table or opens afterwards."""
@@ -1001,6 +1037,74 @@ def a_campaign_gone(item, panel, out, work, wait):
         wait(1000)
         if item.property("view") != "home":
             problems.append(f"opened on a campaign that is gone, the Table shows {item.property('view')!r}")
+    finally:
+        pointer.write_text(kept)
+        wait(1500)
+    return problems
+
+
+def a_state_json_gone(item, panel, work, wait):
+    """A campaign whose state.json is gone (deleted, or never written: `solo use` makes a campaign current without
+    opening it) is made whole by solo and opens on its table: as the panel opens, while the table is open, and from its
+    card while another campaign is current. One whose start stopped before its first event goes Home and says so in the
+    engine's words, and its card, the current one, takes it there again instead of "Loading the table" for good."""
+    solo = [str(REPO / "bin" / "solo")]
+    pointer = work / "state" / "solo" / "current"
+    kept = pointer.read_text()
+    campaigns = work / "games" / "campaigns"
+    alpha, beta, half = campaigns / "alpha", campaigns / "beta", campaigns / "half"
+    for game, title in ((alpha, "Alpha"), (beta, "Beta")):
+        subprocess.run(solo + ["new", "red-tusk", "--dir", str(game), "--title", title], check=True, capture_output=True)
+    half.mkdir()
+    (half / "campaign.toml").write_text((beta / "campaign.toml").read_text().replace('title = "Beta"', 'title = "Half"'))
+    problems = []
+
+    def on_its_table(game, when):
+        if item.property("view") != "table" or item.property("game") is None or item.property("campaign") != str(game) \
+                or not (game / "state.json").exists():
+            lost = item.findChild(QObject, "lost")
+            problems.append(f"{when}, the Table is on {item.property('view')!r} with game {item.property('game')!r}, "
+                            f"saying {lost and lost.property('visible') and lost.property('text')!r}")
+
+    def home_saying(words, when):
+        lost = item.findChild(QObject, "lost")
+        if item.property("view") != "home" or lost is None or not lost.property("visible") or words not in lost.property("text"):
+            problems.append(f"{when}, the Table is on {item.property('view')!r}, saying {lost and lost.property('text')!r}")
+
+    def click(name):
+        card = cards(panel.contentItem(), name)
+        if card is None:
+            problems.append(f"Home has no card for {name}")
+            return
+        panel.requestActivate()
+        wait(100)
+        card.forceActiveFocus()
+        QTest.keyClick(panel, Qt.Key_Space)
+
+    try:
+        wait(1500)
+        (beta / "state.json").unlink(missing_ok=True)
+        item.close()
+        item.open("{}")
+        wait(3000)
+        on_its_table(beta, "opened on a campaign whose state.json was deleted")
+        (beta / "state.json").unlink(missing_ok=True)
+        wait(3000)
+        on_its_table(beta, "with state.json deleted while the table was open")
+        subprocess.run(solo + ["use", str(alpha)], check=True, capture_output=True)
+        (beta / "state.json").unlink(missing_ok=True)
+        item.show("home")
+        wait(2500)
+        click("Beta")
+        wait(3000)
+        on_its_table(beta, "after a click on the card of another campaign whose state.json is gone")
+        pointer.write_text(f"{half}\n")
+        wait(3000)
+        home_saying("it stopped while it was being created", "on a campaign whose start stopped before its first event")
+        wait(1000)
+        click("Half")
+        wait(3000)
+        home_saying("it stopped while it was being created", "after a click on that campaign's card, the current one")
     finally:
         pointer.write_text(kept)
         wait(1500)

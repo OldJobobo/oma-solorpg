@@ -11,6 +11,7 @@ import subprocess
 import textwrap
 import time
 import unittest.mock
+from pathlib import Path
 
 from helpers import FIXTURES, HRAFNA, IRONSWORN, CampaignTest, Dice
 from test_cli import CliCase
@@ -927,6 +928,38 @@ class DefaultAgent(CliCase):
         with unittest.mock.patch.dict(os.environ, {"AGENT": "claude"}):
             self.assertEqual(gm.why_not(gm.default_agent()), "AGENT names claude, which isn't on PATH: install it, or set AGENT to another, or unset it")
             self.assertIn("claude isn't on PATH: install it, or set AGENT to another, or unset it.", self.ask())
+
+    def test_a_gm_in_a_terminal_is_the_agent_agent_names_not_omarchys_default(self):
+        # omarchy-agent opens Omarchy's default, so it opened claude for a player whose AGENT, and `solo gm agent`, said pi.
+        self.new_game()
+        root = str(Path(self.game).resolve())
+        for name in ("omarchy-agent", "claude", "codex", "pi"):
+            self.install(name)
+        omarchy = self.tmp / "home" / ".config" / "omarchy" / "defaults" / "agent"
+        omarchy.parent.mkdir(parents=True)
+        omarchy.write_text("claude\n")
+
+        def play(agent, at_a_terminal=False):
+            with unittest.mock.patch.dict(os.environ, {"AGENT": agent}), unittest.mock.patch("subprocess.Popen") as popen, \
+                    unittest.mock.patch("os.execvpe") as execvpe, unittest.mock.patch("os.chdir"), \
+                    unittest.mock.patch("sys.stdin") as stdin, contextlib.redirect_stdout(io.StringIO()) as out:
+                stdin.isatty.return_value = at_a_terminal
+                cli._play(Path(root), terminal=True)
+            return popen, execvpe, out.getvalue()
+
+        popen, execvpe, out = play("pi")
+        self.assertEqual((popen.called, execvpe.called), (False, False))
+        self.assertIn(f"AGENT names pi, and omarchy-agent opens Omarchy's default agent (claude) instead. Open pi in {root} and give it this:", out)
+        self.assertIn(cli.PLAY_PROMPT, out)
+        # Claude Code or Codex, at a terminal, opens there in the campaign's folder, as bin/ask-agent opens it.
+        popen, execvpe, out = play("codex", at_a_terminal=True)
+        self.assertFalse(popen.called)
+        command, argv, env = execvpe.call_args.args
+        self.assertEqual((command, argv, env["SOLO_GM"]), ("codex", ["codex", cli.PLAY_PROMPT], root))
+        # The agent Omarchy opens anyway goes through omarchy-agent, and is named.
+        popen, execvpe, out = play("claude")
+        self.assertEqual(popen.call_args.args[0], [str(self.bin / "omarchy-agent"), "--prompt", cli.PLAY_PROMPT])
+        self.assertIn(f"Opened Omarchy's default agent (claude) in {root}.", out)
 
 
 class SkillFacts(CliCase):

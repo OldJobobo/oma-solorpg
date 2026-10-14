@@ -40,8 +40,10 @@ Item {
 
   readonly property string solo: decodeURIComponent(Qt.resolvedUrl("bin/solo").toString().replace(/^file:\/\//, ""))
   readonly property string campaign: currentFile.campaign
-  // The current campaign, when its state.json can't be read: its folder was moved or deleted.
+  // The current campaign, when it can't be opened: its folder was moved or deleted, or (lostWhy, in the engine's
+  // words) its state.json is missing and solo couldn't make it again from the log.
   property string lost: ""
+  property string lostWhy: ""
   property var game: null
   property var library: null
   // The campaign whose card is asking "delete for good?", by folder.
@@ -145,7 +147,9 @@ Item {
 
   readonly property var adventure: library && library.adventures.length > 0
     ? (library.adventures.filter(a => a.id === root.pickedAdventure)[0] || library.adventures[0]) : null
-  readonly property var system: adventure ? library.systems.filter(s => s.id === adventure.system)[0] || null : null
+  // The system pack the engine plays the adventure on (system_id): it finds one by its slug, so an adventure may name it
+  // in other capitals ("Ironsworn" for ironsworn).
+  readonly property var system: adventure ? library.systems.filter(s => s.id === adventure.system_id)[0] || null : null
 
   readonly property color textColor: Commons.Color.popups.text
   // Captions and asides: as quiet as WCAG AA lets small text be (4.5:1), on light themes as on dark. Measured
@@ -299,6 +303,7 @@ Item {
     if (root.fxDying) root.desk(["dying", "off"])
     root.game = null
     root.lost = ""
+    root.lostWhy = ""
     root.fxDying = false
     root.fxFailures = 0
     root.fxDead = false
@@ -458,6 +463,44 @@ Item {
       root.pace = data.pace
     } else if (kind === "watchdog") {
       root.unheard(data)
+    } else if (kind.indexOf("mend:") === 0) {
+      root.mended(kind.slice(5), data !== null)
+    }
+  }
+
+  // The current campaign's state.json can't be read. With its campaign.toml there, the folder is a campaign, and every
+  // solo command makes state.json again from the log: one that only reads is run, and the file's watch brings the game
+  // when it is written. Otherwise, or when that command fails too, the campaign is lost and Home says why. The ask is
+  // the campaign's own kind, so one asked for another campaign meanwhile doesn't take its place.
+  function mend() {
+    root.game = null
+    if (root.campaign === "") return
+    campaignFile.reload()
+    if (campaignFile.there) root.ask("mend:" + root.campaign, ["-C", root.campaign, "state"])
+    else root.lose("")
+  }
+
+  function mended(campaign, ok) {
+    var why = root.queryError.place === "mend:" + campaign ? root.queryError.text : ""
+    if (why !== "") root.queryError = { text: "", place: "" }
+    // Another campaign was picked meanwhile, or the game came back: what was asked is old news.
+    if (!ok && campaign === root.campaign && root.game === null) root.lose(why)
+  }
+
+  // `why` is the engine's sentence, or "" for a folder that is gone.
+  function lose(why) {
+    root.lost = root.campaign
+    root.lostWhy = why
+    if (root.view === "table") root.show("home")
+  }
+
+  // The current campaign's card: its table, with state.json read again when it was lost (put back by hand, say).
+  function reopen() {
+    root.show("table")
+    if (root.lost !== "") {
+      root.lost = ""
+      root.lostWhy = ""
+      stateFile.reload()
     }
   }
 
@@ -499,7 +542,7 @@ Item {
 
   // A pre-made hero or a creation choice belongs to one system, so a different system starts over.
   function chooseAdventure(adventure) {
-    if (!root.adventure || root.adventure.system !== adventure.system) {
+    if (!root.adventure || root.adventure.system_id !== adventure.system_id) {
       root.pickedHero = "random"
       root.picks = {}
     }
@@ -913,25 +956,34 @@ Item {
   }
 
   FileView {
+    id: stateFile
     path: root.campaign !== "" ? root.campaign + "/state.json" : ""
     watchChanges: true
     printErrors: false
     onFileChanged: reload()
     onLoaded: {
       root.lost = ""
+      root.lostWhy = ""
       try {
         root.game = JSON.parse(text())
       } catch (e) {
         console.warn("solo-play", "Ignoring unreadable state.json", e)
       }
     }
-    // solo writes state.json before it makes a campaign current, so one that can't be read is gone:
-    // Home says so, rather than the table loading for good.
-    onLoadFailed: {
-      root.game = null
-      root.lost = root.campaign
-      if (root.view === "table") root.show("home")
-    }
+    // Gone, or never written: `solo use` makes a campaign current without opening it. solo makes it again, or
+    // Home says why it can't, rather than the table loading for good.
+    onLoadFailed: root.mend()
+  }
+
+  // The current campaign's campaign.toml, read only to tell a folder that is gone from a state.json that is.
+  FileView {
+    id: campaignFile
+    property bool there: false
+    path: root.campaign !== "" ? root.campaign + "/campaign.toml" : ""
+    blockLoading: true
+    printErrors: false
+    onLoaded: there = true
+    onLoadFailed: there = false
   }
 
   // The GM's turn in progress, written by `solo gm turn` as it streams.
@@ -1468,7 +1520,8 @@ Item {
               visible: root.lost !== ""
               color: Commons.Color.urgent
               size: Commons.Style.font.bodySmall
-              text: "The campaign in " + root.lost + " can't be read: its folder was moved or deleted. Pick another, or begin a new one."
+              text: root.lostWhy !== "" ? root.lostWhy
+                : "The campaign in " + root.lost + " can't be read: its folder was moved or deleted. Pick another, or begin a new one."
             }
 
             Line {
@@ -1486,7 +1539,7 @@ Item {
                 name: modelData.title
                 selected: modelData.current
                 clickable: root.deleting !== modelData.path
-                onClicked: modelData.current ? root.show("table") : root.run(["use", modelData.path], "home", () => root.show("table"))
+                onClicked: modelData.current ? root.reopen() : root.run(["use", modelData.path], "home", () => root.show("table"))
 
                 Line { text: modelData.title; font.bold: true }
                 Line {
@@ -1628,7 +1681,7 @@ Item {
                   size: Commons.Style.font.caption
                   color: root.dim
                   text: modelData.system_name
-                    || (root.library.systems.filter(s => s.id === modelData.system)[0] || { name: modelData.system || "no system named" }).name
+                    || (root.library.systems.filter(s => s.id === modelData.system_id)[0] || { name: modelData.system || "no system named" }).name
                 }
                 Line {
                   visible: modelData.ready === false && (modelData.why || "") !== ""
@@ -1658,7 +1711,7 @@ Item {
               color: Commons.Color.urgent
               size: Commons.Style.font.bodySmall
               text: root.adventure && root.adventure.why
-                ? root.adventure.why : "This adventure's system pack isn't installed, or its rules aren't built from your books yet (make dragonbane)."
+                ? root.adventure.why : "This adventure's system pack isn't installed, or its rules aren't built from your books yet."
             }
 
             Flow {

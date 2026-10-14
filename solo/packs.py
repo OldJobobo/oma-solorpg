@@ -423,7 +423,7 @@ def format_problems(declared):
             problems.append(f"{where}: format must be a whole number, like format = {FORMAT}")
         elif fmt > FORMAT:
             problems.append(f"{where} is format {fmt} and this engine reads formats up to {FORMAT}: "
-                            "update oma-solorpg (git pull in its folder), or use a copy of the pack written for it")
+                            "update oma-solorpg (Update in its README: fetch, then check out a newer release), or use a copy of the pack written for it")
     return problems
 
 

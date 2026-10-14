@@ -79,10 +79,13 @@ def listing():
     """Everything the panel's Home and New adventure screens show. A pack that doesn't load
     (one half-built from a book) is left out and said why under `problems`, so it never
     takes the rest of the library down with it. Each adventure says whether a campaign can
-    begin on it (`ready`), why not (`why`, a sentence) and the name of the system it plays
-    on (`system_name`), which a pack of names only has before its rules are built."""
+    begin on it (`ready`), why not (`why`, a sentence), the name of the system it plays
+    on (`system_name`), which a pack of names only has before its rules are built, and the
+    id of the system pack its `system` finds (`system_id`), the one `solo new` plays it on:
+    an adventure may name it in other capitals ("Ironsworn" for ironsworn)."""
     systems, problems = [], []
-    # {system id: (its name, or None when it doesn't load; why nothing can begin on it, or "")}
+    # {slug of a system id: (the id; its name, or None when it doesn't load; why nothing can begin on it, or "")}, the first
+    # pack of a slug kept, as find_system takes it
     rules = {}
     for path in _entries("system"):
         try:
@@ -92,12 +95,12 @@ def listing():
             if unreadable:
                 # Written for a newer engine than this one: not offered, and the player is told to update.
                 problems.append(f"system {path.name}: {unreadable[0]}")
-                rules[packs.slug(path.name)] = (system["name"], f"This engine can't read the rules it plays on: {unreadable[0]}.")
+                rules.setdefault(packs.slug(path.name), (path.name, system["name"], f"This engine can't read the rules it plays on: {unreadable[0]}."))
                 continue
             if gaps:
                 # Only a game's names so far: nothing can be played on it until the book's rules are built.
                 problems.append(f"system {path.name}: " + packs.missing_text(system, gaps))
-                rules[packs.slug(path.name)] = (system["name"], packs.missing_text(system, gaps) + ".")
+                rules.setdefault(packs.slug(path.name), (path.name, system["name"], packs.missing_text(system, gaps) + "."))
                 continue
             systems.append({
                 "id": path.name,
@@ -110,10 +113,10 @@ def listing():
                     for cid, sheet in system["characters"].items()
                 ],
             })
-            rules[packs.slug(path.name)] = (system["name"], "")
+            rules.setdefault(packs.slug(path.name), (path.name, system["name"], ""))
         except SoloError as error:
             problems.append(f"system {path.name}: {error}")
-            rules[packs.slug(path.name)] = (None, f"The system pack it plays on, {path.name}, doesn't load: {str(error).rstrip('.')}.")
+            rules.setdefault(packs.slug(path.name), (path.name, None, f"The system pack it plays on, {path.name}, doesn't load: {str(error).rstrip('.')}."))
     adventures = []
     for path in _entries("adventure"):
         try:
@@ -131,8 +134,8 @@ def listing():
             problems.append(f"adventure {path.name}: still being written (draft = true in adventure.toml)")
             continue
         named = spec.get("system")
-        system_name, why = (rules.get(packs.slug(named), (None, f"It plays on {named}, and there is no system pack by that name.")) if named
-                            else (None, "It doesn't say which system it plays on (system = \"...\" in its adventure.toml)."))
+        system_id, system_name, why = (rules.get(packs.slug(named), (None, None, f"It plays on {named}, and there is no system pack by that name.")) if named
+                                       else (None, None, "It doesn't say which system it plays on (system = \"...\" in its adventure.toml)."))
         adventures.append({
             "id": path.name,
             "title": spec.get("title", path.name),
@@ -146,6 +149,7 @@ def listing():
             "ready": not why,
             "why": why,
             "system_name": system_name,
+            "system_id": system_id,
         })
     now = current()
     folders = sorted(p for p in (home() / "campaigns").glob("*") if (p / "campaign.toml").exists())
@@ -223,11 +227,13 @@ def _find(kind, name):
 
 
 def _entries(kind):
+    """Every pack of this kind, the player's first. A folder whose name starts with a dot is never one: `solo import book`
+    builds a pack in .<name>.building beside where it goes, and a build killed before it finished can leave that behind."""
     mine, bundled, markers = _KINDS[kind]
     found, seen = [], set()
     for folder in (home() / mine, REPO / bundled):
         for path in sorted(folder.iterdir()) if folder.is_dir() else []:
-            if path.is_dir() and path.name not in seen and any((path / m).exists() for m in markers):
+            if path.is_dir() and not path.name.startswith(".") and path.name not in seen and any((path / m).exists() for m in markers):
                 seen.add(path.name)
                 found.append(path)
     return found

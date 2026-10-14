@@ -205,7 +205,7 @@ Every command is a process of its own (the Table runs one per click, the GM one 
 - `$XDG_CACHE_HOME/solo/toml-<python>.marshal` (default `~/.cache/solo`): every pack's TOML files as parsed, each kept while its file keeps its size and modification time. A file changed in the last two seconds is parsed afresh, so a second save in the same clock tick is never missed. A Dragonbane campaign reads some four hundred files a command; parsing them was a third of its time.
 - `<campaign>/.solo/replay.marshal`: the state and the chronology after the log's first events, so a long campaign doesn't replay its whole log for every command. It stands while those events are the same bytes (their crc32) and the packs and the engine are the ones it was made from, and it is written again once the log has grown fifty events past it. `solo rebuild` replays from the log alone.
 
-`solo library` prints everything the Home and New adventure screens need: systems (name, family, creation tables, pre-made heroes), adventures (id, title, system, summary), campaigns (path, title, hero, scene, last played, current), and `problems`: packs of the player's own that didn't load, and why (a half-built pack is left out, never the whole library).
+`solo library` prints everything the Home and New adventure screens need: systems (name, family, creation tables, pre-made heroes), adventures (id, title, system and the id of the pack it names, found by its slug as `solo new` finds it, summary), campaigns (path, title, hero, scene, last played, current), and `problems`: packs of the player's own that didn't load, and why (a half-built pack is left out, never the whole library).
 
 ### Character creation
 
@@ -268,7 +268,7 @@ A rest is a `rest` event whose changes go through the commit validator, so track
 
 ### Opening the GM
 
-`solo play` links `solo` and the skills if they are missing (the same idempotent links as `solo setup`, so a plugin installed with `omarchy plugin add` works on first click). If a GM is already running for the campaign, it focuses that window. Otherwise it refreshes the campaign's agent files (AGENTS.md and CLAUDE.md are rewritten, `.claude/settings.json` is merged) and launches the default agent in the campaign folder with one fixed prompt: run `solo resume` and do what it says. The launched process carries `SOLO_GM=<campaign>`, and the engine finds that process's window through Hyprland. With no `omarchy-agent`, it says how to start one by hand.
+`solo play` links `solo` and the skills if they are missing (the same idempotent links as `solo setup`, so a plugin installed with `omarchy plugin add` works on first click). If a GM is already running for the campaign, it focuses that window. Otherwise it refreshes the campaign's agent files (AGENTS.md and CLAUDE.md are rewritten, `.claude/settings.json` is merged) and launches Omarchy's default agent (`omarchy-agent`) in the campaign folder with one fixed prompt: run `solo resume` and do what it says. The launched process carries `SOLO_GM=<campaign>`, and the engine finds that process's window through Hyprland. With no `omarchy-agent`, it says how to start one by hand. `omarchy-agent` opens only Omarchy's default, so when `AGENT` names another agent, `solo play` opens that one itself, as `bin/ask-agent` does: Claude Code or Codex in the terminal it was run from, and otherwise (from the Table, or another agent) it says how, with the prompt to give it.
 
 ## Turn protocol
 
