@@ -351,16 +351,10 @@ def _preflight(skill_dirs):
         lines.append(("ok", "hyprctl, for the desktop effects"))
     else:
         lines.append(("optional", "hyprctl not found, so no desktop effects: they need Hyprland, and the game plays without them"))
+    # In the Book's own words (`solo gm agent`), so the two never disagree about the agent or what to do.
     agent = gm.default_agent()
-    if not agent:
-        lines.append(("todo", "no default agent: choose Claude Code or Codex with omarchy default agent, or set AGENT=claude"))
-    elif not shutil.which(agent):
-        lines.append(("todo", f"the default agent is {agent}, and {agent} isn't on PATH: install it, or choose another with omarchy default agent"))
-    elif gm.supported(agent):
-        lines.append(("ok", f"the GM is {agent}, which the Book runs"))
-    else:
-        lines.append(("todo", f"the default agent is {agent}, which the Book can't run: it opens in a terminal instead (solo play --terminal), "
-                              "or choose Claude Code or Codex with omarchy default agent"))
+    why = gm.why_not(agent)
+    lines.append(("ok", f"the GM is {agent}, which the Book runs") if why is None else ("todo", why))
     if not skill_dirs:
         lines.append(("todo", "no agent found (claude, codex or pi), so no skills were linked: install one and run make install again"))
     if importlib.util.find_spec("pymupdf"):

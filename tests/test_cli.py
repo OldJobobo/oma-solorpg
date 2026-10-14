@@ -359,7 +359,7 @@ class CliTest(CliCase):
         self.assertIn("ok       Python 3.", out)
         self.assertIn("todo     omarchy and omarchy-shell not found", out)
         self.assertIn("optional hyprctl not found", out)
-        self.assertIn("todo     the default agent is claude, and claude isn't on PATH", out)
+        self.assertIn("todo     AGENT names claude, which isn't on PATH: install it, or set AGENT to another, or unset it", out)
         self.assertIn("no agent found (claude, codex or pi), so no skills were linked", out)
         self.assertIn("PyMuPDF", out)
         self.assertIn("Enable it with: omarchy plugin enable", out)
@@ -376,7 +376,7 @@ class CliTest(CliCase):
 
     def test_setup_tells_an_agent_the_book_cant_run_from_one_it_can(self):
         os.environ["AGENT"] = "opencode"
-        self.assertIn("the default agent is opencode, which the Book can't run", self.setup_on("opencode"))
+        self.assertIn("AGENT names opencode, which can't write in the Book yet", self.setup_on("opencode"))
 
     def test_solo_on_a_python_older_than_3_11_says_so_in_a_sentence(self):
         import runpy

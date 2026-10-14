@@ -121,14 +121,21 @@ def default_agent():
 
 
 def why_not(agent):
-    """Why the Book can't run `agent` as its GM, in a sentence for the player, or None when it can."""
+    """Why the Book can't run `agent` as its GM, in a sentence for the player, or None when it can. `solo setup`
+    says the same, and bin/ask-agent the same about PATH."""
     if not agent:
         return "No coding agent was found: install Claude Code or Codex, or choose one with: omarchy default agent <name>"
-    elif not supported(agent):
-        return f"Your default agent ({agent}) can't write in the Book yet. Open the GM in a terminal instead."
-    elif not shutil.which(agent):
-        return f"Your default agent ({agent}) isn't on PATH: install it, or choose another with: omarchy default agent <name>"
-    return None
+    # AGENT outranks Omarchy's default, so a player who set it is told so, and how to choose again.
+    if os.environ.get("AGENT", "").strip() == agent:
+        named, other = f"AGENT names {agent}, which", "set AGENT to another, or unset it"
+    else:
+        named, other = f"Your default agent ({agent})", "choose another with: omarchy default agent <name>"
+    installed = shutil.which(agent)
+    if supported(agent):
+        return None if installed else f"{named} isn't on PATH: install it, or {other}"
+    elif installed:
+        return f"{named} can't write in the Book yet. Open the GM in a terminal instead (solo play --terminal), or {other}"
+    return f"{named} can't write in the Book yet, and isn't on PATH: install it to play in a terminal (solo play --terminal), or {other}"
 
 
 def supported(agent):

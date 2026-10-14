@@ -47,7 +47,7 @@ The GM:
 - A turn ended by the quiet limit, the clock or Stop is charged an estimate (the session's dearest turn, or 50 cents) instead of nothing. Only an agent's own lost-session messages start a fresh session.
 - Stop works while the agent is still starting, and only ever ends this campaign's agent. After a stopped turn the GM is told its reply never reached the player, and its rolls aren't passed off as the player's.
 - GM narration that says "commit", "the player", "narrated" or "your first solo journey" no longer disappears from the Book. Commands Claude Code's permissions refused show in `solo report`, `solo review` and play tests.
-- The Book and the make targets pick the agent the same way (`AGENT`, then Omarchy's default, then claude, then codex), and `solo gm agent` says why when there is none. `SOLO_AGENT` is now `AGENT`.
+- The Book and the make targets pick the agent the same way (`AGENT`, then Omarchy's default, read past blank lines, then claude, then codex), and `solo gm agent` says why when there is none or it can't run, in the words `solo setup` uses too, naming `AGENT` when that chose it. `SOLO_AGENT` is now `AGENT`.
 - A desktop border that couldn't be restored no longer stays red after later effects, and a screen shader that couldn't be restored is put back by the next restore instead of lost for good; an omen's words can't be read as notify-send options. `SOLO_GM_*` limits ignore zero, negative and non-numeric values.
 - `tests/gm_eval/compare.py` compares scenario by scenario with a permutation test corrected for the number of metrics; play tests record the model the GM ran on and keep their report when the judge can't start.
 

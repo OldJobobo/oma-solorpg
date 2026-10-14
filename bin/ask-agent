@@ -12,8 +12,12 @@ set -eu
 folder=$1
 prompt=$2
 agent=${AGENT:-}
-if [ -z "$agent" ] && [ -r "$HOME/.config/omarchy/defaults/agent" ]; then
-  agent=$(awk '{ print $1; exit }' "$HOME/.config/omarchy/defaults/agent")
+other="choose another with: omarchy default agent <name>"
+if [ -n "$agent" ]; then
+  other="set AGENT to another, or unset it"
+elif [ -r "$HOME/.config/omarchy/defaults/agent" ]; then
+  # The first word of the file, as solo reads it: past blank lines, and without a Windows line end.
+  agent=$(awk '{ gsub(/\r/, "") } NF { print $1; exit }' "$HOME/.config/omarchy/defaults/agent")
 fi
 if [ -z "$agent" ]; then
   for found in claude codex; do
@@ -30,6 +34,8 @@ case "$agent" in
     if command -v "$agent" >/dev/null 2>&1; then
       exec "$agent" "$prompt"
     fi
+    printf "\n%s isn't on PATH: install it, or %s.\nThen open your agent in %s and give it this:\n\n%s\n\n" "$agent" "$other" "$folder" "$prompt"
+    exit 0
     ;;
   "")
     printf '\nNo coding agent was found: install Claude Code or Codex, or choose one with: omarchy default agent <name>.\nThen open it in %s and give it this:\n\n%s\n\n' "$folder" "$prompt"

@@ -837,6 +837,29 @@ class DefaultAgent(CliCase):
         self.assertIn("can't write in the Book yet", shown["why"])
 
 
+    def test_setup_the_book_and_ask_agent_name_the_same_agent_and_the_same_reason(self):
+        # One Omarchy file named different agents in solo and bin/ask-agent, and each gave its own reason it couldn't run.
+        self.install("claude")
+        self.install("codex")
+        omarchy = self.tmp / "home" / ".config" / "omarchy" / "defaults" / "agent"
+        omarchy.parent.mkdir(parents=True)
+        for written in ("\ncodex\n", "codex\r\n"):
+            with self.subTest(repr(written)):
+                omarchy.write_text(written)
+                self.assertEqual((gm.default_agent(), self.ask()), ("codex", "codex Build the pack."))
+        # Both reasons when both hold, for the Book as for setup.
+        omarchy.write_text("opencode\n")
+        why = gm.why_not(gm.default_agent())
+        self.assertEqual(why, "Your default agent (opencode) can't write in the Book yet, and isn't on PATH: install it to play in a "
+                              "terminal (solo play --terminal), or choose another with: omarchy default agent <name>")
+        self.assertIn(f"todo     {why}", cli._preflight([]))
+        # AGENT outranks Omarchy's default, so it is what the player is told to change; ask-agent says PATH too.
+        (self.bin / "claude").unlink()
+        with unittest.mock.patch.dict(os.environ, {"AGENT": "claude"}):
+            self.assertEqual(gm.why_not(gm.default_agent()), "AGENT names claude, which isn't on PATH: install it, or set AGENT to another, or unset it")
+            self.assertIn("claude isn't on PATH: install it, or set AGENT to another, or unset it.", self.ask())
+
+
 class SkillFacts(CliCase):
     """What the GM's skill and solo's help say a command does, it does."""
 
