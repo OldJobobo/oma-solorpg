@@ -475,6 +475,23 @@ class TornLogTest(CampaignTest):
             pass  # a command that only reads
         self.assertEqual(json.loads((self.root / "state.json").read_text())["seq"], seq)
 
+    def test_a_state_json_made_by_another_engine_or_other_packs_is_made_again_by_any_command(self):
+        with self.session() as c:
+            c.check("sneaking", rng=Dice(12))
+            c.commit({"note": "the guard sees her"})
+        path = self.root / "state.json"
+        old = json.loads(path.read_text())
+        old.pop("made_from", None)  # as an engine from before a commit let the roll stand wrote it: the Table offered the push
+        old["last_check"]["outcome"]["pushable"] = True
+        path.write_text(json.dumps(old, indent=1))
+        with self.session():
+            pass  # a command that only reads (solo state, solo log)
+        made = json.loads(path.read_text())
+        self.assertFalse(made["last_check"]["outcome"]["pushable"])
+        with unittest.mock.patch.object(campaign, "_replay_key", return_value=["the packs, edited"]), self.session():
+            pass
+        self.assertNotEqual(json.loads(path.read_text())["made_from"], made["made_from"])
+
     def test_a_state_json_the_disk_refuses_fails_no_command_and_is_caught_up_later(self):
         full = OSError(errno.ENOSPC, "No space left on device")
         with unittest.mock.patch.object(campaign.Campaign, "save", side_effect=full), unittest.mock.patch("sys.stderr", new_callable=io.StringIO) as err:
@@ -533,6 +550,7 @@ class ReplayTest(CampaignTest):
         with self.session() as c:
             self.assertEqual(c.events[-1]["type"], "check")  # a roll is never taken back
             rebuilt = campaign.snapshot(c.system, campaign.fold(c.system, c.adventure, c.events), c.adventure)
+        self.assertEqual(saved.pop("made_from"), c.made_from)  # beside the fold, what made it (see session)
         self.assertEqual(saved, json.loads(json.dumps(rebuilt)))
 
     def test_an_adventure_edited_since_still_opens_and_says_what_broke(self):
@@ -610,6 +628,7 @@ class FoldTest(CampaignTest):
         saved = json.loads((self.root / "state.json").read_text())
         with self.session() as c:
             rebuilt = campaign.snapshot(c.system, campaign.fold(c.system, c.adventure, c.events), c.adventure)
+        self.assertEqual(saved.pop("made_from"), c.made_from)  # beside the fold, what made it (see session)
         self.assertEqual(saved, json.loads(json.dumps(rebuilt)))
 
 

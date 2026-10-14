@@ -258,16 +258,16 @@ def character_sheet(data, system):
 def session(root, new=False):
     """Open a campaign under an exclusive lock, so the agent and the panel never write
     at the same time. state.json is rewritten on the way out if anything changed, or if it
-    was behind the log, and a command that went through keeps the replay for the next one
+    was behind the log or made by another engine or other packs, and a command that went through keeps the replay for the next one
     when it has fallen behind. `new`: the campaign being created, whose log is still empty."""
     root = Path(root)
     with open(root / ".lock", "w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         campaign = Campaign(root, new=new)
         count = len(campaign.events)
-        # A crash between an event's write and state.json's leaves state.json behind the log:
-        # any command brings it up to date, one that only reads too.
-        behind = _saved_seq(root / "state.json") != campaign.state["seq"]
+        # A crash between an event's write and state.json's leaves state.json behind the log, and an update
+        # to the engine or the packs leaves it made by the old ones: any command brings it up to date, one that only reads too.
+        behind = _saved(root / "state.json") != (campaign.state["seq"], campaign.made_from)
         _OPEN.append(campaign)
         try:
             yield campaign
@@ -314,6 +314,9 @@ class Campaign:
         self.opened = len(self.events)
         # The error of a write to the log that failed: the command stops there, and nothing more is written.
         self.unwritten = None
+        # What the state is made from (this Python, the engine, the packs as read), as a kept replay and state.json record it.
+        self.key = _replay_key(self)
+        self.made_from = zlib.crc32(json.dumps(self.key).encode())
         # The state after every event, and the chronology: from the replay kept for a long
         # campaign while it stands, and the events since, else from the start.
         kept = _read_kept(self, log) if len(self.events) >= _KEEP_EVERY else None
@@ -364,7 +367,7 @@ class Campaign:
         """Keep the replay for the next command, once the log has grown _KEEP_EVERY events past the one kept."""
         if len(self.events) - self.kept >= _KEEP_EVERY:
             log = (self.root / "events.jsonl").read_bytes()
-            kept = {"key": _replay_key(self), "count": len(self.events), "size": len(log), "crc": zlib.crc32(log), "state": self.state,
+            kept = {"key": self.key, "count": len(self.events), "size": len(log), "crc": zlib.crc32(log), "state": self.state,
                     "entries": [{k: v for k, v in entry.items() if k != "event"} for entry in self.entries]}
             path = self.root / ".solo" / "replay.marshal"
             try:
@@ -395,6 +398,8 @@ class Campaign:
             reason = error if isinstance(error, SoloError) else f"{type(error).__name__}: {error}"
             print(f"solo: state.json is written without what the packs add to it ({reason}); solo validate says what to fix", file=sys.stderr)
             view = {k: v for k, v in self.state.items() if k not in _GM_ONLY}
+        # First, with the seq, what it was made from: a command reads both to see whether state.json is behind (see session).
+        view = {"seq": view["seq"], "made_from": self.made_from, **view}
         temporary.write_text(json.dumps(view, ensure_ascii=False, indent=1), encoding="utf-8")
         os.replace(temporary, path)
 
@@ -4125,14 +4130,14 @@ def _write_line(path, line):
         os.close(fd)
 
 
-def _saved_seq(path):
-    """The seq state.json was written at (the first thing in it), or None when there is none to read."""
+def _saved(path):
+    """(the seq state.json was written at, what it was made from): the first things in it. None when there are none to read."""
     try:
         with open(path, "rb") as saved:
-            found = re.match(rb'\{\s*"seq":\s*(\d+)', saved.read(64))
+            found = re.match(rb'\{\s*"seq":\s*(\d+),\s*"made_from":\s*(\d+)', saved.read(96))
     except OSError:
         return None
-    return int(found.group(1)) if found else None
+    return (int(found.group(1)), int(found.group(2))) if found else None
 
 
 def _read_kept(c, log):
@@ -4143,7 +4148,7 @@ def _read_kept(c, log):
     except (OSError, EOFError, ValueError, TypeError):
         return None
     if not (isinstance(kept, dict) and kept.get("count", len(c.events) + 1) <= len(c.events) and kept.get("size", len(log) + 1) <= len(log)
-            and zlib.crc32(memoryview(log)[:kept["size"]]) == kept.get("crc") and kept.get("key") == _replay_key(c)):
+            and zlib.crc32(memoryview(log)[:kept["size"]]) == kept.get("crc") and kept.get("key") == c.key):
         return None
     for entry, event in zip(kept["entries"], c.events):
         entry["event"] = event
