@@ -137,9 +137,9 @@ From a terminal instead:
 ```bash
 solo new red-tusk                                          # random hero, folder under ~/Games/solo/campaigns
 solo new red-tusk --character "dwarf fighter" --name Brokk # lock some choices
-solo new red-tusk --character ragna --play                 # the pre-made hero, and open the GM
+solo new red-tusk --character ragna --play                 # the pre-made hero, and open the Book
 solo new red-tusk --character ~/Games/solo/campaigns/red-tusk-ragna  # a living hero from an earlier campaign, rested
-solo character elf mage --seed 7                           # just look at a hero (JSON)
+solo character elf mage --system dragonbane --seed 7       # just look at a hero (JSON)
 ```
 
 ## The Book

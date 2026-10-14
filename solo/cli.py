@@ -1900,7 +1900,7 @@ def _parser(only=None):
     command("library", cmd_library, "systems, adventures and campaigns (JSON)")
     sub = command("character", cmd_character, "roll or build a hero without starting a campaign (JSON)")
     sub.add_argument("words", nargs="*", help="creation choices like: dwarf fighter old; or a pre-made hero's id")
-    sub.add_argument("--system", help="system pack name or folder (default: the only one)")
+    sub.add_argument("--system", help="system pack name or folder (default: the one --adventure names)")
     sub.add_argument("--adventure", help="also offer this adventure's own pre-made heroes")
     sub.add_argument("--name", help="the hero's name")
     sub.add_argument("--seed", type=int, help="rebuild the same random hero")

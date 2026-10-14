@@ -105,6 +105,16 @@ class CliTest(CliCase):
         self.assertIn('text: "Open the Book"', (ROOT / "Panel.qml").read_text(encoding="utf-8"))
         self.assertNotIn("Open the GM", out)
 
+    def test_the_readmes_look_at_a_hero_runs_as_written(self):
+        # Two systems are bundled, so a bare `solo character` can't pick one.
+        import shlex
+        lines = [line.split("#")[0] for line in (ROOT / "README.md").read_text(encoding="utf-8").splitlines() if line.startswith("solo character ")]
+        self.assertTrue(lines)
+        for line in lines:
+            code, out, err = self.solo(*shlex.split(line)[1:])
+            self.assertEqual(code, 0, f"{line}: {err}")
+            self.assertEqual(json.loads(out)["info"]["kin"], "Elf")
+
     def test_the_preview_is_the_hero_that_begins(self):
         code, out, _ = self.solo("character", "elf", "mage", "--seed", "11", "--name", "Ilyra", "--system", "dragonbane")
         preview = json.loads(out)
