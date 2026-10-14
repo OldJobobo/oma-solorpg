@@ -384,8 +384,9 @@ Item {
   }
 
   // The GM in a terminal of its own (or its window brought forward): what solo did about it is said where it was asked.
+  // That is its last line; the ones before it are for a terminal (each link `solo play` made for solo and the skills).
   function openTerminal(place) {
-    root.run(["play", root.campaign, "--terminal"], place, said => root.notice = { text: said.trim(), place: place })
+    root.run(["play", root.campaign, "--terminal"], place, said => root.notice = { text: said.trim().split("\n").pop(), place: place })
   }
 
   function act(args, place, done, failed) {

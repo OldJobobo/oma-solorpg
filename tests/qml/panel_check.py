@@ -537,10 +537,14 @@ def no_agent_yet(item, work, wait):
     wait(100)
     if hint.property("text") != "Omarchy has no default agent yet.":
         problems.append(f"the Book doesn't give the engine's reason for having no GM: {hint.property('text')!r}")
+    # solo's link went (a first run, an agent installed since): `solo play` links it again, and says so to a terminal.
+    (work / "home" / ".local" / "bin" / "solo").unlink(missing_ok=True)
     QMetaObject.invokeMethod(book, "openTerminal")
     wait(2500)
     if not book.property("actionNote") or book.property("actionError"):
         problems.append(f"open the GM said nothing of what it did: {book.property('actionNote')!r} {book.property('actionError')!r}")
+    if "\n" in book.property("actionNote") or "linked" in book.property("actionNote"):
+        problems.append(f"open the GM says more than what it did: {book.property('actionNote')!r}")
     item.setProperty("agentInfo", {"agent": "claude", "book": True})
     return problems
 
