@@ -205,12 +205,15 @@ Item {
 
   // A turn writes turn.json as soon as it starts, and the Book waits on it. One that never
   // got that far (another turn holds the lock, words too long for the environment, a
-  // campaign folder gone) is sent with nobody to hear: if turn.json hasn't changed a few
-  // seconds after a send, `solo gm status` says what is going on, and the Book stops waiting.
+  // campaign folder gone) is sent with nobody to hear: if turn.json hasn't changed a while
+  // after a send, `solo gm status` says what is going on, and the Book stops waiting. A
+  // healthy turn can take five seconds to begin, ending an agent an earlier turn left
+  // running (gm.py's _reap), so the wait is twice that.
   Timer {
     id: watchdog
+    objectName: "watchdog"
     property string said: ""
-    interval: 5000
+    interval: 10000
     onTriggered: root.ask("watchdog", ["-C", root.campaign, "gm", "status"], "watchdog")
   }
 

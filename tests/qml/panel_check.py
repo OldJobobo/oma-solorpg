@@ -452,26 +452,31 @@ def an_x_card(item, panel, out, work, wait):
 
 
 def a_turn_that_never_starts(item, panel, out, work, wait):
-    """Words sent to the GM whose turn never starts (turn.json doesn't change: here nothing runs it): a few seconds on
-    the Book stops waiting, says so and frees the composer, and "try again" sends the words again. A turn that does
-    start is left alone."""
+    """Words sent to the GM whose turn never starts (turn.json doesn't change: here nothing runs it): a while on the
+    Book stops waiting, says so and frees the composer, and "try again" sends the words again. A turn slow to start
+    (one that ends an agent an earlier turn left running can take five seconds) isn't taken for one that never will,
+    and a turn that does start is left alone."""
     problems = []
     game = Path((work / "state" / "solo" / "current").read_text().strip())
     book = item.findChild(QObject, "book")
+    patience = item.findChild(QObject, "watchdog").property("interval")
     item.setProperty("turn", {"status": "idle"})
     item.speak("I knock on the door.")
     if not book.property("busy"):
         problems.append("the Book doesn't wait for the GM after a send")
     wait(7000)
+    if not book.property("busy"):
+        problems.append(f"7 s after a send, while a slow turn could still be starting, the Book gave up: {item.property('turn').toVariant()}")
+    wait(patience - 7000 + 2000)
     turn = item.property("turn").toVariant()
     if book.property("busy") or turn.get("status") != "error" or "didn't start" not in turn.get("error", ""):
-        problems.append(f"the Book is still waiting, or doesn't say why, 7 s after a send nobody heard: {turn}")
+        problems.append(f"the Book is still waiting, or doesn't say why, {patience / 1000 + 2:.0f} s after a send nobody heard: {turn}")
     LAUNCHED.clear()
     QMetaObject.invokeMethod(book, "retry")
     if item.property("turn").toVariant().get("player") != "I knock on the door." or not any("gm" in c and "turn" in c for c in LAUNCHED):
         problems.append(f"try again didn't send the words again: {item.property('turn').toVariant()}, {LAUNCHED}")
     (game / ".solo" / "turn.json").write_text('{"status": "thinking", "player": "I knock on the door.", "doing": "rolling the dice"}')
-    wait(7000)
+    wait(patience + 2000)
     turn = item.property("turn").toVariant()
     if turn.get("status") != "thinking" or turn.get("doing") != "rolling the dice":
         problems.append(f"a turn that started was taken for one that didn't: {turn}")
