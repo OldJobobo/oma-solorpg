@@ -48,8 +48,20 @@ Rectangle {
           textFormat: Text.PlainText
           font.family: codex.theme.mono
           font.pixelSize: codex.theme.body
-          color: closeMouse.containsMouse ? codex.theme.text : codex.theme.dim
+          color: closeMouse.containsMouse || activeFocus ? codex.theme.text : codex.theme.dim
           text: "×"
+          // A button to the keyboard (Tab to it, Enter or Space) and to a screen reader.
+          objectName: "codexClose"
+          activeFocusOnTab: true
+          Keys.onPressed: event => {
+            if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
+              codex.closed()
+              event.accepted = true
+            }
+          }
+          Accessible.role: Accessible.Button
+          Accessible.name: "Close the codex"
+          Accessible.onPressAction: codex.closed()
           MouseArea { id: closeMouse; anchors.fill: parent; anchors.margins: -8; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: codex.closed() }
         }
       }

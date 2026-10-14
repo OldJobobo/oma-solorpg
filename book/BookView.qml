@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Effects
 import QtQuick.Layouts
 import "Md.js" as Md
+import "Common.js" as Common
 
 // The Book: where the story is read and told. The GM's narration streams in as it is
 // written, every roll stops the page for a moment, scenes open with their name, and the
@@ -17,10 +18,12 @@ Item {
   property var agent: ({ agent: "", book: true })
   property string campaign: ""     // the campaign's folder: another one starts the Book over
   property string actionError: ""  // why the last thing clicked here (light a torch) was refused
+  property string actionNote: ""   // what the last thing clicked here said it did (open the GM)
   property bool active: true       // the window is showing
   property bool codexOpen: false
   property bool epitaphDismissed: false
   property bool cutting: false     // the X-card panel is open
+  property bool cutSent: false     // a cut is on its way, and the table hasn't said yet how it went
   property int seen: -1            // the newest story seq already shown (no replays on load)
   readonly property bool epitaphShown: dead && !epitaphDismissed
 
@@ -45,8 +48,23 @@ Item {
   // The story column's width: a line of about 75 characters, however wide the window.
   readonly property real measure: theme.prose * 38
 
+  // A window that is hidden hides nothing inside it, and the plugin stays loaded with the
+  // Book shut. So the page itself is hidden with its window: every animation on it runs only
+  // while its item is visible, and a closed Book takes no time at all. (Loaded only while open,
+  // the page would lose what the player was writing, where they had scrolled and a gravestone
+  // already dismissed.)
+  visible: active
+
   onGameChanged: react()
-  onActiveChanged: if (active && game) titleCard.show(game.scene_title, game.title)
+  onActiveChanged: {
+    if (active && game) {
+      titleCard.show(game.scene_title, game.title)
+    } else if (!active) {  // a moment under way ends with the window, rather than play on unseen
+      dice.end()
+      titleCard.dismiss()
+      hurtOnLanding = false
+    }
+  }
   // Another campaign's story is numbered from its own start: what this one had seen means
   // nothing there, and would hold back its dice and scene cards until it caught up.
   onCampaignChanged: {
@@ -54,11 +72,15 @@ Item {
     epitaphDismissed = false
     codexOpen = false
     cutting = false
+    cutSent = false
     storyModel.clear()
     storyNewest = -1
   }
   // A new hero took up the story: the next death gets its gravestone too.
   onDeadChanged: if (!dead) epitaphDismissed = false
+  // The gravestone had the keyboard while it was up. Gone (put away, another campaign, a new
+  // hero), it goes back to the composer: an epilogue, or the next words to the GM.
+  onEpitaphShownChanged: if (!epitaphShown) input.forceActiveFocus()
 
   // New story beats since the last look: a new scene gets its title card, a new roll its
   // moment. The first load only remembers where the story is. It reads game.story, not
@@ -75,6 +97,9 @@ Item {
     }
     var fresh = beats.filter(b => b.seq > seen)
     seen = Math.max(seen, newest)
+    if (fresh.length) storyView.follow()
+    // Shut, the Book keeps its place and nothing more: no moment plays to an empty room.
+    if (!active) return
     var scene = fresh.filter(b => b.kind === "scene").pop()
     var roll = fresh.filter(b => b.kind === "roll" || b.kind === "voice").pop()
     var hurt = fresh.some(b => b.kind === "hurt" && (b.dealt || 0) > 0)
@@ -88,7 +113,6 @@ Item {
     if (hurt) strike("hurt")
     else if (!dice.visible && roll && roll.outcome && (roll.outcome.dragon || roll.outcome.demon))
       strike(roll.outcome.dragon ? "dragon" : "demon")
-    if (fresh.length) storyView.follow()
   }
 
   // A blow that came with a roll waits for the dice to land.
@@ -116,7 +140,13 @@ Item {
         storyModel.insert(0, { seq: beats[i].seq, json: JSON.stringify(beats[i]), opens: beats[i].kind === "gm" && opensScene(beats, i) })
       }
     }
-    while (storyModel.count > beats.length) storyModel.remove(storyModel.count - 1)
+    // A beat that left the story leaves the page, wherever it was: a message the player cut
+    // can have rolls and words after it.
+    var kept = {}
+    beats.forEach(b => kept[b.seq] = true)
+    for (var row = storyModel.count - 1; row >= 0; row--) {
+      if (!kept[storyModel.get(row).seq]) storyModel.remove(row)
+    }
     storyNewest = Math.max(storyNewest, newest)
   }
 
@@ -129,25 +159,29 @@ Item {
     return false
   }
 
-  function elapsed(seconds) {
-    var day = Math.floor(seconds / 86400) + 1
-    var rest = seconds % 86400
-    var pad = n => (n < 10 ? "0" : "") + n
-    return "Day " + day + ", " + pad(Math.floor(rest / 3600)) + ":" + pad(Math.floor(rest % 3600 / 60))
-  }
-
   Rectangle {
     anchors.fill: parent
     color: book.theme.background
   }
 
+  // A link of the page's own: the mouse, Tab and Enter or Space, and a screen reader all reach it.
   component Link: Text {
     id: link
     signal clicked()
     textFormat: Text.PlainText
     font.family: book.theme.mono
     font.pixelSize: book.theme.small
-    color: !enabled ? book.theme.faint : linkMouse.containsMouse ? book.theme.accent : book.theme.dim
+    color: !enabled ? book.theme.faint : linkMouse.containsMouse || activeFocus ? book.theme.accent : book.theme.dim
+    activeFocusOnTab: true
+    Keys.onPressed: event => {
+      if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
+        link.clicked()
+        event.accepted = true
+      }
+    }
+    Accessible.role: Accessible.Link
+    Accessible.name: text
+    Accessible.onPressAction: link.clicked()
     MouseArea {
       id: linkMouse
       anchors.fill: parent
@@ -273,7 +307,7 @@ Item {
           }
 
           Text {
-            visible: book.actionError !== ""
+            visible: book.actionError !== "" && !cutPanel.visible
             width: side.width
             wrapMode: Text.Wrap
             textFormat: Text.PlainText
@@ -281,6 +315,17 @@ Item {
             font.pixelSize: book.theme.small
             color: book.theme.urgent
             text: book.actionError
+          }
+
+          Text {
+            visible: book.actionNote !== "" && book.agent.book !== false
+            width: side.width
+            wrapMode: Text.Wrap
+            textFormat: Text.PlainText
+            font.family: book.theme.mono
+            font.pixelSize: book.theme.small
+            color: book.theme.dim
+            text: book.actionNote
           }
 
           Item { width: 1; height: book.theme.body * 0.4 }
@@ -348,7 +393,7 @@ Item {
               font.family: book.theme.mono
               font.pixelSize: book.theme.small
               color: book.theme.dim
-              text: book.game ? book.game.title + " · " + book.elapsed(book.game.time) : ""
+              text: book.game ? book.game.title + " · " + Common.elapsed(book.game.time) : ""
             }
           }
 
@@ -372,6 +417,7 @@ Item {
 
           ListView {
             id: storyView
+            objectName: "story"
             anchors.fill: parent
             clip: true
             spacing: 0
@@ -426,7 +472,7 @@ Item {
                 Timer {
                   interval: 16
                   repeat: true
-                  running: live.shown < live.full.length
+                  running: live.shown < live.full.length && live.visible
                   onTriggered: live.shown = Math.min(live.full.length, live.shown + Math.max(1, Math.ceil((live.full.length - live.shown) / 40)))
                 }
               }
@@ -443,17 +489,36 @@ Item {
                 Timer { interval: 420; repeat: true; running: quill.visible; onTriggered: quill.dots = (quill.dots + 1) % 3 }
               }
 
-              Row {
+              // What went wrong, and "try again" after it: under it when the words fill the line, so a long error
+              // never pushes the link off the page.
+              Flow {
                 visible: book.turn.status === "error" || book.turn.status === "stopped"
+                width: parent.width
                 spacing: book.theme.body
                 Text {
+                  width: Math.min(implicitWidth, parent.width)
+                  wrapMode: Text.Wrap
                   textFormat: Text.PlainText
                   font.family: book.theme.mono
                   font.pixelSize: book.theme.small
                   color: book.turn.status === "error" ? book.theme.urgent : book.theme.dim
                   text: book.turn.status === "error" ? book.turn.error || "The GM ran into a problem." : "Stopped."
                 }
-                Link { text: "try again"; onClicked: book.retry() }
+                Link { objectName: "tryAgain"; text: "try again"; onClicked: book.retry() }
+              }
+
+              // What the engine has to tell the player about the turn: a Claude Code too old to be kept from
+              // the player's own settings ran it with them. It stays until a turn says nothing.
+              Text {
+                objectName: "turnNote"
+                visible: (book.turn.note || "") !== ""
+                width: parent.width
+                wrapMode: Text.Wrap
+                textFormat: Text.PlainText
+                font.family: book.theme.mono
+                font.pixelSize: book.theme.small
+                color: book.theme.dim
+                text: book.turn.note || ""
               }
             }
 
@@ -527,23 +592,49 @@ Item {
                 visible: cutInput.text === ""
                 textFormat: Text.PlainText
                 font: cutInput.font
-                color: book.theme.faint
+                color: book.theme.dim
                 text: "what to avoid (optional)"
               }
             }
 
             RowLayout {
               spacing: book.theme.body
-              Link { objectName: "cutNow"; text: "cut"; onClicked: book.cutIt("") }
-              Link { objectName: "cutLine"; text: "cut, and never again"; enabled: cutInput.text.trim() !== ""; onClicked: book.cutIt("line") }
-              Link { objectName: "cutVeil"; text: "cut, off screen only"; enabled: cutInput.text.trim() !== ""; onClicked: book.cutIt("veil") }
+              Link { objectName: "cutNow"; text: "cut"; enabled: !book.cutSent; onClicked: book.cutIt("") }
+              Link { objectName: "cutLine"; text: "cut, and never again"; enabled: !book.cutSent && cutInput.text.trim() !== ""; onClicked: book.cutIt("line") }
+              Link { objectName: "cutVeil"; text: "cut, off screen only"; enabled: !book.cutSent && cutInput.text.trim() !== ""; onClicked: book.cutIt("veil") }
               Item { Layout.fillWidth: true }
               Link { text: "keep it"; onClicked: book.cutting = false }
+            }
+
+            // Why the cut didn't go through: the panel stays open with the words, to try again.
+            Text {
+              Layout.fillWidth: true
+              visible: book.actionError !== ""
+              wrapMode: Text.Wrap
+              textFormat: Text.PlainText
+              font.family: book.theme.mono
+              font.pixelSize: book.theme.small
+              color: book.theme.urgent
+              text: book.actionError
             }
           }
         }
 
         // Writing to the GM ------------------------------------------------------------------
+
+        // A GM that could write here but can't start: the agent Omarchy names isn't installed. The engine
+        // says so, and the player reads it before writing, not after the turn fails.
+        Text {
+          objectName: "gmWhy"
+          Layout.fillWidth: true
+          visible: book.agent.book !== false && (book.agent.why || "") !== ""
+          wrapMode: Text.Wrap
+          textFormat: Text.PlainText
+          font.family: book.theme.mono
+          font.pixelSize: book.theme.small
+          color: book.theme.dim
+          text: book.agent.why || ""
+        }
 
         Rectangle {
           Layout.fillWidth: true
@@ -569,6 +660,7 @@ Item {
 
               TextEdit {
                 id: input
+                objectName: "composer"
                 width: inputFlick.width
                 wrapMode: TextEdit.Wrap
                 textFormat: TextEdit.PlainText
@@ -588,7 +680,7 @@ Item {
                   visible: input.text === "" && !input.activeFocus || input.text === "" && book.busy
                   textFormat: Text.PlainText
                   font: input.font
-                  color: book.theme.faint
+                  color: book.theme.dim
                   text: book.dead ? "An epilogue, if you want one…" : book.busy ? "The GM is writing…" : "What do you do?"
                 }
               }
@@ -603,17 +695,41 @@ Item {
           }
         }
 
-        Row {
+        // No GM that writes here: one in a window of its own, or none set up yet (the engine
+        // says why, when it can).
+        ColumnLayout {
+          Layout.fillWidth: true
           visible: book.agent.book === false
-          spacing: book.theme.body
+          spacing: book.theme.body * 0.4
+
+          RowLayout {
+            Layout.fillWidth: true
+            spacing: book.theme.body
+            Text {
+              objectName: "gmHint"
+              Layout.fillWidth: true
+              wrapMode: Text.Wrap
+              textFormat: Text.PlainText
+              font.family: book.theme.mono
+              font.pixelSize: book.theme.small
+              color: book.theme.dim
+              text: !book.agent.agent
+                ? book.agent.why || "No default agent is set, so no GM can write here. Choose one with: omarchy default agent <name> (claude or codex), then open the Book again."
+                : "Your GM (" + book.agent.agent + ") writes in its own window; the story shows here as it is recorded."
+            }
+            Link { Layout.alignment: Qt.AlignTop; text: "open the GM"; onClicked: book.openTerminal() }
+          }
+
           Text {
+            Layout.fillWidth: true
+            visible: book.actionNote !== ""
+            wrapMode: Text.Wrap
             textFormat: Text.PlainText
             font.family: book.theme.mono
             font.pixelSize: book.theme.small
-            color: book.theme.dim
-            text: (book.agent.agent ? "Your GM (" + book.agent.agent + ")" : "Your GM") + " writes in its own window; the story shows here as it is recorded."
+            color: book.theme.text
+            text: book.actionNote
           }
-          Link { text: "open the GM"; onClicked: book.openTerminal() }
         }
       }
     }
@@ -629,11 +745,23 @@ Item {
   }
 
   // The X-card: what the player typed is a note to the GM, or a line (never in the story) or a veil (off screen).
+  // One cut at a time: a second click while the first is on its way would cut the message before it.
   function cutIt(as) {
+    if (cutSent) return
     var text = cutInput.text.trim()
+    cutSent = true
     cut(text, as === "line" ? text : "", as === "veil" ? text : "")
-    cutInput.text = ""
-    cutting = false
+  }
+
+  // The table's answer to a cut. Done, the panel closes and the composer has the keyboard
+  // again; refused, it stays open with the player's words and says why (actionError).
+  function cutDone(ok) {
+    cutSent = false
+    if (ok) {
+      cutInput.text = ""
+      cutting = false
+      input.forceActiveFocus()  // back to writing to the GM
+    }
   }
 
   function submit() {
@@ -656,6 +784,7 @@ Item {
   }
 
   Epitaph {
+    objectName: "epitaph"
     anchors.fill: parent
     visible: book.epitaphShown
     theme: book.theme

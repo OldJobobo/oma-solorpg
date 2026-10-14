@@ -1,13 +1,13 @@
 import QtQuick
-import qs.Commons
+import qs.Commons as Commons
 
 // Stand-in for omarchy-shell's WidgetButton.
 Item {
   id: button
   property var bar: null
   property string text: ""
-  property color foreground: Color.foreground
-  property color activeColor: Color.urgent
+  property color foreground: Commons.Color.foreground
+  property color activeColor: Commons.Color.urgent
   property bool active: false
   property bool dimmed: false
   property string tooltipText: ""

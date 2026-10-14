@@ -16,11 +16,31 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
-from PySide6.QtCore import QMetaObject, QObject, Q_ARG, QTimer, QUrl, SIGNAL  # noqa: E402
-from PySide6.QtGui import QGuiApplication  # noqa: E402
-from PySide6.QtQuick import QQuickView  # noqa: E402
+from PySide6.QtCore import QMetaObject, QObject, QPoint, QPointF, Q_ARG, Q_RETURN_ARG, Qt, QTimer, QUrl, SIGNAL  # noqa: E402
+from PySide6.QtGui import QAccessible, QGuiApplication  # noqa: E402
+from PySide6.QtQuick import QQuickItem, QQuickView  # noqa: E402
+from PySide6.QtTest import QTest  # noqa: E402
 
 import scenario  # noqa: E402
+
+
+def running(item):
+    """The timers, animations and particle systems running under `item`, by class name. They hang on the tree of
+    objects, a Repeater's items only on the tree of items, so both are walked."""
+    import shiboken6
+    found, seen, todo = [], set(), [item]
+    while todo:
+        thing = todo.pop()
+        address = shiboken6.getCppPointer(thing)[0]
+        if address in seen:
+            continue
+        seen.add(address)
+        if thing.metaObject().indexOfProperty("running") >= 0 and thing.property("running"):
+            found.append(thing.metaObject().className())
+        todo.extend(thing.children())
+        if isinstance(thing, QQuickItem):
+            todo.extend(thing.childItems())
+    return found
 
 
 def main(out):
@@ -29,9 +49,11 @@ def main(out):
     data = Path(tempfile.mkdtemp())
     scenario.play(data)
     scenario.play_ironsworn(data)
+    scenario.play_cut(data)
     fight = json.loads((data / "fight.json").read_text())
     dead = json.loads((data / "dead.json").read_text())
     ironsworn = json.loads((data / "ironsworn.json").read_text())
+    uncut, cut = (json.loads((data / f"{name}.json").read_text()) for name in ("uncut", "cut"))
 
     app = QGuiApplication(sys.argv)
     view = QQuickView()
@@ -58,10 +80,39 @@ def main(out):
         view.grabWindow().save(str(out / f"{name}.png"))
         print("wrote", out / f"{name}.png")
 
+    title = root.findChild(QObject, "titleCard")
+
+    def settle():  # an open Book names the scene first, on opening and with a campaign it hasn't shown
+        for _ in range(40):
+            wait(150)
+            if not title.property("visible"):
+                break
+
     root.setProperty("game", fight)
-    shot("fight", 700)
+    settle()
+    shot("fight", 300)
+
+    # Shut, the Book runs nothing (the plugin stays loaded, so it would run all day); open, the page lives again.
+    if not running(book):
+        errors.append("nothing runs on the open Book's page: the check below would prove nothing")
+    book.setProperty("active", False)
+    wait(300)
+    if running(book):
+        errors.append(f"the shut Book still runs {running(book)}")
+    book.setProperty("active", True)
+    settle()
     book.setProperty("codexOpen", True)
     shot("codex")
+    # Its × is a button to the keyboard and to a screen reader.
+    close = book.findChild(QObject, "codexClose")
+    face = QAccessible.queryAccessibleInterface(close) if close is not None else None
+    if face is None or face.role() != QAccessible.Button or face.text(QAccessible.Name) != "Close the codex":
+        errors.append(f"a screen reader doesn't know the codex's × as a button that closes it: {face and (face.role(), face.text(QAccessible.Name))}")
+    if close is not None:
+        close.forceActiveFocus()
+        QTest.keyClick(view, Qt.Key_Space)
+    if book.property("codexOpen"):
+        errors.append("Space on the codex's × didn't close it")
     book.setProperty("codexOpen", False)
 
     roll = [b for b in fight["story"] if b["kind"] == "roll"][0]
@@ -77,11 +128,17 @@ def main(out):
     shot("dice-dragon", 2700)
     wait(5000)
 
-    title = root.findChild(QObject, "titleCard")
     QMetaObject.invokeMethod(title, "show", Q_ARG("QVariant", "Chieftain's Hall"), Q_ARG("QVariant", "The Red Tusk Hall"))
     shot("title-decrypting", 250)
     shot("title", 1400)
-    wait(7000)
+    QTest.mouseClick(view, Qt.LeftButton, Qt.NoModifier, QPoint(640, 430))  # a click puts it away at once
+    wait(50)
+    if title.property("visible"):
+        errors.append("a click on the scene's name didn't put it away at once")
+    QMetaObject.invokeMethod(title, "show", Q_ARG("QVariant", ""), Q_ARG("QVariant", "The Red Tusk Hall"))
+    wait(300)
+    if title.property("visible"):
+        errors.append("a scene with no name got an empty card")
 
     root.setProperty("turn", {"status": "writing", "doing": "rolling the dice", "player": "I shove the cultist into the fire pit.",
                               "text": "You drive your shoulder into the robed man and he stumbles back, arms wheeling, into the embers. "
@@ -94,12 +151,27 @@ def main(out):
     QObject.connect(book, SIGNAL("cut(QString,QString,QString)"), lambda note, line, veil: cuts.append((note, line, veil)))
     if not book.property("canCut"):
         errors.append("the cut link should show when the GM has spoken and isn't writing")
-    book.setProperty("cutting", True)
+    book.findChild(QObject, "cutLink").forceActiveFocus()
+    QTest.keyClick(view, Qt.Key_Space)  # the keyboard reaches the Book's links
+    if not book.property("cutting"):
+        errors.append("Space on the cut link didn't open the X-card")
     shot("cut", 500)
-    book.findChild(QObject, "cutInput").setProperty("text", "no fire")
+    cut_input = book.findChild(QObject, "cutInput")
+    cut_input.setProperty("text", "no fire")
     QMetaObject.invokeMethod(book, "cutIt", Q_ARG("QVariant", "line"))
-    if cuts != [("no fire", "no fire", "")] or book.property("cutting"):
-        errors.append(f"the X-card gave {cuts}, and the panel {'stayed open' if book.property('cutting') else 'closed'}")
+    QMetaObject.invokeMethod(book, "cutIt", Q_ARG("QVariant", "line"))  # a second click while the first is on its way
+    if cuts != [("no fire", "no fire", "")] or not book.property("cutting"):
+        errors.append(f"the X-card gave {cuts}, and the panel {'stayed open' if book.property('cutting') else 'closed'} before the table answered")
+    QMetaObject.invokeMethod(book, "cutDone", Q_ARG("QVariant", False))  # the table couldn't cut it
+    if not book.property("cutting") or cut_input.property("text") != "no fire":
+        errors.append("a cut the table refused closed the panel, or lost the words")
+    QMetaObject.invokeMethod(book, "cutIt", Q_ARG("QVariant", "line"))
+    QMetaObject.invokeMethod(book, "cutDone", Q_ARG("QVariant", True))
+    if len(cuts) != 2 or book.property("cutting") or cut_input.property("text") != "":
+        errors.append(f"a cut tried again gave {cuts}, and the panel {'stayed open' if book.property('cutting') else 'closed'}")
+    composer = book.findChild(QObject, "composer")
+    if composer is None or not composer.property("activeFocus"):
+        errors.append("after the cut the composer doesn't have the keyboard back")
     root.setProperty("turn", {"status": "writing", "text": "..."})
     if book.property("canCut"):
         errors.append("nothing to cut while the GM is writing")
@@ -108,6 +180,15 @@ def main(out):
     root.setProperty("game", dead)
     shot("dead", 700)
     shot("gravestone", 7000)  # the last death roll has settled, the stone has risen
+    # While it is up the gravestone has the keyboard, so nothing typed goes to the page under it. Escape puts it away
+    # as a click does, and the composer has the keyboard again, for an epilogue.
+    stone = book.findChild(QObject, "epitaph")
+    face = QAccessible.queryAccessibleInterface(stone) if stone is not None else None
+    if stone is None or not stone.property("activeFocus") or face is None or face.role() != QAccessible.Button:
+        errors.append(f"the gravestone isn't a button with the keyboard: {stone and stone.property('activeFocus')}, {face and face.role()}")
+    QTest.keyClick(view, Qt.Key_Escape)
+    if book.property("epitaphShown") or not book.findChild(QObject, "composer").property("activeFocus"):
+        errors.append(f"Escape didn't put the gravestone away for the composer (shown {book.property('epitaphShown')})")
 
     # Another campaign: the Book starts over with it, rather than holding its dice and scene
     # cards back until its story passes the last one's.
@@ -116,9 +197,42 @@ def main(out):
     wait(300)
     if book.property("seen") != fight["story"][-1]["seq"]:
         errors.append(f"the Book kept the last campaign's place: seen {book.property('seen')}")
+    settle()
     book.setProperty("actionError", "Ragna isn't carrying a torch")
     shot("refused", 700)
     book.setProperty("actionError", "")
+
+    # Words the GM never got: the reason can run past the end of a line, and "try again" stays on the page after it.
+    root.setProperty("turn", {"status": "error", "unsent": "I knock on the door.",
+                              "error": "no campaign at /home/you/Games/solo/campaigns/red-tusk (moved or deleted?). "
+                                       "The GM didn't start, and your words weren't recorded: try again to send them."})
+    shot("unsent", 500)
+    again, story = book.findChild(QObject, "tryAgain"), book.findChild(QObject, "story")
+    if again is None or not again.isVisible() or again.mapToScene(QPointF(again.width(), 0)).x() > story.mapToScene(QPointF(story.width(), 0)).x():
+        errors.append("after a long error, \"try again\" is off the page")
+    # A turn's note is the engine's word to the player (a Claude Code that ran with their own settings); most turns have none.
+    note = "This Claude Code's help names neither --restricted nor --setting-sources, so the GM's turn ran with your own Claude Code settings. Update Claude Code."
+    root.setProperty("turn", {"status": "done", "text": "The door holds.", "note": note})
+    shot("turn-note", 300)
+    said = book.findChild(QObject, "turnNote")
+    if said is None or not said.isVisible() or said.property("text") != note:
+        errors.append(f"the Book doesn't show the note a turn left: {said and said.property('text')!r}")
+    root.setProperty("turn", {"status": "done", "text": "The door holds."})
+    if said is not None and said.isVisible():
+        errors.append("the Book still shows a note after a turn without one")
+    root.setProperty("turn", {"status": "idle"})
+
+    # No default agent: the Book says how to set one up, and what "open the GM" did.
+    book.setProperty("agent", {"agent": "", "book": False})
+    book.setProperty("actionNote", "omarchy-agent isn't available. Open your coding agent in ~/Games/solo/campaigns/red-tusk "
+                                   "and ask it to follow the solo-gm skill.")
+    shot("no-agent", 500)
+    book.setProperty("actionNote", "")
+    # One the Book could run, that isn't installed: the composer stays, with the reason over it.
+    book.setProperty("agent", {"agent": "claude", "book": True,
+                               "why": "Your default agent (claude) isn't on PATH: install it, or choose another with: omarchy default agent <name>"})
+    shot("agent-missing", 500)
+    book.setProperty("agent", {"agent": "", "book": True})
 
     # A dice pool (Year Zero): every die that scores is lit, a d10 shows its two digits.
     pool = {"kind": "roll", "label": "Heavy Machinery", "outcome": {
@@ -156,6 +270,16 @@ def main(out):
         "progress": 8, "score": 8, "challenge": [6, 6], "cancelled": [], "beaten": 2, "hit": "strong_hit", "success": True, "match": True}}
     QMetaObject.invokeMethod(dice, "show", Q_ARG("QVariant", progress))
     shot("dice-progress", 2800)
+
+    # A cut message goes from the middle of the story (the player rolled after it): that one leaves the page, and only that one.
+    book.setProperty("campaign", "/games/cut")
+    root.setProperty("game", uncut)
+    wait(300)
+    root.setProperty("game", cut)
+    wait(300)
+    page = QMetaObject.invokeMethod(root, "page", Q_RETURN_ARG("QVariant")).toVariant()
+    if page != [f"{b['seq']}:{b['kind']}" for b in reversed(cut["story"])]:
+        errors.append(f"after the cut the page holds {page}, the story {[(b['seq'], b['kind']) for b in cut['story']]}")
     if errors:
         print("QML warnings:\n" + "\n".join(errors))
         return 2

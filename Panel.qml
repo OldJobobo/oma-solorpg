@@ -3,9 +3,11 @@ import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
-import qs.Commons
+// Qualified: from Qt 6.12 QtQuick has a Color of its own, which a bare Color would mean.
+import qs.Commons as Commons
 import qs.Ui
 import "book"
+import "book/Common.js" as Common
 
 // oma-solorpg on the desktop: two windows and a watcher.
 //
@@ -37,15 +39,25 @@ Item {
   property bool opened: false
 
   readonly property string solo: decodeURIComponent(Qt.resolvedUrl("bin/solo").toString().replace(/^file:\/\//, ""))
-  readonly property string stateDir: (Quickshell.env("XDG_STATE_HOME") || Quickshell.env("HOME") + "/.local/state") + "/solo"
-  property string campaign: ""
+  readonly property string campaign: currentFile.campaign
+  // The current campaign, when its state.json can't be read: its folder was moved or deleted.
+  property string lost: ""
   property var game: null
   property var library: null
   // The campaign whose card is asking "delete for good?", by folder.
   property string deleting: ""
   property string view: "home"
-  property string error: ""
-  property string errorAt: ""
+  // What went wrong and where to say it, {text, place}, one for each source: the commands
+  // that change something (and a click refused before one ran), and the ones that only
+  // read. A read that fails never covers what a command said, nor the other way round.
+  property var error: ({ text: "", place: "" })
+  property var queryError: ({ text: "", place: "" })
+  // What a command said it did, for the few whose words are for the player (opening the GM).
+  property var notice: ({ text: "", place: "" })
+  // Commands that change something, waiting for the one running to end. While any runs or
+  // waits the Table is busy, and its buttons that run one wait too.
+  property var queue: []
+  readonly property bool busy: action.job !== null || queue.length > 0
 
   // New adventure. The seed makes the preview exactly the hero that Begin creates.
   property string pickedAdventure: ""
@@ -112,7 +124,7 @@ Item {
   readonly property var momentum: labels.momentum || null
   readonly property var progressSpec: labels.progress || null
   readonly property var lastCheck: game && game.last_check ? game.last_check : null
-  readonly property bool canPush: !dead && lastCheck !== null && lastCheck.type === "check" && lastCheck.outcome.pushable === true
+  readonly property bool canPush: !dead && !dying && lastCheck !== null && lastCheck.type === "check" && lastCheck.outcome.pushable === true
   // Bindings update in no fixed order when state.json reloads, so pc is checked
   // here even though canPush already implies a game.
   readonly property var pushChoices: canPush && pc && labels.push === "condition"
@@ -135,8 +147,10 @@ Item {
     ? (library.adventures.filter(a => a.id === root.pickedAdventure)[0] || library.adventures[0]) : null
   readonly property var system: adventure ? library.systems.filter(s => s.id === adventure.system)[0] || null : null
 
-  readonly property color textColor: Color.popups.text
-  readonly property color dim: Qt.darker(Color.popups.text, 1.6)
+  readonly property color textColor: Commons.Color.popups.text
+  // Captions and asides: as quiet as WCAG AA lets small text be (4.5:1), on light themes as on dark. Measured
+  // on the Book's panels (theme.surface, a shade toward the text), where it reads least; on the page it reads more.
+  readonly property color dim: Common.fade(Commons.Color.popups.text, theme.surface, 4.6, 0.5)
   readonly property color faint: Qt.rgba(textColor.r, textColor.g, textColor.b, 0.15)
 
   function open(payloadJson) {
@@ -148,16 +162,16 @@ Item {
     }
     currentFile.reload()
     root.opened = true
-    root.show(payload.view || (root.campaign !== "" ? "table" : "home"))
+    root.show(payload.view || (root.campaign !== "" && root.lost === "" ? "table" : "home"))
     if (payload.book) root.openBook()
   }
 
   function openBook() {
     if (root.campaign !== "") {
-      root.ask("agent", ["-C", root.campaign, "gm", "agent"])
+      root.ask("agent", ["-C", root.campaign, "gm", "agent"], "book")
       // A turn that died unfinished (the machine went down) is written down as stopped,
       // so the Book doesn't wait on it; turn.json brings the news.
-      root.ask("turn", ["-C", root.campaign, "gm", "status"])
+      root.ask("turn", ["-C", root.campaign, "gm", "status"], "book")
       root.bookOpen = true
     }
   }
@@ -186,6 +200,25 @@ Item {
     speaker.command = ["sh", "-c", 'printf %s "$SOLO_SAY" | exec "$@"', "speak", root.solo, "-C", root.campaign, "gm", "turn", "--", "-"]
     speaker.environment = { SOLO_SAY: text }
     speaker.startDetached()
+    watchdog.said = text
+    watchdog.waiting = true
+    watchdog.restart()
+  }
+
+  // A turn writes turn.json as soon as it starts, and the Book waits on it. One that never
+  // got that far (another turn holds the lock, words too long for the environment, a
+  // campaign folder gone) is sent with nobody to hear: if turn.json hasn't changed a while
+  // after a send, `solo gm status` says what is going on, and the Book stops waiting. A
+  // healthy turn can take five seconds to begin, ending an agent an earlier turn left
+  // running (gm.py's _reap), so the wait is twice that.
+  Timer {
+    id: watchdog
+    objectName: "watchdog"
+    property string said: ""
+    // Words sent, and turn.json not changed since. Once it has, it is newer than any status asked for before.
+    property bool waiting: false
+    interval: 10000
+    onTriggered: root.ask("watchdog", ["-C", root.campaign, "gm", "status"], "watchdog")
   }
 
   // New beats in the story set off the desktop. The dice rattle and land with the Book's
@@ -265,6 +298,7 @@ Item {
   onCampaignChanged: {
     if (root.fxDying) root.desk(["dying", "off"])
     root.game = null
+    root.lost = ""
     root.fxDying = false
     root.fxFailures = 0
     root.fxDead = false
@@ -272,6 +306,8 @@ Item {
     root.fxSeen = -1
     root.fxSaid = -1
     root.turn = { status: "idle" }
+    watchdog.stop()
+    watchdog.waiting = false
   }
   onBookOpenChanged: {
     if (root.bookOpen) {
@@ -286,7 +322,7 @@ Item {
   Component.onCompleted: {
     Quickshell.execDetached([root.solo, "desk", "restore"])
     root.ask("effects", ["desk", "settings"])
-    root.ask("sounds", ["desk", "sound"])
+    root.ask("sounds", ["desk", "sound"], "effects")
     root.ask("pace", ["gm", "pace"])
   }
 
@@ -297,41 +333,107 @@ Item {
   function show(view) {
     root.view = view
     root.deleting = ""
-    root.error = ""
+    root.error = { text: "", place: "" }
+    root.queryError = { text: "", place: "" }
+    root.notice = { text: "", place: "" }
     if (view !== "table") {
       root.ask("library", ["library"])
     }
   }
 
-  // Commands that change something. `done` runs after a success.
-  function run(args, place, done) {
-    if (!action.running) {
-      root.error = ""
-      root.errorAt = place
-      action.done = done || null
-      action.command = [root.solo].concat(args)
+  // Commands that change something, one at a time and in the order asked for: one asked for
+  // while another runs (from the Book, or Enter in a field) waits its turn, never lost.
+  // `done` runs after a success, with what the command printed; `failed` after anything else.
+  function run(args, place, done, failed) {
+    root.error = { text: "", place: "" }
+    root.notice = { text: "", place: "" }
+    root.queue = root.queue.concat([{ args: [root.solo].concat(args), place: place, done: done || null, failed: failed || null }])
+    root.next()
+  }
+
+  function next() {
+    if (action.job === null && root.queue.length > 0) {
+      action.job = root.queue[0]
+      root.queue = root.queue.slice(1)
+      action.said = ""
+      action.out = ""
+      action.command = action.job.args
       action.running = true
     }
   }
 
-  function act(args, place, done) {
+  // A command has ended: `said` is what to tell the player ("" for nothing), `ok` whether it went through.
+  function ran(said, ok) {
+    var job = action.job
+    action.job = null
+    currentFile.reload()
+    if (said !== "") root.error = { text: said, place: job.place }
+    if (ok && job.done) job.done(action.out)
+    else if (!ok && job.failed) job.failed()
+    root.next()
+  }
+
+  // The GM in a terminal of its own (or its window brought forward): what solo did about it is said where it was asked.
+  function openTerminal(place) {
+    root.run(["play", root.campaign, "--terminal"], place, said => root.notice = { text: said.trim(), place: place })
+  }
+
+  function act(args, place, done, failed) {
     if (root.campaign !== "") {
-      root.run(["-C", root.campaign].concat(args), place, done)
+      root.run(["-C", root.campaign].concat(args), place, done, failed)
+    } else {
+      root.error = { text: "No campaign is open.", place: place }
+      if (failed) failed()
     }
   }
 
   // Commands that only read (JSON on stdout). One runs at a time; the latest request
-  // of each kind waits for its turn.
-  function ask(kind, args) {
-    if (query.running) {
+  // of each kind waits for its turn. What goes wrong shows at `place`, the kind unless said.
+  function ask(kind, args, place) {
+    if (query.job !== null) {
       var pending = Object.assign({}, query.pending)
-      pending[kind] = args
+      pending[kind] = { args: args, place: place || kind }
       query.pending = pending
     } else {
-      query.kind = kind
+      query.out = ""
+      query.said = ""
+      query.job = { kind: kind, place: place || kind }
       query.command = [root.solo].concat(args)
       query.running = true
     }
+  }
+
+  // A read has ended (`said` as for ran()), and the next one waiting starts.
+  function answered(said) {
+    var job = query.job
+    query.job = null
+    if (said !== "") root.queryError = { text: said, place: job.place }
+    else if (root.queryError.place === job.place) root.queryError = { text: "", place: "" }
+    root.received(job.kind, query.out)
+    var kinds = Object.keys(query.pending)
+    if (kinds.length > 0) {
+      var next = query.pending[kinds[0]]
+      var rest = Object.assign({}, query.pending)
+      delete rest[kinds[0]]
+      query.pending = rest
+      root.ask(kinds[0], next.args, next.place)
+    }
+  }
+
+  // What solo said on stderr, as the player reads it; with nothing said, a failing exit code.
+  function trouble(said, code) {
+    var text = said.trim().replace(/^solo: /, "")
+    return text !== "" ? text : code !== 0 ? "solo stopped without saying why (exit code " + code + ")." : ""
+  }
+
+  // A process that never started has no exit: Quickshell only lets `running` go false.
+  function unstarted() {
+    return "The plugin couldn't run " + root.solo + ". Is the plugin's folder complete?"
+  }
+
+  // What went wrong at a place, from either source.
+  function errorsAt(place) {
+    return [root.error, root.queryError].filter(e => e.place === place && e.text !== "").map(e => e.text).join("\n")
   }
 
   function received(kind, text) {
@@ -354,6 +456,26 @@ Item {
       root.sounds = data
     } else if (kind === "pace" && data) {
       root.pace = data.pace
+    } else if (kind === "watchdog") {
+      root.unheard(data)
+    }
+  }
+
+  // What `solo gm status` said when a turn didn't start. One running after all (another
+  // turn, say) is the Book's to show; otherwise the words were never heard, and "try again"
+  // sends them again.
+  function unheard(status) {
+    var why = root.queryError.place === "watchdog" ? root.queryError.text : ""
+    if (why !== "") root.queryError = { text: "", place: "" }
+    // The turn began while `solo gm status` ran (or another campaign was picked): what it
+    // said is older than turn.json, and a turn under way would be called unsent.
+    if (!watchdog.waiting) return
+    watchdog.waiting = false
+    if (status && (status.status === "thinking" || status.status === "writing")) {
+      root.turn = status
+    } else if (root.turn.status === "thinking") {
+      root.turn = { status: "error", unsent: watchdog.said,
+                    error: (why !== "" ? why.replace(/\.$/, "") + ". " : "") + "The GM didn't start, and your words weren't recorded: try again to send them." }
     }
   }
 
@@ -415,7 +537,6 @@ Item {
     root.split(root.veils).forEach(veil => args.push("--veil=" + veil))
     root.run(args, "begin", () => {
       root.heroName = ""
-      nameField.text = ""
       root.show("table")
     })
   }
@@ -496,8 +617,7 @@ Item {
   function startTrack() {
     var name = trackName.text.trim()
     if (name === "") {
-      root.error = "Name it first: a vow, a road or a foe."
-      root.errorAt = "track"
+      root.error = { text: "Name it first: a vow, a road or a foe.", place: "track" }
     } else {
       root.act(["track", "add", "--kind", root.trackKind, "--rank", root.trackRank, "--", name], "track", () => trackName.text = "")
     }
@@ -529,8 +649,7 @@ Item {
   function askOracle() {
     var text = question.text.trim()
     if (text === "") {
-      root.error = "Type a yes/no question first."
-      root.errorAt = "oracle"
+      root.error = { text: "Type a yes/no question first.", place: "oracle" }
     } else {
       var kind = root.labels.fortune ? ["--kind", root.oracleKind] : []
       root.act(["ask", "--likely", root.odds].concat(kind).concat(["--", text]), "oracle", () => question.text = "")
@@ -671,7 +790,7 @@ Item {
   }
 
   function putAside(spell) {
-    root.act(["prepare", "--drop", spell.name, "--", root.preparing], "magic", () => root.preparing = "")
+    root.act(["prepare", "--drop=" + spell.name, "--", root.preparing], "magic", () => root.preparing = "")
   }
 
   function weaponNote(weapon) {
@@ -697,12 +816,6 @@ Item {
     return ["hostile", "unfriendly", "neutral", "friendly", "allied"][value + 2] || String(value)
   }
 
-  function elapsed(seconds) {
-    var rest = seconds % 86400
-    var pad = n => (n < 10 ? "0" : "") + n
-    return Math.floor(seconds / 86400) + "d " + pad(Math.floor(rest / 3600)) + ":" + pad(Math.floor(rest % 3600 / 60))
-  }
-
   function carriesTorch() {
     return root.pc !== null && root.pc.items.some(i => /(^|\s)torch(es)?$/i.test(i))
   }
@@ -725,7 +838,8 @@ Item {
   function rollHead() {
     var check = root.lastCheck
     if (!check) return ""
-    var what = check.stat ? " +" + check.stat : check.track_name ? " (" + check.track_name + ")" : ""
+    // A move says the stat it added; a skill roll's label is the skill already.
+    var what = check.stat && check.outcome.hit !== undefined ? " +" + check.stat : check.track_name ? " (" + check.track_name + ")" : ""
     return (check.type === "push" ? "Pushed " : check.type === "burn" ? "Burned: " : "") + check.label + what
   }
 
@@ -766,8 +880,8 @@ Item {
 
   function rollColor() {
     var outcome = root.lastCheck ? root.lastCheck.outcome : null
-    return outcome && outcome.dragon ? theme.gold : outcome && !outcome.success ? Color.urgent
-      : outcome && (outcome.successes > 1 || outcome.hit === "strong_hit") ? Color.accent : root.textColor
+    return outcome && outcome.dragon ? theme.gold : outcome && !outcome.success ? Commons.Color.urgent
+      : outcome && (outcome.successes > 1 || outcome.hit === "strong_hit") ? Commons.Color.accent : root.textColor
   }
 
   function visibleClocks() {
@@ -790,19 +904,12 @@ Item {
     return root.game ? root.game.log.filter(e => !e.hidden).slice(-14).reverse() : []
   }
 
-  // Which campaign is current, as recorded by `solo new`, `solo use` and `solo play`.
-  // Read synchronously so open() already knows whether to show Home or the table, and
-  // re-read on open and after every command: a watch set while the file didn't exist
-  // yet (the very first game) never fires.
-  FileView {
+  // Which campaign is current (book/CurrentCampaign.qml). Read synchronously so open()
+  // already knows whether to show Home or the table, and re-read on open and after every
+  // command, so a game begun here is followed at once.
+  CurrentCampaign {
     id: currentFile
-    path: root.stateDir + "/current"
     blockLoading: true
-    watchChanges: true
-    printErrors: false
-    onFileChanged: reload()
-    onLoaded: root.campaign = text().trim()
-    onLoadFailed: root.campaign = ""
   }
 
   FileView {
@@ -811,13 +918,20 @@ Item {
     printErrors: false
     onFileChanged: reload()
     onLoaded: {
+      root.lost = ""
       try {
         root.game = JSON.parse(text())
       } catch (e) {
         console.warn("solo-play", "Ignoring unreadable state.json", e)
       }
     }
-    onLoadFailed: root.game = null
+    // solo writes state.json before it makes a campaign current, so one that can't be read is gone:
+    // Home says so, rather than the table loading for good.
+    onLoadFailed: {
+      root.game = null
+      root.lost = root.campaign
+      if (root.view === "table") root.show("home")
+    }
   }
 
   // The GM's turn in progress, written by `solo gm turn` as it streams.
@@ -827,6 +941,8 @@ Item {
     printErrors: false
     onFileChanged: reload()
     onLoaded: {
+      watchdog.stop()  // the turn has started
+      watchdog.waiting = false
       try {
         root.turn = JSON.parse(text())
       } catch (e) {
@@ -838,24 +954,26 @@ Item {
   // Omarchy's theme, in the words the Book uses. The Book is plain QtQuick and reads only this.
   QtObject {
     id: theme
-    readonly property color text: Color.popups.text
+    readonly property color text: Commons.Color.popups.text
     readonly property color dim: root.dim
-    readonly property color faint: Qt.rgba(text.r, text.g, text.b, 0.22)
-    readonly property color background: Color.popups.background
-    readonly property color surface: Qt.tint(Color.popups.background, Qt.rgba(text.r, text.g, text.b, 0.05))
-    readonly property color accent: Color.accent
-    readonly property color urgent: Color.urgent
+    // Rules, borders, blanks and what can't be clicked: quieter still, at 3:1, what WCAG asks of lines and controls,
+    // on the panels as on the page.
+    readonly property color faint: Common.fade(text, surface, 3, 0.65)
+    readonly property color background: Commons.Color.popups.background
+    readonly property color surface: Qt.tint(Commons.Color.popups.background, Qt.rgba(text.r, text.g, text.b, 0.05))
+    readonly property color accent: Commons.Color.accent
+    readonly property color urgent: Commons.Color.urgent
     // Dragons and candlelight: one warm gold that reads on dark and light themes alike.
     readonly property color gold: "#d9a441"
-    readonly property string mono: Style.font.family
+    readonly property string mono: Commons.Style.font.family
     readonly property string serif: "serif"
-    readonly property real small: Style.font.bodySmall
-    readonly property real body: Style.font.body
-    readonly property real prose: Math.round(Style.font.body * 1.5)
-    readonly property real title: Style.font.title
-    readonly property real heading: Math.round(Style.font.heading * 1.2)
-    readonly property real display: Style.font.display
-    readonly property real radius: Style.cornerRadius
+    readonly property real small: Commons.Style.font.bodySmall
+    readonly property real body: Commons.Style.font.body
+    readonly property real prose: Math.round(Commons.Style.font.body * 1.5)
+    readonly property real title: Commons.Style.font.title
+    readonly property real heading: Math.round(Commons.Style.font.heading * 1.2)
+    readonly property real display: Commons.Style.font.display
+    readonly property real radius: Commons.Style.cornerRadius
   }
 
   // The Book: a normal window, so Hyprland tiles it beside the Table.
@@ -870,6 +988,7 @@ Item {
     onVisibleChanged: if (!visible) root.bookOpen = false
 
     BookView {
+      id: bookView
       objectName: "book"
       anchors.fill: parent
       theme: theme
@@ -877,20 +996,23 @@ Item {
       turn: root.turn
       agent: root.agentInfo
       campaign: root.campaign
-      actionError: root.errorAt === "book" ? root.error : ""
+      actionError: root.errorsAt("book")
+      actionNote: root.notice.place === "book" ? root.notice.text : ""
       active: bookWindow.visible
       onSend: text => root.speak(text)
       onStop: Quickshell.execDetached([root.solo, "-C", root.campaign, "gm", "stop"])
-      onRetry: root.speak("")
+      onRetry: root.speak(root.turn.unsent || "")
       // The X-card: cut the GM's last message (a line or a veil too, if the player made it one), then the GM carries on without it.
-      onCut: (note, line, veil) => root.act(["strike"].concat(note !== "" ? ["--note", note] : []).concat(line !== "" ? ["--line", line] : [])
-                                              .concat(veil !== "" ? ["--veil", veil] : []), "book", () => root.speak(""))
+      // What the player typed goes as --flag=value, so words that start with a dash stay words.
+      onCut: (note, line, veil) => root.act(["strike"].concat(note !== "" ? ["--note=" + note] : []).concat(line !== "" ? ["--line=" + line] : [])
+                                              .concat(veil !== "" ? ["--veil=" + veil] : []), "book",
+                                            () => { bookView.cutDone(true); root.speak("") }, () => bookView.cutDone(false))
       onAct: args => root.act(args, "book")
       onOpenTable: {
         root.opened = true
         root.show("table")
       }
-      onOpenTerminal: root.run(["play", root.campaign, "--terminal"], "gm")
+      onOpenTerminal: root.openTerminal("book")
     }
   }
 
@@ -898,94 +1020,100 @@ Item {
     id: speaker
   }
 
+  // The command running now ({place, done}) and what it says on stdout and stderr. The
+  // streams end before the exit does, so the exit has all of it.
   Process {
     id: action
-    property var done: null
+    property var job: null
+    property string out: ""
+    property string said: ""
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: action.out = text
+    }
     stderr: StdioCollector {
       waitForEnd: true
-      onStreamFinished: root.error = text.trim().replace(/^solo: /, "")
+      onStreamFinished: action.said = text
     }
-    onExited: (exitCode, exitStatus) => {
-      var done = action.done
-      action.done = null
-      currentFile.reload()
-      if (exitCode === 0 && done) done()
-    }
+    onExited: (exitCode, exitStatus) => root.ran(root.trouble(action.said, exitCode), exitCode === 0)
+    onRunningChanged: if (!running && action.job !== null) root.ran(root.unstarted(), false)
   }
 
   Process {
     id: query
-    property string kind: ""
-    property var pending: ({})
+    property var job: null          // {kind, place}
+    property var pending: ({})      // kind: {args, place}
+    property string out: ""
+    property string said: ""
     stdout: StdioCollector {
       waitForEnd: true
-      onStreamFinished: root.received(query.kind, text)
+      onStreamFinished: query.out = text
     }
     stderr: StdioCollector {
       waitForEnd: true
-      onStreamFinished: {
-        if (text.trim() !== "") {
-          root.error = text.trim().replace(/^solo: /, "")
-          root.errorAt = query.kind
-        }
-      }
+      onStreamFinished: query.said = text
     }
-    onExited: {
-      var kinds = Object.keys(query.pending)
-      if (kinds.length > 0) {
-        var args = query.pending[kinds[0]]
-        var rest = Object.assign({}, query.pending)
-        delete rest[kinds[0]]
-        query.pending = rest
-        root.ask(kinds[0], args)
-      }
-    }
+    onExited: (exitCode, exitStatus) => root.answered(root.trouble(query.said, exitCode))
+    onRunningChanged: if (!running && query.job !== null) root.answered(root.unstarted())
   }
 
   // Text here comes from packs and from the GM's commits, so it is never read as HTML.
   component Line: Text {
-    property int size: Style.font.body
+    property int size: Commons.Style.font.body
     Layout.fillWidth: true
     textFormat: Text.PlainText
     color: root.textColor
-    font.family: Style.font.family
+    font.family: Commons.Style.font.family
     font.pixelSize: size
     wrapMode: Text.Wrap
   }
 
   component Heading: Text {
     Layout.fillWidth: true
-    Layout.topMargin: Style.space(10)
+    Layout.topMargin: Commons.Style.space(10)
     textFormat: Text.PlainText
     color: root.dim
-    font.family: Style.font.family
-    font.pixelSize: Style.font.caption
+    font.family: Commons.Style.font.family
+    font.pixelSize: Commons.Style.font.caption
     font.capitalization: Font.AllUppercase
     font.letterSpacing: 1
   }
 
   component ErrorLine: Line {
     property string place: ""
-    visible: root.error !== "" && root.errorAt === place
-    color: Color.urgent
-    size: Style.font.bodySmall
-    text: root.error
+    visible: text !== ""
+    color: Commons.Color.urgent
+    size: Commons.Style.font.bodySmall
+    text: root.errorsAt(place)
   }
 
-  // A heading that folds its section away. Click it to open or close.
+  // A heading that folds its section away. Click it, or Enter or Space on it, to open or close.
   component Fold: Heading {
     id: fold
     property string label: ""
     property bool open: false
+    // What opening or closing it does; a fold whose state is kept elsewhere (a move group) says so.
+    property var toggle: () => fold.open = !fold.open
     text: (open ? "▾ " : "▸ ") + label
-    color: foldMouse.containsMouse ? root.textColor : root.dim
+    color: foldMouse.containsMouse || activeFocus ? root.textColor : root.dim
+    activeFocusOnTab: true
+    Keys.onPressed: event => {
+      if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
+        fold.toggle()
+        event.accepted = true
+      }
+    }
+    Accessible.role: Accessible.Button
+    Accessible.name: label
+    Accessible.description: open ? "Open: click to fold it away" : "Folded: click to open it"
+    Accessible.onPressAction: fold.toggle()
 
     MouseArea {
       id: foldMouse
       anchors.fill: parent
       hoverEnabled: true
       cursorShape: Qt.PointingHandCursor
-      onClicked: fold.open = !fold.open
+      onClicked: fold.toggle()
     }
   }
 
@@ -996,12 +1124,12 @@ Item {
     property string label: ""
     property bool lit: false
     property bool quiet: false
-    implicitWidth: tagText.implicitWidth + Style.space(12)
-    implicitHeight: tagText.implicitHeight + Style.space(6)
-    radius: Style.cornerRadius
-    color: lit ? Qt.rgba(Color.urgent.r, Color.urgent.g, Color.urgent.b, 0.25) : "transparent"
+    implicitWidth: tagText.implicitWidth + Commons.Style.space(12)
+    implicitHeight: tagText.implicitHeight + Commons.Style.space(6)
+    radius: Commons.Style.cornerRadius
+    color: lit ? Qt.rgba(Commons.Color.urgent.r, Commons.Color.urgent.g, Commons.Color.urgent.b, 0.25) : "transparent"
     border.width: 1
-    border.color: lit ? Color.urgent : root.faint
+    border.color: lit ? Commons.Color.urgent : root.faint
 
     Text {
       id: tagText
@@ -1009,40 +1137,59 @@ Item {
       textFormat: Text.PlainText
       text: tag.label
       color: tag.quiet && !tag.lit ? root.dim : root.textColor
-      font.family: Style.font.family
-      font.pixelSize: Style.font.caption
+      font.family: Commons.Style.font.family
+      font.pixelSize: Commons.Style.font.caption
     }
   }
 
   component Choice: Button {
     foreground: root.textColor
     bordered: true
-    fontSize: Style.font.bodySmall
-    horizontalPadding: Style.space(8)
-    verticalPadding: Style.space(3)
+    fontSize: Commons.Style.font.bodySmall
+    horizontalPadding: Commons.Style.space(8)
+    verticalPadding: Commons.Style.space(3)
+  }
+
+  // A button that runs a command. It waits, greyed, while one runs, so a double click can't do
+  // the same thing twice.
+  component Act: Choice {
+    enabled: !root.busy
+    opacity: enabled ? 1 : 0.5
   }
 
   component Primary: Button {
     Layout.fillWidth: true
-    Layout.topMargin: Style.space(8)
+    Layout.topMargin: Commons.Style.space(8)
     foreground: root.textColor
     bordered: true
     selected: true
-    verticalPadding: Style.space(8)
+    verticalPadding: Commons.Style.space(8)
   }
 
+  // A card that can be clicked is a button to the keyboard (Tab to it, Enter or Space) and to a screen reader, by `name`.
   component Card: Rectangle {
     id: card
     property bool selected: false
     property bool clickable: true
+    property string name: ""
     signal clicked()
     default property alias content: cardColumn.data
     Layout.fillWidth: true
-    implicitHeight: cardColumn.implicitHeight + Style.space(16)
-    radius: Style.cornerRadius
-    color: card.clickable && cardMouse.containsMouse ? root.faint : "transparent"
+    implicitHeight: cardColumn.implicitHeight + Commons.Style.space(16)
+    radius: Commons.Style.cornerRadius
+    color: card.clickable && (cardMouse.containsMouse || card.activeFocus) ? root.faint : "transparent"
     border.width: selected ? 2 : 1
-    border.color: selected ? Color.accent : root.faint
+    border.color: selected ? Commons.Color.accent : root.faint
+    activeFocusOnTab: clickable
+    Keys.onPressed: event => {
+      if (card.clickable && (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space)) {
+        card.clicked()
+        event.accepted = true
+      }
+    }
+    Accessible.role: clickable ? Accessible.Button : Accessible.Grouping
+    Accessible.name: name
+    Accessible.onPressAction: if (card.clickable) card.clicked()
 
     // Under the content, so a button inside a card takes its own clicks.
     MouseArea {
@@ -1056,8 +1203,8 @@ Item {
 
     ColumnLayout {
       id: cardColumn
-      anchors { left: parent.left; right: parent.right; top: parent.top; margins: Style.space(8) }
-      spacing: Style.space(2)
+      anchors { left: parent.left; right: parent.right; top: parent.top; margins: Commons.Style.space(8) }
+      spacing: Commons.Style.space(2)
     }
   }
 
@@ -1068,9 +1215,9 @@ Item {
     property int from: 0
     property int to: 5
     signal stepped(int value)
-    spacing: Style.space(4)
+    spacing: Commons.Style.space(4)
 
-    Line { Layout.fillWidth: false; text: stepper.label; size: Style.font.bodySmall }
+    Line { Layout.fillWidth: false; text: stepper.label; size: Commons.Style.font.bodySmall }
     Choice { text: "−"; onClicked: stepper.stepped(Math.max(stepper.from, stepper.value - 1)) }
     Line { Layout.fillWidth: false; text: String(stepper.value); font.bold: stepper.value > stepper.from }
     Choice { text: "+"; onClicked: stepper.stepped(Math.min(stepper.to, stepper.value + 1)) }
@@ -1083,12 +1230,12 @@ Item {
     property string when: ""
     readonly property var choices: root.ridersFor(scope).filter(a => when === "" || a.on === null || a.on === when)
     Layout.fillWidth: true
-    spacing: Style.space(4)
+    spacing: Commons.Style.space(4)
     visible: choices.length > 0 && root.pc !== null && !root.dying && !root.dead
 
     Line {
       Layout.fillWidth: false
-      size: Style.font.caption
+      size: Commons.Style.font.caption
       color: root.dim
       text: ({ attack: "With the blow:", defend: "With a parry or dodge:", round: "For the new round:", rest: "With the rest:" })[riders.scope] || ""
     }
@@ -1115,7 +1262,7 @@ Item {
     property var range: ({ min: -6, max: 10 })
     readonly property real unit: rail.width / (range.max - range.min)
     Layout.fillWidth: true
-    spacing: Style.space(2)
+    spacing: Commons.Style.space(2)
 
     RowLayout {
       Layout.fillWidth: true
@@ -1129,7 +1276,7 @@ Item {
     Rectangle {
       id: rail
       Layout.fillWidth: true
-      implicitHeight: Style.space(8)
+      implicitHeight: Commons.Style.space(8)
       radius: height / 2
       color: root.faint
 
@@ -1145,7 +1292,7 @@ Item {
         x: (Math.min(0, bar.track.value) - bar.range.min) * bar.unit
         width: Math.abs(bar.track.value) * bar.unit
         height: parent.height
-        color: bar.track.value < 0 ? Color.urgent : Color.accent
+        color: bar.track.value < 0 ? Commons.Color.urgent : Commons.Color.accent
         Behavior on x { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
         Behavior on width { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
       }
@@ -1171,14 +1318,14 @@ Item {
   component Boxes: Row {
     id: boxes
     property var track: ({ ticks: 0 })
-    spacing: Style.space(2)
+    spacing: Commons.Style.space(2)
 
     Repeater {
       model: root.progressSpec ? root.progressSpec.boxes : 0
       delegate: Rectangle {
         required property int index
-        width: Style.space(20)
-        height: Style.space(12)
+        width: Commons.Style.space(20)
+        height: Commons.Style.space(12)
         color: "transparent"
         border.width: 1
         border.color: root.dim
@@ -1186,7 +1333,7 @@ Item {
         Rectangle {
           anchors { left: parent.left; right: parent.right; bottom: parent.bottom; margins: 1 }
           height: (parent.height - 2) * root.boxTicks(boxes.track, index) / (root.progressSpec ? root.progressSpec.ticks : 4)
-          color: Color.accent
+          color: Commons.Color.accent
         }
       }
     }
@@ -1199,7 +1346,7 @@ Item {
     property int maximum: 1
     readonly property real share: Math.max(0, Math.min(1, value / Math.max(1, maximum)))
     Layout.fillWidth: true
-    spacing: Style.space(2)
+    spacing: Commons.Style.space(2)
 
     RowLayout {
       Layout.fillWidth: true
@@ -1213,7 +1360,7 @@ Item {
     Rectangle {
       id: track
       Layout.fillWidth: true
-      implicitHeight: Style.space(6)
+      implicitHeight: Commons.Style.space(6)
       radius: height / 2
       color: root.faint
 
@@ -1222,7 +1369,7 @@ Item {
         width: track.width * meter.share
         height: parent.height
         radius: parent.radius
-        color: Color.urgent
+        color: Commons.Color.urgent
         opacity: 0.5
         Behavior on width {
           SequentialAnimation {
@@ -1236,7 +1383,7 @@ Item {
         width: track.width * meter.share
         height: parent.height
         radius: parent.radius
-        color: meter.share <= 0.25 ? Color.urgent : meter.share <= 0.5 ? theme.gold : Color.accent
+        color: meter.share <= 0.25 ? Commons.Color.urgent : meter.share <= 0.5 ? theme.gold : Commons.Color.accent
         Behavior on width { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
         Behavior on color { ColorAnimation { duration: 400 } }
       }
@@ -1246,7 +1393,7 @@ Item {
   PanelWindow {
     visible: root.opened
     anchors { top: true; right: true; bottom: true }
-    implicitWidth: Style.space(340)
+    implicitWidth: Commons.Style.space(340)
     color: "transparent"
     exclusionMode: ExclusionMode.Auto
     WlrLayershell.namespace: "solo-play"
@@ -1256,15 +1403,15 @@ Item {
 
     Rectangle {
       anchors.fill: parent
-      anchors.margins: Style.gapsOut
-      color: Color.popups.background
+      anchors.margins: Commons.Style.gapsOut
+      color: Commons.Color.popups.background
       border.width: 1
-      border.color: Color.popups.border
-      radius: Style.cornerRadius
+      border.color: Commons.Color.popups.border
+      radius: Commons.Style.cornerRadius
 
       Flickable {
         anchors.fill: parent
-        anchors.margins: Style.space(12)
+        anchors.margins: Commons.Style.space(12)
         contentHeight: column.implicitHeight
         boundsBehavior: Flickable.StopAtBounds
         clip: true
@@ -1274,17 +1421,17 @@ Item {
         ColumnLayout {
           id: column
           width: parent.width
-          spacing: Style.space(6)
+          spacing: Commons.Style.space(6)
 
           // Header ------------------------------------------------------------------
 
           RowLayout {
             Layout.fillWidth: true
-            spacing: Style.space(4)
+            spacing: Commons.Style.space(4)
 
             Line {
               text: root.view === "new" ? "New adventure" : root.view === "table" && root.game ? root.game.title : "oma-solorpg"
-              size: Style.font.heading
+              size: Commons.Style.font.heading
               font.bold: true
               elide: Text.ElideRight
               wrapMode: Text.NoWrap
@@ -1314,7 +1461,15 @@ Item {
           ColumnLayout {
             visible: root.view === "home"
             Layout.fillWidth: true
-            spacing: Style.space(6)
+            spacing: Commons.Style.space(6)
+
+            Line {
+              objectName: "lost"
+              visible: root.lost !== ""
+              color: Commons.Color.urgent
+              size: Commons.Style.font.bodySmall
+              text: "The campaign in " + root.lost + " can't be read: its folder was moved or deleted. Pick another, or begin a new one."
+            }
 
             Line {
               visible: root.library !== null && root.library.campaigns.length === 0
@@ -1328,18 +1483,19 @@ Item {
               model: root.library ? root.library.campaigns : []
               delegate: Card {
                 required property var modelData
+                name: modelData.title
                 selected: modelData.current
                 clickable: root.deleting !== modelData.path
                 onClicked: modelData.current ? root.show("table") : root.run(["use", modelData.path], "home", () => root.show("table"))
 
                 Line { text: modelData.title; font.bold: true }
                 Line {
-                  size: Style.font.bodySmall
+                  size: Commons.Style.font.bodySmall
                   text: [modelData.hero + (modelData.info ? ", " + modelData.info : ""), modelData.scene].filter(t => t !== "").join(" · ")
                 }
                 Line {
                   visible: (modelData.said || "") !== ""
-                  size: Style.font.bodySmall
+                  size: Commons.Style.font.bodySmall
                   color: root.dim
                   maximumLineCount: 2
                   elide: Text.ElideRight
@@ -1347,7 +1503,7 @@ Item {
                 }
                 Line {
                   visible: (modelData.ended || "") !== ""
-                  size: Style.font.bodySmall
+                  size: Commons.Style.font.bodySmall
                   font.italic: true
                   text: "Ended: " + (modelData.ended || "")
                 }
@@ -1355,7 +1511,7 @@ Item {
                   Layout.fillWidth: true
                   visible: root.deleting !== modelData.path
                   Line {
-                    size: Style.font.caption
+                    size: Commons.Style.font.caption
                     color: root.dim
                     text: [modelData.current ? "current" : "", modelData.played ? "played " + modelData.played.replace("T", " ") : ""]
                       .filter(t => t !== "").join(" · ")
@@ -1368,19 +1524,18 @@ Item {
                 // Deleting can't be undone, so it takes a second click on the card itself.
                 Line {
                   visible: root.deleting === modelData.path
-                  Layout.topMargin: Style.space(4)
-                  size: Style.font.bodySmall
-                  color: Color.urgent
+                  Layout.topMargin: Commons.Style.space(4)
+                  size: Commons.Style.font.bodySmall
+                  color: Commons.Color.urgent
                   text: "Delete this campaign for good? The story, " + (modelData.hero || "the hero") + " and the whole log go with it"
                         + (modelData.dead ? ", and " + modelData.hero + " leaves the Hall of the Fallen." : ".")
                 }
                 RowLayout {
                   visible: root.deleting === modelData.path
-                  spacing: Style.space(4)
-                  Choice {
-                    text: action.running && root.errorAt === "home" ? "Deleting…" : "Delete for good"
-                    foreground: Color.urgent
-                    enabled: !action.running
+                  spacing: Commons.Style.space(4)
+                  Act {
+                    text: action.job !== null && action.job.place === "home" ? "Deleting…" : "Delete for good"
+                    foreground: Commons.Color.urgent
                     onClicked: {
                       var wasCurrent = modelData.current
                       root.run(["delete", modelData.path, "--yes"], "home", () => {
@@ -1410,32 +1565,33 @@ Item {
               model: root.library ? root.library.fallen || [] : []
               delegate: Card {
                 required property var modelData
+                name: modelData.name
                 clickable: false
 
                 RowLayout {
                   Layout.fillWidth: true
-                  spacing: Style.space(8)
+                  spacing: Commons.Style.space(8)
 
                   Text {
                     textFormat: Text.PlainText
-                    font.family: Style.font.family
-                    font.pixelSize: Style.font.caption * 0.8
+                    font.family: Commons.Style.font.family
+                    font.pixelSize: Commons.Style.font.caption * 0.8
                     color: root.dim
                     text: modelData.portrait.join("\n")
                   }
 
                   ColumnLayout {
                     Layout.fillWidth: true
-                    spacing: Style.space(2)
+                    spacing: Commons.Style.space(2)
                     Line { text: modelData.name; font.bold: true }
-                    Line { size: Style.font.caption; color: root.dim; text: modelData.info }
+                    Line { size: Commons.Style.font.caption; color: root.dim; text: modelData.info }
                     Line {
-                      size: Style.font.bodySmall
+                      size: Commons.Style.font.bodySmall
                       text: "Fell in " + (modelData.scene || "the dark") + (modelData.by ? " to " + modelData.by : "") + ", " + modelData.adventure + "."
                     }
                     Line {
                       visible: modelData.epitaph !== ""
-                      size: Style.font.bodySmall
+                      size: Commons.Style.font.bodySmall
                       font.italic: true
                       text: "\u201C" + modelData.epitaph + "\u201D"
                     }
@@ -1453,7 +1609,7 @@ Item {
           ColumnLayout {
             visible: root.view === "new"
             Layout.fillWidth: true
-            spacing: Style.space(6)
+            spacing: Commons.Style.space(6)
 
             Heading { text: "1  Adventure" }
 
@@ -1461,16 +1617,26 @@ Item {
               model: root.library ? root.library.adventures : []
               delegate: Card {
                 required property var modelData
+                name: modelData.title
                 selected: root.adventure !== null && root.adventure.id === modelData.id
                 onClicked: root.chooseAdventure(modelData)
 
                 Line { text: modelData.title; font.bold: true }
+                // The system by name (the engine gives it; from the systems that loaded, before it did), and what
+                // the adventure waits for when it can't be played yet.
                 Line {
-                  size: Style.font.caption
+                  size: Commons.Style.font.caption
                   color: root.dim
-                  text: (root.library.systems.filter(s => s.id === modelData.system)[0] || { name: modelData.system || "no system named" }).name
+                  text: modelData.system_name
+                    || (root.library.systems.filter(s => s.id === modelData.system)[0] || { name: modelData.system || "no system named" }).name
                 }
-                Line { visible: modelData.summary !== ""; size: Style.font.bodySmall; text: modelData.summary }
+                Line {
+                  visible: modelData.ready === false && (modelData.why || "") !== ""
+                  size: Commons.Style.font.caption
+                  color: root.dim
+                  text: modelData.why || ""
+                }
+                Line { visible: modelData.summary !== ""; size: Commons.Style.font.bodySmall; text: modelData.summary }
               }
             }
 
@@ -1479,7 +1645,7 @@ Item {
               model: root.library ? root.library.problems || [] : []
               delegate: Line {
                 required property string modelData
-                size: Style.font.caption
+                size: Commons.Style.font.caption
                 color: root.dim
                 text: "Not loaded: " + modelData
               }
@@ -1489,14 +1655,15 @@ Item {
 
             Line {
               visible: root.adventure !== null && root.system === null
-              color: Color.urgent
-              size: Style.font.bodySmall
-              text: "This adventure's system pack isn't installed, or its rules aren't built from your books yet (make dragonbane)."
+              color: Commons.Color.urgent
+              size: Commons.Style.font.bodySmall
+              text: root.adventure && root.adventure.why
+                ? root.adventure.why : "This adventure's system pack isn't installed, or its rules aren't built from your books yet (make dragonbane)."
             }
 
             Flow {
               Layout.fillWidth: true
-              spacing: Style.space(4)
+              spacing: Commons.Style.space(4)
               visible: root.system !== null
 
               Choice {
@@ -1523,13 +1690,13 @@ Item {
                 id: table
                 required property var modelData
                 Layout.fillWidth: true
-                spacing: Style.space(3)
+                spacing: Commons.Style.space(3)
 
-                Line { text: table.modelData.label; size: Style.font.caption; color: root.dim }
+                Line { text: table.modelData.label; size: Commons.Style.font.caption; color: root.dim }
 
                 Flow {
                   Layout.fillWidth: true
-                  spacing: Style.space(4)
+                  spacing: Commons.Style.space(4)
 
                   Choice {
                     text: "Any"
@@ -1553,7 +1720,7 @@ Item {
             RowLayout {
               Layout.fillWidth: true
               visible: root.system !== null
-              spacing: Style.space(6)
+              spacing: Commons.Style.space(6)
 
               TextField {
                 id: nameField
@@ -1561,6 +1728,7 @@ Item {
                 placeholderText: root.preview ? "Name: " + root.preview.name : "Name"
                 text: root.heroName
                 onTextEdited: root.heroName = text
+                onAccepted: if (beginButton.enabled) root.begin()  // Enter: the hero is named, begin
               }
 
               Choice {
@@ -1576,37 +1744,37 @@ Item {
 
               Line {
                 text: root.preview ? (root.heroName.trim() || root.preview.name) : ""
-                size: Style.font.title
+                size: Commons.Style.font.title
                 font.bold: true
               }
               Line {
-                size: Style.font.bodySmall
+                size: Commons.Style.font.bodySmall
                 color: root.dim
                 text: root.preview ? root.values(root.preview.info).join(" · ") : ""
               }
               Line {
-                size: Style.font.bodySmall
+                size: Commons.Style.font.bodySmall
                 text: root.preview ? Object.keys(root.preview.attributes).map(k => k.toUpperCase() + " " + root.preview.attributes[k]).join("  ") : ""
               }
               Line {
-                size: Style.font.bodySmall
+                size: Commons.Style.font.bodySmall
                 text: root.preview ? Object.keys(root.preview.tracks).map(k => k.toUpperCase() + " " + (root.preview.tracks[k].min !== undefined ? root.signed(root.preview.tracks[k].value) : root.preview.tracks[k].max))
                   .concat(Object.keys(root.preview.ratings).map(k => k + " " + root.preview.ratings[k])).join(" · ") : ""
               }
               Line {
                 visible: root.preview !== null && Object.keys(root.preview.skills).length > 0
-                size: Style.font.bodySmall
+                size: Commons.Style.font.bodySmall
                 text: root.preview ? "Trained: " + Object.keys(root.preview.skills).filter(k => root.preview.skills[k].trained)
                   .map(k => root.preview.skills[k].name + " " + root.preview.skills[k].value).join(", ") : ""
               }
               Line {
                 visible: root.preview !== null && root.preview.abilities.length > 0
-                size: Style.font.bodySmall
+                size: Commons.Style.font.bodySmall
                 text: root.preview ? "Abilities: " + root.preview.abilities.join(", ") : ""
               }
               Line {
                 visible: root.preview !== null && root.preview.items.length > 0
-                size: Style.font.bodySmall
+                size: Commons.Style.font.bodySmall
                 color: root.dim
                 text: root.preview ? "Gear: " + root.preview.items.join(", ") : ""
               }
@@ -1617,7 +1785,7 @@ Item {
             Heading { text: "3  Table settings (optional)" }
 
             Line {
-              size: Style.font.caption
+              size: Commons.Style.font.caption
               color: root.dim
               text: "The GM reads these every session. Lines never happen in the story; veils happen off screen. Separate them with commas."
             }
@@ -1644,14 +1812,15 @@ Item {
             }
 
             Primary {
-              text: action.running && root.errorAt === "begin" ? "Starting…" : "Begin adventure"
-              enabled: root.adventure !== null && root.preview !== null && !action.running
+              id: beginButton
+              text: action.job !== null && action.job.place === "begin" ? "Starting…" : "Begin adventure"
+              enabled: root.adventure !== null && root.preview !== null && !root.busy
               opacity: enabled ? 1 : 0.5
               onClicked: root.begin()
             }
 
             Line {
-              size: Style.font.caption
+              size: Commons.Style.font.caption
               color: root.dim
               text: "Begin opens the Book, and the GM tells the opening scene."
             }
@@ -1665,7 +1834,7 @@ Item {
           ColumnLayout {
             visible: root.view === "table"
             Layout.fillWidth: true
-            spacing: Style.space(6)
+            spacing: Commons.Style.space(6)
 
             Line {
               visible: root.game === null
@@ -1676,8 +1845,8 @@ Item {
             Line {
               visible: root.game !== null
               color: root.dim
-              size: Style.font.bodySmall
-              text: root.game ? (root.game.scene_title || "") + " · " + root.elapsed(root.game.time) + " in" : ""
+              size: Commons.Style.font.bodySmall
+              text: root.game ? (root.game.scene_title || "") + " · " + Common.elapsed(root.game.time) : ""
             }
 
             RowLayout {
@@ -1691,14 +1860,21 @@ Item {
                 onClicked: root.openBook()
               }
 
-              Choice {
+              Act {
                 text: "Terminal"
                 tooltipText: "Open the GM in a terminal instead, or bring its window forward"
-                onClicked: root.run(["play", root.campaign, "--terminal"], "gm")
+                onClicked: root.openTerminal("gm")
               }
             }
 
             ErrorLine { place: "gm" }
+
+            Line {
+              visible: root.notice.place === "gm" && root.notice.text !== ""
+              size: Commons.Style.font.bodySmall
+              color: root.dim
+              text: root.notice.place === "gm" ? root.notice.text : ""
+            }
 
             Card {
               visible: root.game !== null && !!root.game.ended
@@ -1706,7 +1882,7 @@ Item {
               selected: true
 
               Line { text: root.dead ? "The adventure is over" : "The adventure has ended"; font.bold: true }
-              Line { size: Style.font.bodySmall; text: root.game && root.game.ended ? root.game.ended.text : "" }
+              Line { size: Commons.Style.font.bodySmall; text: root.game && root.game.ended ? root.game.ended.text : "" }
             }
 
             // Where you left off: the GM's last words exactly as recorded, so the table
@@ -1719,12 +1895,12 @@ Item {
               clickable: false
 
               Line {
-                size: Style.font.bodySmall
+                size: Commons.Style.font.bodySmall
                 text: root.game && root.game.last_said ? root.game.last_said.text : ""
               }
               Line {
                 visible: root.game !== null && root.game.awaiting_player === true
-                size: Style.font.caption
+                size: Commons.Style.font.caption
                 color: root.dim
                 text: "Waiting for your answer"
               }
@@ -1736,14 +1912,14 @@ Item {
 
             Line {
               visible: root.pc !== null
-              size: Style.font.title
+              size: Commons.Style.font.title
               font.bold: true
               text: root.pc ? root.pc.name : ""
             }
 
             Line {
               visible: root.pc !== null && Object.keys(root.pc.info).length > 0
-              size: Style.font.bodySmall
+              size: Commons.Style.font.bodySmall
               color: root.dim
               text: root.pc ? root.values(root.pc.info).join(" · ") : ""
             }
@@ -1770,7 +1946,7 @@ Item {
 
             Flow {
               Layout.fillWidth: true
-              spacing: Style.space(4)
+              spacing: Commons.Style.space(4)
               visible: root.pc !== null && root.labels.conditions.length > 0
 
               Repeater {
@@ -1787,7 +1963,7 @@ Item {
             // At 0 HP only the death roll is left to click (or, alone, rallying and saving yourself).
             Line {
               visible: root.atZero
-              color: Color.urgent
+              color: Commons.Color.urgent
               font.bold: true
               text: root.atZero && root.labels.dying ? root.pc.name + " is dying: " + root.pc.dying.successes + " of " + root.labels.dying.rally
                 + " successes, " + root.pc.dying.failures + " of " + root.labels.dying.die + " failures. Any hit is a failure." : ""
@@ -1795,23 +1971,24 @@ Item {
 
             Flow {
               Layout.fillWidth: true
-              spacing: Style.space(4)
+              spacing: Commons.Style.space(4)
               visible: root.atZero
 
               Primary {
                 text: "Death roll"
-                enabled: !action.running
+                enabled: !root.busy
+                opacity: enabled ? 1 : 0.5
                 onClicked: root.act(["death-roll"], "dying")
               }
 
-              Choice {
+              Act {
                 visible: !!(root.labels.dying && root.labels.dying.self_save)
                 text: "Save yourself"
                 tooltipText: "A HEALING roll instead of the death roll: stop dying on a success"
                 onClicked: root.act(["death-roll", "--heal"], "dying")
               }
 
-              Choice {
+              Act {
                 visible: !!(root.labels.dying && root.labels.dying.self_rally) && root.dying
                 text: "Rally"
                 tooltipText: "Rally yourself, with no bane: act again, still making death rolls"
@@ -1823,7 +2000,7 @@ Item {
 
             Line {
               visible: root.pc !== null && ((root.pc.abilities || []).length > 0 || Object.keys(root.pc.ratings || {}).length > 0)
-              size: Style.font.bodySmall
+              size: Commons.Style.font.bodySmall
               color: root.dim
               text: root.pc ? (root.pc.abilities || []).concat(Object.keys(root.pc.ratings || {}).map(k => k + " " + root.pc.ratings[k])).join(" · ") : ""
             }
@@ -1835,7 +2012,7 @@ Item {
             RowLayout {
               visible: root.pc !== null && !root.dying && !root.dead && root.moves === null
               Layout.fillWidth: true
-              spacing: Style.space(12)
+              spacing: Commons.Style.space(12)
 
               Stepper { label: "Boons"; value: root.boons; onStepped: function(value) { root.boons = value } }
               Stepper { label: "Banes"; value: root.banes; onStepped: function(value) { root.banes = value } }
@@ -1847,13 +2024,13 @@ Item {
               readonly property var names: root.pc ? Object.keys(root.pc.attributes) : []
               Layout.fillWidth: true
               columns: names.length > 4 ? Math.ceil(names.length / 2) : Math.max(1, names.length)
-              columnSpacing: Style.space(4)
-              rowSpacing: Style.space(4)
+              columnSpacing: Commons.Style.space(4)
+              rowSpacing: Commons.Style.space(4)
               visible: root.pc !== null && !root.dying && !root.dead && root.moves === null
 
               Repeater {
                 model: attributes.names
-                delegate: Choice {
+                delegate: Act {
                   required property string modelData
                   Layout.fillWidth: true
                   text: modelData.toUpperCase() + " " + (root.pc && root.pc.attributes ? root.pc.attributes[modelData] : "")
@@ -1865,12 +2042,12 @@ Item {
 
             Flow {
               Layout.fillWidth: true
-              spacing: Style.space(4)
+              spacing: Commons.Style.space(4)
               visible: root.pc !== null && !root.dying && !root.dead && root.moves === null
 
               Repeater {
                 model: root.skillList()
-                delegate: Choice {
+                delegate: Act {
                   required property var modelData
                   text: modelData.name + " " + modelData.value + (modelData.marked ? " •" : "")
                   tooltipText: modelData.marked ? "Marked for advancement" : ""
@@ -1889,8 +2066,8 @@ Item {
             // A game of moves (Ironsworn): the stats are what a move adds, and the hero makes moves.
             Flow {
               Layout.fillWidth: true
-              spacing: Style.space(4)
-              visible: root.moves !== null && root.pc !== null && !root.dead
+              spacing: Commons.Style.space(4)
+              visible: root.moves !== null && root.pc !== null && !root.dying && !root.dead
 
               Repeater {
                 model: root.pc && root.moves ? Object.keys(root.pc.attributes) : []
@@ -1902,41 +2079,34 @@ Item {
             }
 
             Stepper {
-              visible: root.moves !== null && root.pc !== null && !root.dead
+              visible: root.moves !== null && root.pc !== null && !root.dying && !root.dead
               label: "Adds"
               value: root.adds
               onStepped: function(value) { root.adds = value }
             }
 
             Repeater {
-              model: root.moves !== null && root.pc !== null && !root.dead ? root.moveGroups() : []
+              model: root.moves !== null && root.pc !== null && !root.dying && !root.dead ? root.moveGroups() : []
               delegate: ColumnLayout {
                 id: group
                 required property var modelData
                 Layout.fillWidth: true
-                spacing: Style.space(2)
+                spacing: Commons.Style.space(2)
 
-                Heading {
-                  text: (root.openGroups[group.modelData.name] ? "▾ " : "▸ ") + group.modelData.name
-                  color: groupMouse.containsMouse ? root.textColor : root.dim
-
-                  MouseArea {
-                    id: groupMouse
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: root.toggleGroup(group.modelData.name)
-                  }
+                Fold {
+                  label: group.modelData.name
+                  open: !!root.openGroups[group.modelData.name]
+                  toggle: () => root.toggleGroup(group.modelData.name)
                 }
 
                 Flow {
                   Layout.fillWidth: true
-                  spacing: Style.space(4)
+                  spacing: Commons.Style.space(4)
                   visible: !!root.openGroups[group.modelData.name]
 
                   Repeater {
                     model: group.modelData.moves
-                    delegate: Choice {
+                    delegate: Act {
                       required property var modelData
                       text: modelData.name
                       selected: root.pickedMove === modelData.id
@@ -1949,7 +2119,7 @@ Item {
 
             Line {
               visible: root.pickedMove !== ""
-              size: Style.font.caption
+              size: Commons.Style.font.caption
               color: root.dim
               text: root.pickedMove !== "" && root.moves && root.moves[root.pickedMove]
                 ? root.moves[root.pickedMove].name + ": " + (root.moves[root.pickedMove].kind === "progress" ? "which one?" : "roll with which stat?") : ""
@@ -1957,12 +2127,12 @@ Item {
 
             Flow {
               Layout.fillWidth: true
-              spacing: Style.space(4)
+              spacing: Commons.Style.space(4)
               visible: root.pickedMove !== ""
 
               Repeater {
                 model: root.pickOptions()
-                delegate: Choice {
+                delegate: Act {
                   required property var modelData
                   text: modelData.label
                   onClicked: root.rollMove(root.pickedMove, modelData.stat, modelData.track)
@@ -1975,9 +2145,9 @@ Item {
             RowLayout {
               id: rollCard
               visible: root.lastCheck !== null && !root.dead
-              Layout.topMargin: Style.space(4)
+              Layout.topMargin: Commons.Style.space(4)
               Layout.fillWidth: true
-              spacing: Style.space(10)
+              spacing: Commons.Style.space(10)
               property string face: root.rollFace()
               property int ticks: 0
 
@@ -2014,8 +2184,8 @@ Item {
                 Layout.preferredWidth: rollSizer.width
                 horizontalAlignment: Text.AlignHCenter
                 textFormat: Text.PlainText
-                font.family: Style.font.family
-                font.pixelSize: Math.round(Style.font.title * 2.1)
+                font.family: Commons.Style.font.family
+                font.pixelSize: Math.round(Commons.Style.font.title * 2.1)
                 font.bold: true
                 color: tumble.running ? root.dim : root.rollColor()
                 text: rollCard.face
@@ -2030,14 +2200,14 @@ Item {
 
               ColumnLayout {
                 Layout.fillWidth: true
-                spacing: Style.space(1)
+                spacing: Commons.Style.space(1)
                 Line {
-                  size: Style.font.body
+                  size: Commons.Style.font.body
                   font.bold: true
                   text: root.rollHead()
                 }
                 Line {
-                  size: Style.font.body
+                  size: Commons.Style.font.body
                   font.bold: true
                   color: root.rollColor()
                   opacity: tumble.running ? 0 : 1
@@ -2045,7 +2215,7 @@ Item {
                   Behavior on opacity { NumberAnimation { duration: 200 } }
                 }
                 Line {
-                  size: Style.font.caption
+                  size: Commons.Style.font.caption
                   color: root.dim
                   opacity: tumble.running ? 0 : 1
                   text: root.diceText()
@@ -2064,15 +2234,14 @@ Item {
 
               Flow {
                 Layout.fillWidth: true
-                spacing: Style.space(4)
+                spacing: Commons.Style.space(4)
 
                 Repeater {
                   model: root.dragonOptions()
-                  delegate: Choice {
+                  delegate: Act {
                     required property var modelData
                     text: modelData.label
                     tooltipText: modelData.tip
-                    enabled: !action.running
                     onClicked: root.act(["dragon", modelData.option].concat(modelData.foe !== "" ? [modelData.foe] : []), "dragon")
                   }
                 }
@@ -2080,7 +2249,7 @@ Item {
 
               Line {
                 visible: root.dragonNote() !== ""
-                size: Style.font.caption
+                size: Commons.Style.font.caption
                 color: root.dim
                 text: root.dragonNote()
               }
@@ -2089,8 +2258,8 @@ Item {
             ErrorLine { place: "dragon" }
 
             // Momentum can be burned on the roll just made, when that would change it.
-            Choice {
-              visible: !!(root.game && root.game.burn) && !root.dead
+            Act {
+              visible: !!(root.game && root.game.burn) && !root.dying && !root.dead
               Layout.fillWidth: true
               selected: true
               text: root.game && root.game.burn ? "Burn momentum " + root.signed(root.game.burn.momentum) : ""
@@ -2102,31 +2271,31 @@ Item {
             Line {
               visible: root.canPush
               color: root.dim
-              size: Style.font.caption
+              size: Commons.Style.font.caption
               text: root.pushChoices.length > 0 ? "Push the roll by taking a condition:" : "Push the roll:"
             }
 
             Flow {
               Layout.fillWidth: true
-              spacing: Style.space(4)
+              spacing: Commons.Style.space(4)
               visible: root.canPush
 
               Repeater {
                 model: root.pushChoices
-                delegate: Choice {
+                delegate: Act {
                   required property string modelData
                   text: modelData
                   onClicked: root.act(["push", "--condition", modelData], "roll")
                 }
               }
 
-              Choice {
+              Act {
                 visible: root.labels.push !== "condition"
                 text: "push"
                 onClicked: root.act(["push"], "roll")
               }
 
-              Choice {
+              Act {
                 visible: !!root.labels.push_ability && !!root.pc && (root.pc.abilities || []).indexOf(root.labels.push_ability.name) >= 0
                 text: root.labels.push_ability ? root.labels.push_ability.name + " (" + root.labels.push_ability.cost + ")" : ""
                 tooltipText: "Push without a condition"
@@ -2136,13 +2305,140 @@ Item {
 
             ErrorLine { place: "roll" }
 
+            // Fight: the GM starts and ends it; the clicks here are the pure mechanics. Right under
+            // the last roll, so a fight's weapons aren't below the spells and the abilities.
+
+            Heading { text: root.fight ? "Fight · round " + root.fight.round : ""; visible: root.fight !== null }
+
+            Line {
+              visible: root.fight !== null
+              size: Commons.Style.font.caption
+              color: root.dim
+              text: "Initiative: " + root.orderText()
+            }
+
+            Repeater {
+              model: root.foeIds.length
+              delegate: Card {
+                id: foeCard
+                required property int index
+                readonly property string modelData: root.foeIds[index] || ""
+                readonly property var foe: root.fight && root.fight.foes[modelData] ? root.fight.foes[modelData] : ({ name: "", hp: 0, max: 1, armor: 0, down: true })
+                name: foe.name
+                clickable: !foe.down
+                selected: !foe.down && root.aimedAt() === modelData
+                opacity: foe.down ? 0.5 : 1
+                onClicked: root.target = modelData
+
+                Meter {
+                  label: foeCard.foe.name + (foeCard.foe.down ? " (down)" : foeCard.foe.armor ? " · armor " + foeCard.foe.armor : "")
+                  value: foeCard.foe.hp
+                  maximum: foeCard.foe.max
+                }
+
+                Act {
+                  visible: !foeCard.foe.down && !root.dead && !(root.fight && root.fight.incoming)
+                  text: "Attacks you"
+                  tooltipText: "Roll this foe's attack"
+                  onClicked: root.act(["enemy", foeCard.modelData], "fight")
+                }
+              }
+            }
+
+            Line {
+              visible: root.fight !== null && !root.dying && !root.dead && root.standing().length > 0 && !root.fight.incoming
+              size: Commons.Style.font.caption
+              color: root.dim
+              text: "Attack the selected foe (boons and banes above apply):"
+            }
+
+            Flow {
+              Layout.fillWidth: true
+              spacing: Commons.Style.space(4)
+              visible: root.fight !== null && !root.dying && !root.dead && root.standing().length > 0 && !root.fight.incoming
+
+              Repeater {
+                model: root.kit.weapons.filter(w => w.attack)
+                delegate: Choice {
+                  required property var modelData
+                  text: modelData.label + " " + modelData.damage + root.weaponNote(modelData)
+                  tooltipText: modelData.condition === "broken" ? "Broken: mend it first" : modelData.condition === "damaged" ? "Damaged: a bane on every use until it is mended" : ""
+                  enabled: modelData.condition !== "broken" && root.waiting === null && !root.busy
+                  opacity: enabled ? 1 : 0.4
+                  onClicked: root.attack(modelData.id)
+                }
+              }
+            }
+
+            Riders {
+              visible: root.fight !== null && !root.dying && !root.dead && root.standing().length > 0 && !root.fight.incoming && choices.length > 0
+              scope: "attack"
+            }
+
+            Line {
+              visible: root.fight !== null && !!root.fight.incoming
+              color: Commons.Color.urgent
+              font.bold: true
+              text: root.fight && root.fight.incoming ? root.fight.incoming.name + " hits: " + root.fight.incoming.damage
+                + " damage" + (root.kit.armor ? ", armor " + root.kit.armor : "") : ""
+            }
+
+            Flow {
+              Layout.fillWidth: true
+              spacing: Commons.Style.space(4)
+              visible: root.fight !== null && !!root.fight.incoming
+
+              Act {
+                visible: !root.dying && root.fight !== null && !!root.fight.incoming && root.fight.incoming.can_defend !== false
+                text: "Evade"
+                onClicked: root.act(["defend", "evade"].concat(root.useArgs("defend", "dodge")), "fight", () => root.spent("defend", "dodge"))
+              }
+
+              Repeater {
+                model: !root.dying && root.fight && root.fight.incoming && root.fight.incoming.can_defend !== false
+                  && root.fight.incoming.can_parry !== false ? root.kit.weapons.filter(w => w.parry) : []
+                delegate: Choice {
+                  required property var modelData
+                  text: "Parry: " + modelData.label + root.weaponNote(modelData)
+                  tooltipText: modelData.condition === "broken" ? "Broken: mend it first" : ""
+                  enabled: modelData.condition !== "broken" && !root.busy
+                  opacity: enabled ? 1 : 0.4
+                  onClicked: root.act(["defend", "parry", "--with", modelData.id].concat(root.useArgs("defend", "parry")), "fight", () => root.spent("defend", "parry"))
+                }
+              }
+
+              Act {
+                text: "Take it"
+                onClicked: root.act(["defend", "take"], "fight")
+              }
+            }
+
+            Riders {
+              visible: root.fight !== null && !root.dying && !root.dead && choices.length > 0
+              scope: "defend"
+            }
+
+            Riders {
+              visible: root.fight !== null && !root.dying && !root.dead && choices.length > 0
+              scope: "round"
+            }
+
+            Act {
+              visible: root.fight !== null && !root.dead
+              text: "Next round"
+              tooltipText: "Deal new initiative cards"
+              onClicked: root.act(["fight", "--round"].concat(root.useArgs("round", "")), "fight", () => root.spent("round", ""))
+            }
+
+            ErrorLine { place: "fight" }
+
             // Magic: what the hero can cast, with the power, boons and banes above, and what is ready to cast.
 
             Heading { text: "Magic"; visible: root.magic !== null && !root.dying && !root.dead }
 
             RowLayout {
               Layout.fillWidth: true
-              spacing: Style.space(12)
+              spacing: Commons.Style.space(12)
               visible: root.magic !== null && !root.dying && !root.dead
 
               Stepper {
@@ -2154,7 +2450,7 @@ Item {
               }
 
               Line {
-                size: Style.font.caption
+                size: Commons.Style.font.caption
                 color: root.dim
                 text: root.magic ? "Ready " + root.magic.ready + " of " + root.magic.limit : ""
               }
@@ -2162,10 +2458,10 @@ Item {
 
             Flow {
               Layout.fillWidth: true
-              spacing: Style.space(4)
+              spacing: Commons.Style.space(4)
               visible: root.magic !== null && root.magic.body.length > 0 && !root.dying && !root.dead
 
-              Line { Layout.fillWidth: false; size: Style.font.caption; color: root.dim; text: "Power from the body:" }
+              Line { Layout.fillWidth: false; size: Commons.Style.font.caption; color: root.dim; text: "Power from the body:" }
 
               Repeater {
                 model: root.magic ? root.magic.body : []
@@ -2181,7 +2477,7 @@ Item {
 
             Flow {
               Layout.fillWidth: true
-              spacing: Style.space(4)
+              spacing: Commons.Style.space(4)
               visible: root.magic !== null && !root.dying && !root.dead
 
               Repeater {
@@ -2192,7 +2488,7 @@ Item {
                   tooltipText: (modelData.trick ? "A magic trick: always ready, and it works" : "Rank " + modelData.rank + (modelData.school ? ", " + modelData.school : ""))
                     + (modelData.damage && root.fight ? ". Hits the foe you aimed at" : "") + (modelData.heal ? ". Heals you" : "")
                   selected: !modelData.trick
-                  enabled: root.waiting === null && !action.running
+                  enabled: root.waiting === null && !root.busy
                   opacity: enabled ? 1 : 0.5
                   onClicked: root.cast(modelData, false)
                 }
@@ -2207,11 +2503,11 @@ Item {
                 id: spellRow
                 required property var modelData
                 Layout.fillWidth: true
-                spacing: Style.space(4)
+                spacing: Commons.Style.space(4)
 
                 Line { text: spellRow.modelData.name + (spellRow.modelData.cost !== null ? " · " + spellRow.modelData.cost + " " + root.magic.track.toUpperCase() : "") }
 
-                Choice {
+                Act {
                   text: "Prepare"
                   tooltipText: "Hold it ready (it takes a stretch of study, the GM's to give)"
                   selected: root.preparing === spellRow.modelData.name
@@ -2221,7 +2517,7 @@ Item {
                 Choice {
                   text: "From the grimoire"
                   tooltipText: spellRow.modelData.reaction ? "A reaction spell can't be cast from the grimoire" : "Cast it unprepared: it takes twice as long"
-                  enabled: root.waiting === null && !action.running && !spellRow.modelData.reaction
+                  enabled: root.waiting === null && !root.busy && !spellRow.modelData.reaction
                   opacity: enabled ? 1 : 0.4
                   onClicked: root.cast(spellRow.modelData, true)
                 }
@@ -2230,19 +2526,19 @@ Item {
 
             Line {
               visible: root.preparing !== ""
-              size: Style.font.caption
+              size: Commons.Style.font.caption
               color: root.dim
               text: "You hold as many as you can: put which aside for " + root.preparing + "?"
             }
 
             Flow {
               Layout.fillWidth: true
-              spacing: Style.space(4)
+              spacing: Commons.Style.space(4)
               visible: root.preparing !== ""
 
               Repeater {
                 model: root.preparing !== "" ? root.ready().filter(s => !s.trick) : []
-                delegate: Choice {
+                delegate: Act {
                   required property var modelData
                   text: modelData.name
                   onClicked: root.putAside(modelData)
@@ -2267,8 +2563,8 @@ Item {
 
             Flow {
               Layout.fillWidth: true
-              spacing: Style.space(4)
-              visible: !root.dying && !root.dead
+              spacing: Commons.Style.space(4)
+              visible: root.ridersFor("alone").length > 0 && !root.dying && !root.dead
 
               Repeater {
                 model: root.ridersFor("alone")
@@ -2276,7 +2572,7 @@ Item {
                   required property var modelData
                   text: modelData.name + " (" + root.abilityCost(modelData) + ")"
                   tooltipText: modelData.afford ? "Pay for it; the GM reads its page" : "Not enough to pay for it"
-                  enabled: modelData.afford && !action.running
+                  enabled: modelData.afford && !root.busy
                   opacity: enabled ? 1 : 0.4
                   onClicked: root.useAbility(modelData)
                 }
@@ -2295,6 +2591,7 @@ Item {
                 id: trackCard
                 required property var modelData
                 readonly property bool ranked: !!root.progressSpec && !!root.progressSpec.kinds[modelData.kind]
+                name: modelData.name
                 clickable: false
 
                 Line {
@@ -2303,7 +2600,7 @@ Item {
                 }
 
                 Line {
-                  size: Style.font.caption
+                  size: Commons.Style.font.caption
                   color: root.dim
                   text: (trackCard.modelData.rank ? trackCard.modelData.rank + " " : "")
                     + (root.progressSpec ? (root.progressSpec.kinds[trackCard.modelData.kind] || root.progressSpec.unranked[trackCard.modelData.kind] || "").toLowerCase() : "")
@@ -2313,15 +2610,15 @@ Item {
                 Boxes { track: trackCard.modelData }
 
                 RowLayout {
-                  spacing: Style.space(4)
+                  spacing: Commons.Style.space(4)
 
-                  Choice {
+                  Act {
                     text: "Mark progress"
                     tooltipText: trackCard.ranked ? "What a step of this rank is worth" : "One tick"
                     onClicked: root.act(["track", "mark", trackCard.modelData.id], "track")
                   }
 
-                  Choice {
+                  Act {
                     visible: trackCard.ranked
                     text: "Progress roll"
                     tooltipText: "Compare the filled boxes to the challenge dice"
@@ -2340,7 +2637,7 @@ Item {
             ColumnLayout {
               visible: trackFold.open && root.moves !== null && root.pc !== null && !root.dead
               Layout.fillWidth: true
-              spacing: Style.space(4)
+              spacing: Commons.Style.space(4)
 
               TextField {
                 id: trackName
@@ -2352,7 +2649,7 @@ Item {
 
               Flow {
                 Layout.fillWidth: true
-                spacing: Style.space(4)
+                spacing: Commons.Style.space(4)
 
                 Repeater {
                   model: root.progressSpec ? Object.keys(root.progressSpec.kinds) : []
@@ -2367,7 +2664,7 @@ Item {
 
               Flow {
                 Layout.fillWidth: true
-                spacing: Style.space(4)
+                spacing: Commons.Style.space(4)
 
                 Repeater {
                   model: root.progressSpec ? Object.keys(root.progressSpec.ranks) : []
@@ -2380,7 +2677,7 @@ Item {
                 }
               }
 
-              Choice {
+              Act {
                 text: "Start"
                 selected: true
                 onClicked: root.startTrack()
@@ -2394,154 +2691,29 @@ Item {
 
             RowLayout {
               Layout.fillWidth: true
-              visible: root.pc !== null && (root.pc.marks || []).length > 0 && !root.dead
+              visible: root.pc !== null && (root.pc.marks || []).length > 0 && !root.dying && !root.dead
 
               Line {
-                size: Style.font.bodySmall
+                size: Commons.Style.font.bodySmall
                 color: root.dim
                 text: root.pc ? "Marked: " + (root.pc.marks || []).map(k => root.pc.skills[k] ? root.pc.skills[k].name : k).join(", ") : ""
               }
 
-              Choice {
+              Act {
                 text: "Roll advancement"
                 tooltipText: "At the end of a session: each marked skill may go up one"
                 onClicked: root.act(["advance"], "roll")
               }
             }
 
-            // Fight: the GM starts and ends it; the clicks here are the pure mechanics.
-
-            Heading { text: root.fight ? "Fight · round " + root.fight.round : ""; visible: root.fight !== null }
-
-            Line {
-              visible: root.fight !== null
-              size: Style.font.caption
-              color: root.dim
-              text: "Initiative: " + root.orderText()
-            }
-
-            Repeater {
-              model: root.foeIds.length
-              delegate: Card {
-                id: foeCard
-                required property int index
-                readonly property string modelData: root.foeIds[index] || ""
-                readonly property var foe: root.fight && root.fight.foes[modelData] ? root.fight.foes[modelData] : ({ name: "", hp: 0, max: 1, armor: 0, down: true })
-                clickable: !foe.down
-                selected: !foe.down && root.aimedAt() === modelData
-                opacity: foe.down ? 0.5 : 1
-                onClicked: root.target = modelData
-
-                Meter {
-                  label: foeCard.foe.name + (foeCard.foe.down ? " (down)" : foeCard.foe.armor ? " · armor " + foeCard.foe.armor : "")
-                  value: foeCard.foe.hp
-                  maximum: foeCard.foe.max
-                }
-
-                Choice {
-                  visible: !foeCard.foe.down && !root.dead && !(root.fight && root.fight.incoming)
-                  text: "Attacks you"
-                  tooltipText: "Roll this foe's attack"
-                  onClicked: root.act(["enemy", foeCard.modelData], "fight")
-                }
-              }
-            }
-
-            Line {
-              visible: root.fight !== null && !root.dying && !root.dead && root.standing().length > 0 && !root.fight.incoming
-              size: Style.font.caption
-              color: root.dim
-              text: "Attack the selected foe (boons and banes above apply):"
-            }
-
-            Flow {
-              Layout.fillWidth: true
-              spacing: Style.space(4)
-              visible: root.fight !== null && !root.dying && !root.dead && root.standing().length > 0 && !root.fight.incoming
-
-              Repeater {
-                model: root.kit.weapons.filter(w => w.attack)
-                delegate: Choice {
-                  required property var modelData
-                  text: modelData.label + " " + modelData.damage + root.weaponNote(modelData)
-                  tooltipText: modelData.condition === "broken" ? "Broken: mend it first" : modelData.condition === "damaged" ? "Damaged: a bane on every use until it is mended" : ""
-                  enabled: modelData.condition !== "broken" && root.waiting === null
-                  opacity: enabled ? 1 : 0.4
-                  onClicked: root.attack(modelData.id)
-                }
-              }
-            }
-
-            Riders {
-              visible: root.fight !== null && !root.dying && !root.dead && root.standing().length > 0 && !root.fight.incoming && choices.length > 0
-              scope: "attack"
-            }
-
-            Line {
-              visible: root.fight !== null && !!root.fight.incoming
-              color: Color.urgent
-              font.bold: true
-              text: root.fight && root.fight.incoming ? root.fight.incoming.name + " hits: " + root.fight.incoming.damage
-                + " damage" + (root.kit.armor ? ", armor " + root.kit.armor : "") : ""
-            }
-
-            Flow {
-              Layout.fillWidth: true
-              spacing: Style.space(4)
-              visible: root.fight !== null && !!root.fight.incoming
-
-              Choice {
-                visible: !root.dying && root.fight !== null && !!root.fight.incoming && root.fight.incoming.can_defend !== false
-                text: "Evade"
-                onClicked: root.act(["defend", "evade"].concat(root.useArgs("defend", "dodge")), "fight", () => root.spent("defend", "dodge"))
-              }
-
-              Repeater {
-                model: !root.dying && root.fight && root.fight.incoming && root.fight.incoming.can_defend !== false
-                  && root.fight.incoming.can_parry !== false ? root.kit.weapons.filter(w => w.parry) : []
-                delegate: Choice {
-                  required property var modelData
-                  text: "Parry: " + modelData.label + root.weaponNote(modelData)
-                  tooltipText: modelData.condition === "broken" ? "Broken: mend it first" : ""
-                  enabled: modelData.condition !== "broken"
-                  opacity: enabled ? 1 : 0.4
-                  onClicked: root.act(["defend", "parry", "--with", modelData.id].concat(root.useArgs("defend", "parry")), "fight", () => root.spent("defend", "parry"))
-                }
-              }
-
-              Choice {
-                text: "Take it"
-                onClicked: root.act(["defend", "take"], "fight")
-              }
-            }
-
-            Riders {
-              visible: root.fight !== null && !root.dying && !root.dead && choices.length > 0
-              scope: "defend"
-            }
-
-            Riders {
-              visible: root.fight !== null && !root.dying && !root.dead && choices.length > 0
-              scope: "round"
-            }
-
-            Choice {
-              visible: root.fight !== null && !root.dead
-              text: "Next round"
-              tooltipText: "Deal new initiative cards"
-              onClicked: root.act(["fight", "--round"].concat(root.useArgs("round", "")), "fight", () => root.spent("round", ""))
-            }
-
-            ErrorLine { place: "fight" }
-
             // Rest
 
-            Heading { text: "Rest"; visible: root.pc !== null && !root.dead && Object.keys(root.labels.rests).length > 0 }
+            Heading { text: "Rest"; visible: root.pc !== null && !root.dying && !root.dead && Object.keys(root.labels.rests).length > 0 }
 
             Flow {
               Layout.fillWidth: true
-              spacing: Style.space(4)
-              visible: root.pc !== null && !root.dead
+              spacing: Commons.Style.space(4)
+              visible: root.pc !== null && !root.dying && !root.dead && Object.keys(root.labels.rests).length > 0
 
               Repeater {
                 model: root.pc ? Object.keys(root.labels.rests) : []
@@ -2551,8 +2723,8 @@ Item {
                   readonly property bool blocked: used || root.fight !== null || root.dying || root.dead
                   text: root.labels.rests[modelData].label
                   tooltipText: used ? "Already taken this shift" : root.fight ? "Not during a fight" : "Recover and let time pass"
-                  enabled: !blocked
-                  opacity: blocked ? 0.4 : 1
+                  enabled: !blocked && !root.busy
+                  opacity: enabled ? 1 : 0.4
                   onClicked: root.act(["rest", modelData].concat(root.tend && root.labels.rests[modelData].tend ? ["--tend"] : []).concat(root.useArgs("rest", modelData)),
                                       "rest", () => root.spent("rest", modelData))
                 }
@@ -2578,16 +2750,16 @@ Item {
 
             RowLayout {
               Layout.fillWidth: true
-              visible: root.pc !== null && !root.dead && (!!(root.game && root.game.light) || root.carriesTorch())
+              visible: root.pc !== null && !root.dying && !root.dead && (!!(root.game && root.game.light) || root.carriesTorch())
 
               Line {
-                size: Style.font.bodySmall
-                color: root.game && root.game.dark && !root.game.light ? Color.urgent : root.textColor
+                size: Commons.Style.font.bodySmall
+                color: root.game && root.game.dark && !root.game.light ? Commons.Color.urgent : root.textColor
                 text: root.game && root.game.light ? root.game.light.label + ": " + root.hours(root.game.light.left) + " left"
                   : root.game && root.game.dark ? "It is dark here." : "No light burning."
               }
 
-              Choice {
+              Act {
                 text: root.game && root.game.light ? "Put it out" : "Light a torch"
                 onClicked: root.act(root.game && root.game.light ? ["light", "--out"] : ["light", "torch"], "light")
               }
@@ -2598,12 +2770,12 @@ Item {
 
             // Oracle
 
-            Heading { text: "Oracle"; visible: root.pc !== null && !root.dead }
+            Heading { text: "Oracle"; visible: root.pc !== null && !root.dying && !root.dead }
 
             TextField {
               id: question
               objectName: "question"
-              visible: root.pc !== null && !root.dead
+              visible: root.pc !== null && !root.dying && !root.dead
               Layout.fillWidth: true
               placeholderText: "Ask a question"
               onAccepted: root.askOracle()
@@ -2611,8 +2783,8 @@ Item {
 
             Flow {
               Layout.fillWidth: true
-              spacing: Style.space(4)
-              visible: root.pc !== null && !root.dead && !!root.labels.fortune
+              spacing: Commons.Style.space(4)
+              visible: root.pc !== null && !root.dying && !root.dead && !!root.labels.fortune
 
               Repeater {
                 model: root.labels.fortune || []
@@ -2629,8 +2801,8 @@ Item {
 
             Flow {
               Layout.fillWidth: true
-              spacing: Style.space(4)
-              visible: root.pc !== null && !root.dead
+              spacing: Commons.Style.space(4)
+              visible: root.pc !== null && !root.dying && !root.dead
 
               Repeater {
                 model: root.labels.likelihood
@@ -2645,9 +2817,9 @@ Item {
 
             RowLayout {
               Layout.fillWidth: true
-              visible: root.pc !== null && !root.dead
+              visible: root.pc !== null && !root.dying && !root.dead
 
-              Choice {
+              Act {
                 Layout.fillWidth: true
                 text: "Ask"
                 tooltipText: "Or press Enter in the question"
@@ -2655,7 +2827,7 @@ Item {
                 onClicked: root.askOracle()
               }
 
-              Choice {
+              Act {
                 text: "Meaning"
                 tooltipText: "Words to read for a question a yes or no can't answer"
                 onClicked: root.askMeaning()
@@ -2663,8 +2835,8 @@ Item {
             }
 
             Line {
-              visible: root.lastOracle() !== "" && !root.dead
-              size: Style.font.bodySmall
+              visible: root.lastOracle() !== "" && !root.dying && !root.dead
+              size: Commons.Style.font.bodySmall
               text: root.lastOracle()
             }
 
@@ -2680,21 +2852,21 @@ Item {
                 id: clockRow
                 required property var modelData
                 Layout.fillWidth: true
-                spacing: Style.space(2)
+                spacing: Commons.Style.space(2)
 
                 Line { text: clockRow.modelData.label + "  " + clockRow.modelData.value + "/" + clockRow.modelData.segments }
 
                 Row {
-                  spacing: Style.space(3)
+                  spacing: Commons.Style.space(3)
 
                   Repeater {
                     model: clockRow.modelData.segments
                     delegate: Rectangle {
                       required property int index
-                      width: Style.space(14)
-                      height: Style.space(6)
+                      width: Commons.Style.space(14)
+                      height: Commons.Style.space(6)
                       radius: 2
-                      color: index < clockRow.modelData.value ? Color.urgent : root.faint
+                      color: index < clockRow.modelData.value ? Commons.Color.urgent : root.faint
                     }
                   }
                 }
@@ -2723,9 +2895,11 @@ Item {
 
             Heading { text: "Clues"; visible: root.game !== null && root.game.clues.length > 0 }
 
+            // An empty Flow has no height but still takes its spacing: each one shows only with something in it.
             Flow {
               Layout.fillWidth: true
-              spacing: Style.space(4)
+              spacing: Commons.Style.space(4)
+              visible: root.game !== null && root.game.clues.length > 0
 
               Repeater {
                 model: root.game ? root.game.clues : []
@@ -2740,38 +2914,36 @@ Item {
 
             Line {
               visible: root.pc !== null && root.pc.items.length > 0
-              size: Style.font.bodySmall
+              size: Commons.Style.font.bodySmall
               text: root.pc ? root.pc.items.join(", ") : ""
             }
 
             Line {
               visible: root.game !== null && !!root.game.load
-              size: Style.font.bodySmall
-              color: root.game && root.game.load && root.game.load.over ? Color.urgent : root.dim
+              size: Commons.Style.font.bodySmall
+              color: root.game && root.game.load && root.game.load.over ? Commons.Color.urgent : root.dim
               text: root.game && root.game.load ? "Carrying " + root.game.load.carried + " of " + root.game.load.capacity + (root.game.load.over ? ": over the load" : "") : ""
             }
 
             Repeater {
-              model: root.pc && !root.dead ? root.worn() : []
+              model: root.pc && !root.dying && !root.dead ? root.worn() : []
               delegate: RowLayout {
                 id: mending
                 required property var modelData
                 Layout.fillWidth: true
-                spacing: Style.space(4)
+                spacing: Commons.Style.space(4)
 
-                Line { text: "The " + mending.modelData.label.toLowerCase() + " is " + mending.modelData.condition; size: Style.font.bodySmall }
+                Line { text: "The " + mending.modelData.label.toLowerCase() + " is " + mending.modelData.condition; size: Commons.Style.font.bodySmall }
 
-                Choice {
+                Act {
                   text: "Mend"
                   tooltipText: "A roll to mend it"
-                  enabled: !action.running
                   onClicked: root.act(["repair", mending.modelData.id], "gear")
                 }
 
-                Choice {
+                Act {
                   text: "Artisan"
                   tooltipText: "An artisan mends it, with no roll"
-                  enabled: !action.running
                   onClicked: root.act(["repair", mending.modelData.id, "--artisan"], "gear")
                 }
               }
@@ -2783,7 +2955,7 @@ Item {
 
             Line {
               visible: root.prefsText() !== ""
-              size: Style.font.bodySmall
+              size: Commons.Style.font.bodySmall
               color: root.dim
               text: root.prefsText()
             }
@@ -2794,7 +2966,7 @@ Item {
               model: root.recent()
               delegate: Line {
                 required property var modelData
-                size: Style.font.bodySmall
+                size: Commons.Style.font.bodySmall
                 color: modelData.type === "check" || modelData.type === "push" ? root.textColor : root.dim
                 text: modelData.text
               }
@@ -2807,12 +2979,12 @@ Item {
 
             Flow {
               Layout.fillWidth: true
-              spacing: Style.space(4)
+              spacing: Commons.Style.space(4)
               visible: paceFold.visible && paceFold.open
 
               Repeater {
                 model: [["quick", "Quick"], ["normal", "Normal"], ["careful", "Careful"]]
-                delegate: Choice {
+                delegate: Act {
                   required property var modelData
                   text: modelData[1]
                   selected: root.pace === modelData[0]
@@ -2832,12 +3004,12 @@ Item {
 
             Flow {
               Layout.fillWidth: true
-              spacing: Style.space(4)
+              spacing: Commons.Style.space(4)
               visible: effectsFold.open
 
               Repeater {
                 model: [["borders", "Borders"], ["screen", "Screen"], ["sound", "Sound"], ["candle", "Candlelight"], ["omens", "Omens"], ["screensaver", "Screensaver"]]
-                delegate: Choice {
+                delegate: Act {
                   required property var modelData
                   text: modelData[1]
                   selected: root.effects[modelData[0]] !== false

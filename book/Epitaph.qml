@@ -62,6 +62,18 @@ Item {
 
   MouseArea { anchors.fill: parent; onClicked: epitaph.dismissed() }
 
+  // The keyboard and a screen reader put it away as a click does. It has the keyboard while
+  // it is up, so nothing typed goes to the page under it.
+  Keys.onPressed: event => {
+    if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space || event.key === Qt.Key_Escape) {
+      epitaph.dismissed()
+      event.accepted = true
+    }
+  }
+  Accessible.role: Accessible.Button
+  Accessible.name: "Read the story again"
+  Accessible.onPressAction: epitaph.dismissed()
+
   // Ash, drifting down over it all.
   ParticleSystem { id: ash; running: epitaph.visible && epitaph.gpu }
   ImageParticle {
@@ -189,6 +201,16 @@ Item {
     PauseAnimation { duration: 800 }
     NumberAnimation { target: hint; property: "opacity"; to: 1; duration: 800 }
   }
-  onVisibleChanged: if (visible) arrive.restart()
-  Component.onCompleted: if (visible) arrive.restart()
+  onVisibleChanged: {
+    if (visible) {
+      arrive.restart()
+      forceActiveFocus()
+    } else {
+      arrive.complete()
+    }
+  }
+  Component.onCompleted: if (visible) {
+    arrive.restart()
+    forceActiveFocus()
+  }
 }
