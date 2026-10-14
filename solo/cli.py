@@ -898,7 +898,10 @@ def cmd_say(args):
     else:
         text = sys.stdin.read() if args.text == ["-"] else " ".join(args.text)
         root = campaign.find(args.campaign)
-        if not args.player and _recorded_for_the_gm(root):
+        if args.player and os.environ.get("SOLO_BOOK"):
+            # `solo gm turn` records what the player wrote; anything else would be the GM's words under their name.
+            raise SoloError("the player's words are theirs: the Book records them as they send them, and the GM can't add to them")
+        elif not args.player and _recorded_for_the_gm(root):
             # A GM that records a draft and then sends something else leaves two replies in the story.
             print("not recorded: your final message is recorded for you here, so just send it")
             return

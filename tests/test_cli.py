@@ -558,9 +558,9 @@ class TranscriptCliTest(CliCase):
         self.new_game()
         with unittest.mock.patch.dict(os.environ, {"SOLO_BOOK": "1"}):
             self.assertIn("not recorded", self.solo("-C", self.game, "say", "A draft.")[1])
-            self.solo("-C", self.game, "say", "--player", "I wait.")  # the player's words still are
         with unittest.mock.patch.dict(os.environ, {"CLAUDECODE": "1"}):
             self.assertIn("not recorded", self.solo("-C", self.game, "say", "Another draft.")[1])
+            self.solo("-C", self.game, "say", "--player", "I wait.")  # the player's words still are
         with campaign.session(self.game) as c:
             self.assertEqual([(e["by"], e["text"]) for e in c.events if e["type"] == "said"], [("player", "I wait.")])
 

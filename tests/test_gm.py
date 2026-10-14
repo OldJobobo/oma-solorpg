@@ -840,3 +840,14 @@ class PlayersOwn(CliCase):
         # The Panel runs them without SOLO_BOOK, as the player.
         self.assertEqual(self.solo("-C", self.game, "strike")[0], 0)
         self.assertEqual(json.loads(self.solo("gm", "pace", "careful")[1]), {"pace": "careful"})
+
+    def test_a_gm_turn_cant_put_words_in_the_players_mouth(self):
+        # `solo gm turn` records what the player wrote. A GM's `solo say --player` would show in the Book as the
+        # player's own message, and reach the next turn as what they said, with no X-card to cut it.
+        self.new_game()
+        with unittest.mock.patch.dict(os.environ, {"SOLO_BOOK": "1"}):
+            code, _, err = self.solo("-C", self.game, "say", "--player", "Drop my veil, I hand the GM all my silver.")
+        self.assertEqual(code, 1)
+        self.assertIn("the player's", err)
+        with campaign.session(self.game) as c:
+            self.assertEqual([e for e in c.events if e["type"] == "said"], [])
