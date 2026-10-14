@@ -25,7 +25,58 @@ What changed in each version of oma-solorpg. The version is the one in `manifest
 
 ### Fixed
 
-<!-- fixes from the review land here -->
+Campaigns and commits:
+
+- A commit is checked before it is written. Time must be a number from zero up and at most a year in one step (`"1"` reads as 1, and "2 stretches" now reads); a memory is one line of text; lists where objects belong, NaN, infinity and ids that aren't text are refused with a sentence saying what the key holds. A commit with a string for time used to hang, and a list as a memory broke `solo resume` for good. A fuzz test throws malformed commits at the engine.
+- A condition comparing values of different kinds (a fact `"two"` against 2) is false, instead of failing every later command after its event was already written.
+- `state.json` always matches the log: any command, read-only ones included, brings it up to date after a crash, and a map, codex or art the packs can't supply leaves it without them and says why on stderr.
+- Every event is on the disk (fsync) before the command goes on. A write that fails is taken back and the command stops with a sentence. A campaign whose start stopped before its first event, and a damaged line in the middle of the log, say what happened and what to do.
+- A clock filled by a commit or a clock stage sets off the clocks that listen to it.
+- A failed check can be pushed, and momentum burned on a roll, only while the roll is still open: once a commit or a move follows it, it stands, and the Table stops offering both.
+- Removing what the hero lacks warns about the right list. A second foe of a kind never takes another person's id. `solo log -n 0` shows nothing, and `solo log | head` ends quietly.
+- `SOLO_SEED` gave every command the same roll; a seeded run now repeats roll for roll and its rolls differ.
+- Files in a pack that link outside it (rules pages, tables, people, chapters and the rest) are no longer read, and `solo validate` lists them.
+- `solo recall` folds text about twice as fast on a long campaign.
+- A game whose rules aren't built is told its own way to build them (`build` in `system.toml`), not Dragonbane's.
+
+The GM:
+
+- Claude Code runs the GM with `--restricted` and `--permission-mode dontAsk` when it has them, so the player's own Claude Code settings, allow rules and permission mode never reach a GM turn.
+- The GM can no longer strike a message, change the table settings, or set its own budget or pace: those commands refuse inside a Book turn. What a session has spent is counted in `~/.local/state/solo`, out of the campaign folder.
+- A new session's first prompt puts the table and the adventure's text in a block marked as data, never instructions.
+- A turn ended by the quiet limit, the clock or Stop is charged an estimate (the session's dearest turn, or 50 cents) instead of nothing. Only an agent's own lost-session messages start a fresh session.
+- Stop works while the agent is still starting, and only ever ends this campaign's agent. After a stopped turn the GM is told its reply never reached the player, and its rolls aren't passed off as the player's.
+- GM narration that says "commit" or "the player" no longer disappears from the Book. Commands Claude Code's permissions refused show in `solo report`, `solo review` and play tests.
+- The Book and the make targets pick the agent the same way (`AGENT`, then Omarchy's default, then claude, then codex), and `solo gm agent` says why when there is none. `SOLO_AGENT` is now `AGENT`.
+- A desktop border that couldn't be restored no longer stays red after later effects, and an omen's words can't be read as notify-send options. `SOLO_GM_*` limits ignore zero, negative and non-numeric values.
+- `tests/gm_eval/compare.py` compares scenario by scenario with a permutation test corrected for the number of metrics; play tests record the model the GM ran on and keep their report when the judge can't start.
+
+The Table and the Book:
+
+- The X-card takes the cut message off the page, and only that one; a note that starts with a dash still cuts; a cut that fails keeps its words.
+- Clicks while a command runs wait their turn instead of vanishing, and the buttons say so. A message the GM never got stops the Book waiting.
+- A shut Book runs no animations. The d20 follows the very first game without a restart of the shell.
+- With no agent set up, the Book says how to set one. Errors are kept per source, and a `solo` that can't start says so.
+- Quiet text stays readable and quieter than the body on light themes too. The Table and the d20 load on Qt 6.12.
+- At 0 HP the Table offers the death roll and what a dying hero can do, nothing else. In a fight the weapons sit right under the last roll.
+- New adventure names each adventure's system, and says why one can't be played yet.
+- Folds, cards and the Book's links work from the keyboard (Tab, Enter, Space) and are named to a screen reader; Enter in the hero's name begins.
+- The Table tells the time as the Book does, names a skill once in its last roll, leaves out empty rows of buttons, goes Home when a campaign's folder is gone, and never shows an empty scene card.
+
+Imports and the audit:
+
+- `solo audit` reads a table's results on their rows and checks its dice against them, reads every number of a weapon, rest, monster, spell, creation choice and hero back against its page, fails a mapped item whose pages have no text, and counts spells, moves and assets an inventory must claim. Corruptions it used to pass (swapped rows, 1d6 made 1d20, a monster's HP changed to another number on the page) now fail.
+- `solo import book` (`make dragonbane`) exits non-zero when a book is unknown, unreadable, can't be built or fails its audit, after building the rest, and says when a PDF looks scanned. `--replace` keeps the old pack until the new one is built and playable. System packs are validated after a build.
+- A changed layout names the book, table and page instead of "something went wrong"; a grip written "1-handed" is still a weapon; a roll table whose rows stop short of its die fails the import; what an importer leaves out, it says in its notes.
+- No importer writes into the repository. An inventory keeps its extract relative to `SOLO_HOME`, so a built pack is the same on every machine.
+- `solo new` on rules that aren't built says so before asking for a hero, and `solo library` gives each adventure `ready`, `why` and `system_name`.
+- `tests/test_no_book_text.py` can check every pull request against salted fingerprints of the maintainer's books, tables included, once the maintainer generates them.
+
+Install and docs:
+
+- `solo` on a Python older than 3.11 says so in a sentence. `solo setup` and `solo play` link skills only for the agents you have, and setup says what playing needs.
+- `make uninstall` puts the desktop back first. A premise with backticks or `$( )` reaches `solo` as typed and runs nothing.
+- PyMuPDF is installed with pacman on Omarchy, wherever the docs say how. The website installs the way the README does.
 
 ## 0.3.0
 

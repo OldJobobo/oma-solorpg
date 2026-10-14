@@ -13,7 +13,7 @@ This repository is public, and a publisher's license lets a project like this us
 
 Before you push, read your own diff for anything you typed from a book, and say in the pull request where every number and text in it came from.
 
-`tests/test_no_book_text.py` checks the same thing by machine: when the books you own have been extracted (`solo extract`, or `SOLO_SOURCES` pointing at a folder of extracts), it fails on any run of eight words of a book in any file of the repository, committed or not. It has nothing to check without a book, so run `make test` once with yours at hand before you push a change to an importer.
+`tests/test_no_book_text.py` checks the same thing by machine: it fails on any run of eight words of a book, or any stretch of a table's numbers, in any file of the repository, committed or not. It knows the books two ways: the fingerprints in `tests/fixtures/book_fingerprints.txt` (salted hashes the maintainer makes from their own extracts with `python3 tests/test_no_book_text.py --fingerprint`, and commits; every pull request is checked against them, in CI too), and the extracts themselves when you have the books (`solo extract`, or `SOLO_SOURCES` pointing at a folder of extracts). With neither, it skips and says it is unarmed, so run `make test` once with your books at hand before you push a change to an importer.
 
 ## Running the checks
 

@@ -241,9 +241,9 @@ The same command builds the adventures into `~/Games/solo/adventures`, and they 
 
 Each place of a site is a scene with its read-aloud text and its GM notes, and the ways between them are exits. A door the text calls locked, blocked or hidden is a gated exit the GM opens when the heroes get through. Every person and monster has the stat block the book gives. The build says where it had to choose: a map is a picture, so a way the text doesn't give is linked from the place before it, and said. Clocks and timers are the GM's, as they are in the book.
 
-A book no importer knows (another printing, another adventure) is read by your agent instead: `make rules BOOK=<pdf>` and `make supplement ID=<id> BOOK=<pdf>` start that with the `solo-rules-import` skill, and `make adventure` does it for an adventure with `solo-import`. `make dragonbane` says which of your PDFs it left for them.
+A book no importer knows (another printing, another adventure) is read by your agent instead: `make rules BOOK=<pdf>` and `make supplement ID=<id> BOOK=<pdf>` start that with the `solo-rules-import` skill, and `make adventure` does it for an adventure with `solo-import`. `make dragonbane` says which of your PDFs it left for them, and exits with an error when it left one, couldn't read one, or a pack failed its audit (the other books are still built).
 
-If you already have packs an agent wrote from the same books, `solo import book` won't overwrite them. Build the new ones beside them (`--systems ~/Games/solo/new`), and `solo compare ~/Games/solo/new/dragonbane-rulebook ~/Games/solo/systems/dragonbane-rulebook` shows, area by area, what differs, before you decide which to keep.
+`make dragonbane REPLACE=1` builds again over packs it made before, and keeps the old pack until the new one is built and playable. If you already have packs an agent wrote from the same books, `solo import book` won't overwrite them. Build the new ones beside them (`--systems ~/Games/solo/new`), and `solo compare ~/Games/solo/new/dragonbane-rulebook ~/Games/solo/systems/dragonbane-rulebook` shows, area by area, what differs, before you decide which to keep.
 
 ### What this repository holds
 
