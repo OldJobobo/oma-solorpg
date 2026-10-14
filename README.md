@@ -124,7 +124,7 @@ With clicks only:
    - A hero with spells has them under Magic: set a power level and click a spell that is ready to cast it (the foe you picked takes the damage), prepare another from the Grimoire, or cast it from there.
    - The abilities that go with a blow, a parry, a rest or a new round are switched on first and paid for with the roll. The others are one click, and the GM reads their page.
    - A weapon that is damaged or broken says so on its button. Mend (a roll) and Artisan (none) are in Gear, where the load shows too.
-   - At 0 HP you're dying, and Death roll is the only button left.
+   - At 0 HP you're dying: the table offers the Death roll (and, with the solo rules, Save yourself and Rally), while the foes' attacks and the next round go on.
 
 Right-click the d20 to open the Book again. The Campaigns button lists every game with its hero and scene, so resuming is one click. Delete on a card removes a campaign you've abandoned, folder and all, after a second click to confirm (`solo delete <dir>` from a terminal).
 
