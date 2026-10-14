@@ -882,7 +882,8 @@ def contrast(a, b):
 def quiet_text_reads(engine, item, panel, out, wait):
     """Dim text (the Table's captions, the Book's asides) keeps WCAG AA's 4.5:1 and stays quieter than the body, and
     faint (rules, borders, blanks) 3:1 and quieter than dim, on a dark theme (Tokyo Night) and a light one (Catppuccin
-    Latte), where darkening the text had made dim louder than the body."""
+    Latte), where darkening the text had made dim louder than the body. Both hold on the Book's panels too (the
+    composer, the X-card, the codex, the fight), whose surface is a shade toward the text."""
     from PySide6.QtQml import QQmlComponent
     holder = QQmlComponent(engine)
     holder.setData(b"import QtQuick\nimport qs.Commons as Commons\nQtObject { property QtObject colors: Commons.Color }", QUrl())
@@ -897,6 +898,10 @@ def quiet_text_reads(engine, item, panel, out, wait):
         body, dim, faint = (contrast(c, background) for c in (text, item.property("dim"), theme.property("faint")))
         if not (4.5 <= dim < body and 3 <= faint < dim):
             problems.append(f"on {name} the body reads {body:.2f}:1, dim {dim:.2f}:1 and faint {faint:.2f}:1")
+        surface = theme.property("surface")
+        dim, faint = (contrast(c, surface) for c in (item.property("dim"), theme.property("faint")))
+        if not (4.5 <= dim and 3 <= faint):
+            problems.append(f"on {name}'s panels dim reads {dim:.2f}:1 and faint {faint:.2f}:1")
         if name != "Tokyo Night":
             panel.grabWindow().save(str(out / "table-light.png"))
     popups.setProperty("text", dark[0])

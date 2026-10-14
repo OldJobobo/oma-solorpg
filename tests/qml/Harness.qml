@@ -13,8 +13,8 @@ Item {
   QtObject {
     id: theme
     property color text: "#c0caf5"
-    property color dim: Common.fade(text, background, 4.6, 0.5)  // as the plugin derives them (Panel.qml)
-    property color faint: Common.fade(text, background, 3, 0.65)
+    property color dim: Common.fade(text, surface, 4.6, 0.5)  // as the plugin derives them (Panel.qml)
+    property color faint: Common.fade(text, surface, 3, 0.65)
     property color background: "#1a1b26"
     property color surface: "#20212e"
     property color accent: "#7aa2f7"
