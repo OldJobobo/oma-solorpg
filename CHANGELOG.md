@@ -61,7 +61,7 @@ The Table and the Book:
 - At 0 HP the Table offers the death roll and what a dying hero can do, nothing else. In a fight the weapons sit right under the last roll.
 - New adventure names each adventure's system, and says why one can't be played yet.
 - Folds, cards and the Book's links work from the keyboard (Tab, Enter, Space) and are named to a screen reader; Enter in the hero's name begins.
-- The Table tells the time as the Book does, names a skill once in its last roll, leaves out empty rows of buttons, goes Home when a campaign's folder is gone, and never shows an empty scene card.
+- The Table tells the time as the Book does, names a skill once in its last roll, leaves out empty rows of buttons, goes Home when a campaign's folder is gone, and never shows an empty scene card. A campaign whose `state.json` is missing (deleted, or never written: `solo use` doesn't write it) has solo make it again and opens on its table, and one that can't be opened (its start stopped before the first event) goes Home with the engine's sentence why, from its card too, instead of "Loading the table" for good.
 
 Imports and the audit:
 

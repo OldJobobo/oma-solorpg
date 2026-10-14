@@ -338,6 +338,7 @@ def main(out):
     errors += by_keyboard(item, panel, wait)
     errors += adventures_not_ready(item, panel, out, wait)
     errors += a_campaign_gone(item, panel, out, work, wait)
+    errors += a_state_json_gone(item, panel, work, wait)
     print("bar tooltip:", bar.rootObject().tooltip())
     print("launched:")
     for command in LAUNCHED:
@@ -1001,6 +1002,74 @@ def a_campaign_gone(item, panel, out, work, wait):
         wait(1000)
         if item.property("view") != "home":
             problems.append(f"opened on a campaign that is gone, the Table shows {item.property('view')!r}")
+    finally:
+        pointer.write_text(kept)
+        wait(1500)
+    return problems
+
+
+def a_state_json_gone(item, panel, work, wait):
+    """A campaign whose state.json is gone (deleted, or never written: `solo use` makes a campaign current without
+    opening it) is made whole by solo and opens on its table: as the panel opens, while the table is open, and from its
+    card while another campaign is current. One whose start stopped before its first event goes Home and says so in the
+    engine's words, and its card, the current one, takes it there again instead of "Loading the table" for good."""
+    solo = [str(REPO / "bin" / "solo")]
+    pointer = work / "state" / "solo" / "current"
+    kept = pointer.read_text()
+    campaigns = work / "games" / "campaigns"
+    alpha, beta, half = campaigns / "alpha", campaigns / "beta", campaigns / "half"
+    for game, title in ((alpha, "Alpha"), (beta, "Beta")):
+        subprocess.run(solo + ["new", "red-tusk", "--dir", str(game), "--title", title], check=True, capture_output=True)
+    half.mkdir()
+    (half / "campaign.toml").write_text((beta / "campaign.toml").read_text().replace('title = "Beta"', 'title = "Half"'))
+    problems = []
+
+    def on_its_table(game, when):
+        if item.property("view") != "table" or item.property("game") is None or item.property("campaign") != str(game) \
+                or not (game / "state.json").exists():
+            lost = item.findChild(QObject, "lost")
+            problems.append(f"{when}, the Table is on {item.property('view')!r} with game {item.property('game')!r}, "
+                            f"saying {lost and lost.property('visible') and lost.property('text')!r}")
+
+    def home_saying(words, when):
+        lost = item.findChild(QObject, "lost")
+        if item.property("view") != "home" or lost is None or not lost.property("visible") or words not in lost.property("text"):
+            problems.append(f"{when}, the Table is on {item.property('view')!r}, saying {lost and lost.property('text')!r}")
+
+    def click(name):
+        card = cards(panel.contentItem(), name)
+        if card is None:
+            problems.append(f"Home has no card for {name}")
+            return
+        panel.requestActivate()
+        wait(100)
+        card.forceActiveFocus()
+        QTest.keyClick(panel, Qt.Key_Space)
+
+    try:
+        wait(1500)
+        (beta / "state.json").unlink(missing_ok=True)
+        item.close()
+        item.open("{}")
+        wait(3000)
+        on_its_table(beta, "opened on a campaign whose state.json was deleted")
+        (beta / "state.json").unlink(missing_ok=True)
+        wait(3000)
+        on_its_table(beta, "with state.json deleted while the table was open")
+        subprocess.run(solo + ["use", str(alpha)], check=True, capture_output=True)
+        (beta / "state.json").unlink(missing_ok=True)
+        item.show("home")
+        wait(2500)
+        click("Beta")
+        wait(3000)
+        on_its_table(beta, "after a click on the card of another campaign whose state.json is gone")
+        pointer.write_text(f"{half}\n")
+        wait(3000)
+        home_saying("it stopped while it was being created", "on a campaign whose start stopped before its first event")
+        wait(1000)
+        click("Half")
+        wait(3000)
+        home_saying("it stopped while it was being created", "after a click on that campaign's card, the current one")
     finally:
         pointer.write_text(kept)
         wait(1500)
