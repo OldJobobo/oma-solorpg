@@ -456,6 +456,23 @@ class BuildTest(unittest.TestCase):
             books.build(self.tmp / "extract", systems=self.systems, replace=True)
         self.assertEqual((self.built(), sorted(path.name for path in self.systems.iterdir())), (1, ["lanterns"]))
 
+    def test_a_first_build_the_engine_cant_play_or_load_leaves_nothing_where_the_library_would_list_it(self):
+        # The pack would shadow the bundled one of its name, and `solo library` would read it as a pack it can play.
+        for playable, readable, said in ((False, True, r"lanterns was built, and the engine says it can't be played \(nothing of it is kept\)"),
+                                         (True, False, r"can't parse .*wick\.toml")):
+            self.playable, self.readable, fresh = playable, readable, self.tmp / f"fresh-{playable}"
+            with self.assertRaisesRegex(SoloError, said):
+                books.build(self.tmp / "extract", systems=fresh)
+            self.assertEqual(list(fresh.iterdir()), [])
+
+    def test_a_first_build_goes_into_an_empty_folder_or_one_of_the_players_own(self):
+        out = self.tmp / "mine"
+        (out / "notes").mkdir(parents=True)
+        (out / "notes" / "todo.md").write_text("mine\n", encoding="utf-8")
+        books.build(self.tmp / "extract", out=out)
+        self.assertEqual(sorted(path.name for path in out.iterdir()), ["inventory.toml", "notes", "system.toml"])
+        self.assertEqual(sorted(path.name for path in self.tmp.iterdir() if path.name.startswith(".")), [])
+
     def test_a_pack_the_engine_cant_even_load_leaves_nothing_half_built_beside_the_old_one(self):
         # The library lists every folder of systems/ that has a system.toml: one left half built would show up as a pack of its own.
         self.readable = False

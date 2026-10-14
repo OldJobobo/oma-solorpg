@@ -57,8 +57,8 @@ def plan(folders):
 def build(folder, out=None, replace=False, systems=None, adventures=None):
     """Build the pack for the book `solo extract` left in `folder`: (the pack's folder, the files written, what the recipe has to say). It goes in `out`,
     or in the recipe's own folder of `systems` or `adventures` (default ~/Games/solo/systems and ~/Games/solo/adventures); an adventure is built for the
-    system pack in `systems`. A pack already there is refused, unless `replace` and it was built here: then the new one is built beside it, and takes
-    its place only once it is built and the engine can play it, so a build that fails leaves the old pack as it was."""
+    system pack in `systems`. A pack already there is refused, unless `replace` and it was built here. The pack is built beside where it goes, and takes
+    its place only once it is built and the engine can play it, so a build that fails leaves nothing behind, and the old pack as it was."""
     book = Book(folder)
     recipe = recipe_for(book)
     if recipe is None:
@@ -71,9 +71,9 @@ def build(folder, out=None, replace=False, systems=None, adventures=None):
     made = main.read_text(encoding="utf-8").startswith(MARK) if main.exists() else False
     if main.exists() and not (replace and made):
         raise SoloError(f"{target} already holds a pack" + (" built by solo import book: --replace builds it again" if made else " (not one this built: build into another folder with --out, then compare)"))
-    building = target.with_name(f".{target.name}.building") if main.exists() else target
-    if building != target:
-        shutil.rmtree(building, ignore_errors=True)  # what a build stopped half way left
+    # Built beside where it goes, a first build too: what the engine can't play never reaches the library, which lists every pack of the folder.
+    building = target.with_name(f".{target.name}.building")
+    shutil.rmtree(building, ignore_errors=True)  # what a build stopped half way left
     if kind == "adventure":
         pack = AdventurePack(book, building, recipe.NAME, packs.load_system(folders["system"] / recipe.SYSTEM))
     else:
@@ -84,17 +84,20 @@ def build(folder, out=None, replace=False, systems=None, adventures=None):
         problems = packs.validate(pack.system_pack, packs.load_adventure(building)) if kind == "adventure" else packs.validate(packs.load_system(building))
     except BaseException:
         # A pack the engine can't even load goes too: the library would list what was half built beside the old one as a pack of its own.
-        if building != target:
-            shutil.rmtree(building, ignore_errors=True)
+        shutil.rmtree(building, ignore_errors=True)
         raise
     if problems:
         notes = [*book.notes, *pack.notes]
-        if building != target:
-            shutil.rmtree(building)
-        raise SoloError(f"{target.name} was built, and the engine says it can't be played" + (" (the pack that was there is kept)" if building != target else "")
+        shutil.rmtree(building)
+        raise SoloError(f"{target.name} was built, and the engine says it can't be played" + (" (the pack that was there is kept)" if main.exists() else " (nothing of it is kept)")
                         + ":\n  " + "\n  ".join(problems) + "".join(f"\n  note: {note}" for note in notes))
-    if building != target:
+    if main.exists():
         shutil.rmtree(target)
+    if target.exists():
+        # A folder that holds no pack (an empty one, or the player's own named by --out): the pack goes into it, beside what is there.
+        shutil.copytree(building, target, dirs_exist_ok=True)
+        shutil.rmtree(building)
+    else:
         building.rename(target)
     return target, written, [*book.notes, *pack.notes]
 
