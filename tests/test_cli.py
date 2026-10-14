@@ -157,6 +157,15 @@ class CliTest(CliCase):
         code, _, err = self.solo("-C", self.game, "rest", "stretch")
         self.assertIn("already taken a stretch rest this shift", err)
 
+    def test_a_push_on_offer_tells_the_gm_how_long_it_lasts(self):
+        self.new_game()
+        with unittest.mock.patch("solo.cli._rng", return_value=Dice(12)):
+            code, out, err = self.solo("-C", self.game, "check", "sneaking")
+        push = json.loads(out)["push"]
+        self.assertEqual((code, push["cost"]), (0, "take a condition"), err)
+        self.assertTrue(push["until"].startswith("the next commit or move"))
+        self.assertIn("end the turn on the question with nothing committed", push["until"])
+
     def test_play_through_the_cli(self):
         os.environ["SOLO_SEED"] = "164"
         self.new_game()

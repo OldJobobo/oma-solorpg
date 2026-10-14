@@ -644,7 +644,8 @@ class MoveCommandTest(CliCase):
         self.act("commit", "{\"pc\": {\"momentum\": \"+4\"}}", dice=())
         _, report, _ = self.act("act", "face_danger", "--stat", "edge", dice=(1, 5, 5))
         self.assertIn("The challenge dice match: a twist", report["says"])
-        self.assertEqual(report["burn"], "solo burn (the player's choice): momentum 6 cancels the challenge dice under it, strong hit instead of miss, and goes back to 2")
+        self.assertEqual(report["burn"], "solo burn (the player's choice, until the next commit, move or move made: ask before any of them): "
+                                         "momentum 6 cancels the challenge dice under it, strong hit instead of miss, and goes back to 2")
         code, burned, _ = self.act("burn", dice=())
         self.assertEqual((code, burned["event"]["outcome"]["hit"]), (0, "strong_hit"))
         self.assertIn("On a **strong hit**", burned["says"])
