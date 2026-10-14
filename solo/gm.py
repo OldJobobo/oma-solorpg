@@ -32,6 +32,7 @@ from datetime import datetime
 from pathlib import Path
 
 from . import SoloError, campaign
+from .digest import resume_digest, scene_digest
 from .library import REPO, state_home
 
 # Every GM prompt that isn't the player's own words starts with this, so the transcript
@@ -341,7 +342,6 @@ def book_prompt(c, unseen=False):
     starts on the table instead of spending a model call to read each (three or four seconds of an opening).
     The digests hold the adventure's text, which nobody vetted, so they come in a block marked as data, and
     nothing in them can close it early."""
-    from .cli import resume_digest, scene_digest
     opening = f"{BOOK_PROMPT} {_UNSEEN}" if unseen else BOOK_PROMPT
     digests = f"{resume_digest(c, book=True, scene=True)}\n{scene_digest(c)}\n"
     if len(digests.encode()) < _PROMPT_BYTES:
