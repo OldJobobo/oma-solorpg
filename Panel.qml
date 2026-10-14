@@ -595,6 +595,19 @@ Item {
     return text.split(",").map(t => t.trim()).filter(t => t !== "")
   }
 
+  // The engine's words for a terminal mark a command `like this`; the panel shows them as plain text.
+  function plain(text) {
+    return (text || "").replace(/`/g, "")
+  }
+
+  // Packs that didn't load, but for a system an adventure on the list already says why it can't begin
+  // (under its card): that is said once, there.
+  function notLoaded() {
+    if (!root.library) return []
+    var told = root.library.adventures.filter(a => a.ready === false && (a.why || "") !== "").map(a => "system " + a.system + ":")
+    return (root.library.problems || []).filter(p => !told.some(t => p.startsWith(t)))
+  }
+
   // Table ------------------------------------------------------------------------------
 
   function roll(stat) {
@@ -1680,7 +1693,7 @@ Item {
 
                 Line { text: modelData.title; font.bold: true }
                 // The system by name (the engine gives it; from the systems that loaded, before it did), and what
-                // the adventure waits for when it can't be played yet.
+                // the adventure waits for when it can't be played yet (picked, that is said under Hero instead).
                 Line {
                   size: Commons.Style.font.caption
                   color: root.dim
@@ -1688,10 +1701,10 @@ Item {
                     || (root.library.systems.filter(s => s.id === modelData.system)[0] || { name: modelData.system || "no system named" }).name
                 }
                 Line {
-                  visible: modelData.ready === false && (modelData.why || "") !== ""
+                  visible: modelData.ready === false && (modelData.why || "") !== "" && (root.adventure === null || root.adventure.id !== modelData.id)
                   size: Commons.Style.font.caption
                   color: root.dim
-                  text: modelData.why || ""
+                  text: root.plain(modelData.why)
                 }
                 Line { visible: modelData.summary !== ""; size: Commons.Style.font.bodySmall; text: modelData.summary }
               }
@@ -1699,12 +1712,12 @@ Item {
 
             // Packs of your own that didn't load (half-built from a book, say), and why.
             Repeater {
-              model: root.library ? root.library.problems || [] : []
+              model: root.notLoaded()
               delegate: Line {
                 required property string modelData
                 size: Commons.Style.font.caption
                 color: root.dim
-                text: "Not loaded: " + modelData
+                text: "Not loaded: " + root.plain(modelData)
               }
             }
 
@@ -1715,7 +1728,7 @@ Item {
               color: Commons.Color.urgent
               size: Commons.Style.font.bodySmall
               text: root.adventure && root.adventure.why
-                ? root.adventure.why : "This adventure's system pack isn't installed, or its rules aren't built from your books yet (make dragonbane)."
+                ? root.plain(root.adventure.why) : "This adventure's system pack isn't installed, or its rules aren't built from your books yet (make dragonbane)."
             }
 
             Flow {

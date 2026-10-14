@@ -1173,26 +1173,50 @@ def cards(item, name):
     return None
 
 
+def texts(item, part):
+    """The visible texts under `item` that hold `part`."""
+    found = []
+    for child in item.childItems():
+        text = child.property("text")
+        if isinstance(text, str) and part in text and child.isVisible():
+            found.append(text)
+        found += texts(child, part)
+    return found
+
+
 def adventures_not_ready(item, panel, out, wait):
     """New adventure names an adventure's system, and says under it why the adventure can't be played yet, when
-    `solo library` says so (system_name, ready, why); an entry without them shows the system as before."""
+    `solo library` says so (system_name, ready, why); an entry without them shows the system as before. As on a
+    fresh install, the system it plays on is also under `problems`, in the engine's words for a terminal: the why is
+    said once (under the card, or under Hero once the adventure is picked), and without the Markdown round a command."""
     item.show("new")
     wait(2500)
     library = item.property("library").toVariant()
-    why = "Dragonbane's rules aren't built from your books yet: make dragonbane BOOKS=<your PDFs>."
+    names = "Dragonbane has only its names so far. Its rules come from your own book: build them with `make dragonbane BOOKS=<folder of your PDFs>` (see the README)"
     sunken = {"id": "sunken-keep", "title": "The Sunken Keep", "system": "dragonbane-2", "system_name": "Dragonbane, from your books",
-              "ready": False, "why": why, "summary": "A keep the lake took back.", "path": "/nowhere", "characters": []}
-    item.setProperty("library", {**library, "adventures": [sunken] + library["adventures"]})
+              "ready": False, "why": names + ".", "summary": "A keep the lake took back.", "path": "/nowhere", "characters": []}
+    item.setProperty("library", {**library, "adventures": [sunken] + library["adventures"], "problems": [f"system dragonbane-2: {names}"]})
     wait(300)
     panel.grabWindow().save(str(out / "new-not-ready.png"))
     problems = []
-    for text in ("Dragonbane, from your books", why):
+    for text in ("Dragonbane, from your books", names.replace("`", "") + "."):
         if labelled(panel.contentItem(), text) is None:
             problems.append(f"New adventure doesn't show {text!r} for an adventure that isn't ready")
     known = library["adventures"][0]
     name = next((s["name"] for s in library["systems"] if s["id"] == known["system"]), None)
     if known.get("system_name") is None and name and labelled(panel.contentItem(), name) is None:
         problems.append(f"an adventure without a system_name no longer shows its system's name ({name!r})")
+    picked = item.property("pickedAdventure")
+    for when in ("listed", "picked"):
+        if when == "picked":
+            item.chooseAdventure(sunken)
+            wait(300)
+        said = texts(panel.contentItem(), "has only its names so far")
+        if len(said) != 1 or texts(panel.contentItem(), "`"):
+            problems.append(f"New adventure, the adventure {when}, says why it can't begin {len(said)} times, or with Markdown: {said}")
+    item.setProperty("pickedAdventure", picked)
+    item.setProperty("library", library)
+    wait(300)
     return problems
 
 
