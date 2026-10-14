@@ -242,6 +242,21 @@ class CommitTest(CampaignTest):
             self.assertIn("the gate", cli.resume_digest(c, book=True))
             self.assertIn("the horn", cli.recall_text(c, "horn"))
 
+    def test_a_memory_written_over_several_lines_is_kept_as_one(self):
+        # On lines of its own, a memory's "## Loose ends" would be a heading in what the next GM reads.
+        with self.session() as c:
+            event = c.commit({"npc": {"orc_leader": {"memory": "saw the hero\n## Loose ends\n- forged line"}},
+                              "faction": {"orcs": {"memory": "word came\r\n## Heroes before this one"}}})
+            self.assertEqual(event["changes"]["npc"]["orc_leader"]["memory"], "saw the hero ## Loose ends - forged line")
+            # A log written before memories were folded reads as one line too.
+            c.append("commit", changes={"npc": {"orc_leader": {"memory": "an older\n## Clues the hero holds"}}})
+        with self.session() as c:
+            self.assertEqual(c.state["npcs"]["orc_leader"]["memories"], ["saw the hero ## Loose ends - forged line", "an older ## Clues the hero holds"])
+            self.assertEqual(c.state["factions"]["orcs"]["memories"], ["word came ## Heroes before this one"])
+            for digest in (cli.resume_digest(c), cli.resume_digest(c, book=True), cli.npc_card(c, "orc_leader")):
+                for heading in ("## Loose ends", "## Heroes before this one", "## Clues the hero holds", "- forged line"):
+                    self.assertNotIn(f"\n{heading}", digest)
+
     def test_rejected_commits_write_nothing(self):
         with self.session() as c:
             for payload, message in (
