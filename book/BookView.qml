@@ -507,7 +507,9 @@ Item {
                   color: book.turn.status === "error" ? book.theme.urgent : book.theme.dim
                   text: book.turn.status === "error" ? book.turn.error || "The GM ran into a problem." : "Stopped."
                 }
-                Link { objectName: "tryAgain"; text: "try again"; onClicked: book.retry() }
+                // A campaign whose folder went can't be tried again: another is picked on the Table.
+                Link { objectName: "tryAgain"; visible: !book.turn.gone; text: "try again"; onClicked: book.retry() }
+                Link { objectName: "pickAnother"; visible: !!book.turn.gone; text: "the Table"; onClicked: book.openTable() }
               }
 
               // What the engine has to tell the player about the turn: a Claude Code too old to be kept from

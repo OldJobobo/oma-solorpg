@@ -205,6 +205,11 @@ Item {
   // in on stdin, by way of the environment, never as an argument: the process list is
   // anyone's to read, a process's environment only its owner's.
   function speak(text) {
+    // A campaign whose folder went has no GM to hear them: said at once, not after waiting on a turn that can't start.
+    if (root.lost !== "") {
+      root.turn = { status: "error", gone: true, error: root.gone(root.lost) }
+      return
+    }
     root.turn = { status: "thinking", player: text, text: "", doing: "reading the table" }
     speaker.command = ["sh", "-c", 'printf %s "$SOLO_SAY" | exec "$@"', "speak", root.solo, "-C", root.campaign, "gm", "turn", "--", "-"]
     speaker.environment = { SOLO_SAY: text }
@@ -507,10 +512,18 @@ Item {
     watchdog.waiting = false
     if (status && (status.status === "thinking" || status.status === "writing")) {
       root.turn = status
+    } else if (root.turn.status === "thinking" && root.lost !== "") {
+      // The campaign's folder went after the words were sent: trying again would never get them heard.
+      root.turn = { status: "error", gone: true, error: root.gone(root.lost) }
     } else if (root.turn.status === "thinking") {
       root.turn = { status: "error", unsent: watchdog.said,
-                    error: (why !== "" ? why.replace(/\.$/, "") + ". " : "") + "The GM didn't start, and your words weren't recorded: try again to send them." }
+                    error: (why !== "" ? (/[.?!]$/.test(why) ? why : why + ".") + " " : "") + "The GM didn't start, and your words weren't recorded: try again to send them." }
     }
+  }
+
+  // Why a campaign whose folder was moved or deleted (its state.json can't be read) can't be played: Home and the Book say it.
+  function gone(folder) {
+    return "The campaign in " + folder + " can't be read: its folder was moved or deleted. Pick another, or begin a new one."
   }
 
   // Home: another campaign picked, or one deleted for good.
@@ -1072,9 +1085,10 @@ Item {
       onRetry: root.speak(root.turn.unsent || "")
       onCut: (note, line, veil) => root.cut(note, line, veil)
       onAct: args => root.act(args, "book")
+      // The Table, or Home when the campaign's folder went (where it says so, and another is picked).
       onOpenTable: {
         root.opened = true
-        root.show("table")
+        root.show(root.lost !== "" ? "home" : "table")
       }
       onOpenTerminal: root.openTerminal("book")
     }
@@ -1545,7 +1559,7 @@ Item {
               visible: root.lost !== ""
               color: Commons.Color.urgent
               size: Commons.Style.font.bodySmall
-              text: "The campaign in " + root.lost + " can't be read: its folder was moved or deleted. Pick another, or begin a new one."
+              text: root.gone(root.lost)
             }
 
             Line {

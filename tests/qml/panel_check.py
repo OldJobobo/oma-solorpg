@@ -1241,6 +1241,20 @@ def a_campaign_gone(item, panel, out, work, wait):
         wait(1000)
         if item.property("view") != "home":
             problems.append(f"opened on a campaign that is gone, the Table shows {item.property('view')!r}")
+        # Words sent from the Book, open on it still: no turn is started that can't be, and the Book says the
+        # campaign went and offers the Table, where another is picked, not "try again", which can never work.
+        item.setProperty("bookOpen", True)
+        book = item.findChild(QObject, "book")
+        LAUNCHED.clear()
+        QMetaObject.invokeMethod(book, "send", Q_ARG(str, "I knock on the door."))
+        wait(300)
+        turn = item.property("turn").toVariant()
+        again, table = book.findChild(QObject, "tryAgain"), book.findChild(QObject, "pickAnother")
+        if (turn.get("status") != "error" or "moved or deleted" not in turn.get("error", "") or any("turn" in c for c in LAUNCHED)
+                or again is None or again.property("visible") or table is None or not table.property("visible")):
+            problems.append(f"the Book sends words to a campaign that went, or offers to try again: {turn}, {again and again.property('visible')}")
+        item.setProperty("bookOpen", False)
+        item.setProperty("turn", {"status": "idle"})
     finally:
         pointer.write_text(kept)
         wait(1500)
