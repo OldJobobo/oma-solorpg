@@ -1022,10 +1022,15 @@ def a_push_with_nothing_to_pay(item, panel, work, wait):
     return problems
 
 
+def shown(a, b):
+    """A QColor as it shows on the background `b` (a translucent one blended with it)."""
+    alpha = a.alphaF()
+    return QColor.fromRgbF(*(x * alpha + y * (1 - alpha) for x, y in zip((a.redF(), a.greenF(), a.blueF()), (b.redF(), b.greenF(), b.blueF()))))
+
+
 def contrast(a, b):
     """WCAG's contrast between a QColor and the background `b` it is drawn on (a translucent one as it shows there)."""
-    alpha = a.alphaF()
-    a = QColor.fromRgbF(*(x * alpha + y * (1 - alpha) for x, y in zip((a.redF(), a.greenF(), a.blueF()), (b.redF(), b.greenF(), b.blueF()))))
+    a = shown(a, b)
 
     def luminance(c):
         def channel(v):
@@ -1039,7 +1044,8 @@ def quiet_text_reads(engine, item, panel, out, wait):
     """Dim text (the Table's captions, the Book's asides) keeps WCAG AA's 4.5:1 and stays quieter than the body, and
     faint (rules, borders, blanks) 3:1 and quieter than dim, on a dark theme (Tokyo Night) and a light one (Catppuccin
     Latte), where darkening the text had made dim louder than the body. Both hold on the Book's panels too (the
-    composer, the X-card, the codex, the fight), whose surface is a shade toward the text."""
+    composer, the X-card, the codex, the fight), whose surface is a shade toward the text, and dim does on a Table's
+    card with the keyboard or the mouse on it (an adventure's system, under its title)."""
     from PySide6.QtQml import QQmlComponent
     holder = QQmlComponent(engine)
     holder.setData(b"import QtQuick\nimport qs.Commons as Commons\nQtObject { property QtObject colors: Commons.Color }", QUrl())
@@ -1047,7 +1053,8 @@ def quiet_text_reads(engine, item, panel, out, wait):
     theme = item.findChild(QObject, "book").property("theme")
     problems = []
     dark = (popups.property("text"), popups.property("background"))
-    for name, text, background in (("Tokyo Night", *dark), ("Catppuccin Latte", QColor("#4c4f69"), QColor("#eff1f5"))):
+    themes = (("Tokyo Night", *dark), ("Catppuccin Latte", QColor("#4c4f69"), QColor("#eff1f5")))
+    for name, text, background in themes:
         popups.setProperty("text", text)
         popups.setProperty("background", background)
         wait(100)
@@ -1060,8 +1067,28 @@ def quiet_text_reads(engine, item, panel, out, wait):
             problems.append(f"on {name}'s panels dim reads {dim:.2f}:1 and faint {faint:.2f}:1")
         if name != "Tokyo Night":
             panel.grabWindow().save(str(out / "table-light.png"))
+    item.show("new")
+    wait(2500)
+    card = cards(panel.contentItem(), "The Red Tusk Hall")
+    panel.requestActivate()
+    wait(100)
+    if card is not None:
+        card.forceActiveFocus()
+        wait(100)
+    if card is None or not card.property("activeFocus"):
+        problems.append("no adventure's card has the keyboard, to read dim on")
+    else:
+        for name, text, background in themes:
+            popups.setProperty("text", text)
+            popups.setProperty("background", background)
+            wait(100)
+            dim = contrast(item.property("dim"), shown(card.property("color"), background))
+            if dim < 4.5:
+                problems.append(f"on {name} dim reads {dim:.2f}:1 on a card with the keyboard")
     popups.setProperty("text", dark[0])
     popups.setProperty("background", dark[1])
+    item.show("table")
+    wait(1500)
     return problems
 
 

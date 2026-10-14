@@ -154,9 +154,13 @@ Item {
 
   readonly property color textColor: Commons.Color.popups.text
   // Captions and asides: as quiet as WCAG AA lets small text be (4.5:1), on light themes as on dark. Measured
-  // on the Book's panels (theme.surface, a shade toward the text), where it reads least; on the page it reads more.
+  // on the Book's panels and the Table's hovered cards (theme.surface, a shade toward the text), where it reads
+  // least; on the page it reads more.
   readonly property color dim: Common.fade(Commons.Color.popups.text, theme.surface, 4.6, 0.5)
   readonly property color faint: Qt.rgba(textColor.r, textColor.g, textColor.b, 0.15)
+  // The panels' shade (theme.surface) as a fill over the Table, for what holds text: a hovered card. Faint is for
+  // rails and borders only; on it dim would read under 4:1.
+  readonly property color shade: Qt.rgba(textColor.r, textColor.g, textColor.b, 0.05)
 
   function open(payloadJson) {
     var payload = {}
@@ -1224,9 +1228,10 @@ Item {
     Layout.fillWidth: true
     implicitHeight: cardColumn.implicitHeight + Commons.Style.space(16)
     radius: Commons.Style.cornerRadius
-    color: card.clickable && (cardMouse.containsMouse || card.activeFocus) ? root.faint : "transparent"
-    border.width: selected ? 2 : 1
-    border.color: selected ? Commons.Color.accent : root.faint
+    // Hovered or with the keyboard, it takes the shade dim is measured on; the keyboard's card is ringed in the text colour.
+    color: card.clickable && (cardMouse.containsMouse || card.activeFocus) ? root.shade : "transparent"
+    border.width: selected || card.activeFocus ? 2 : 1
+    border.color: card.activeFocus ? root.textColor : selected ? Commons.Color.accent : root.faint
     activeFocusOnTab: clickable
     Keys.onPressed: event => {
       if (card.clickable && (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space)) {
