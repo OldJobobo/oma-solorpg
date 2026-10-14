@@ -136,7 +136,7 @@ def cmd_new(args):
     if args.play:
         _play(root)
     else:
-        print("Open the GM with: solo play (or the Open the GM button in the oma-solorpg panel)")
+        print("Open the Book with: solo play (or Open the Book on the oma-solorpg Table)")
 
 
 def cmd_library(args):

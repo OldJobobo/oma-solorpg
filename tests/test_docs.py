@@ -110,8 +110,14 @@ class DesignDocsTest(unittest.TestCase):
     def test_plan_says_what_is_true_now(self):
         plan = (ROOT / "docs" / "PLAN.md").read_text(encoding="utf-8")
         for stale in ("omarchy agent`", "the agent window", "GM window: omarchy agent", "Single-window mode: revisit",
-                      "Until the cut button", "no cap on its tool calls"):
+                      "Until the cut button", "no cap on its tool calls", "Open the GM", "the GM window opens"):
             self.assertNotIn(stale, plan)
+        # The Table's header buttons are the ones Panel.qml has.
+        header = next(line for line in plan.splitlines() if line.startswith("- Header: campaign title"))
+        panel = (ROOT / "Panel.qml").read_text(encoding="utf-8")
+        for label in ("Open the Book", "Terminal"):
+            self.assertIn(label, header)
+            self.assertIn(f'text: "{label}"', panel)
         # Phases 7 to 8d were never defined anywhere a reader could look them up.
         self.assertNotRegex(plan, r"(?i)\bphases? \d")
 
