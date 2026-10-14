@@ -186,6 +186,12 @@ def main(out):
     face = QAccessible.queryAccessibleInterface(stone) if stone is not None else None
     if stone is None or not stone.property("activeFocus") or face is None or face.role() != QAccessible.Button:
         errors.append(f"the gravestone isn't a button with the keyboard: {stone and stone.property('activeFocus')}, {face and face.role()}")
+    # Tab, either way, doesn't take the keyboard to the links under it (codex, table, terminal), where Enter would act unseen.
+    for key in (Qt.Key_Tab, Qt.Key_Backtab):
+        QTest.keyClick(view, key)
+        if stone is not None and not stone.property("activeFocus"):
+            errors.append(f"{'Tab' if key == Qt.Key_Tab else 'Shift+Tab'} took the keyboard from the gravestone to the page under it")
+            stone.forceActiveFocus()
     QTest.keyClick(view, Qt.Key_Escape)
     if book.property("epitaphShown") or not book.findChild(QObject, "composer").property("activeFocus"):
         errors.append(f"Escape didn't put the gravestone away for the composer (shown {book.property('epitaphShown')})")
