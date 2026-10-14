@@ -10,10 +10,11 @@ The order is by who each item unblocks. Item 1 lets other people send changes. I
 
 Goal: anyone can send a change, and the pull request shows whether it passes.
 
-Status: done (2026-09-30). CI runs the tests and the QML check, and CONTRIBUTING.md, the issue forms and SECURITY.md say what to send and where.
+Status: done (2026-09-30), but for one check. CI runs the tests and the QML check, and CONTRIBUTING.md, the issue forms and SECURITY.md say what to send and where. The test for a book's words and numbers (`tests/test_no_book_text.py`) skips in CI, because no book fingerprints are committed.
 
 Left:
 
+- Generate the book fingerprints from the maintainer's extracts (`python3 tests/test_no_book_text.py --fingerprint`, with `SOLO_FINGERPRINT_KEY` set), commit `tests/fixtures/book_fingerprints.txt`, and save the key as the repository's Actions secret, so CI checks every pull request for book text as the maintainer's machine does.
 - Create the labels the issue forms put on an issue (`gm`, `import`), and switch on private vulnerability reporting, which SECURITY.md sends people to.
 
 Done when: a pull request from someone new runs every check the maintainer runs locally, apart from the GM evaluation, which costs model calls.

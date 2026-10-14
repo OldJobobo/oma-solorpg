@@ -264,6 +264,19 @@ class RepositoryTest(unittest.TestCase):
         self.assertIn("make qml-check", workflow)
         self.assertIn("package-ecosystem: github-actions", (ROOT / ".github" / "dependabot.yml").read_text(encoding="utf-8"))
 
+    def test_the_docs_say_ci_checks_the_book_fingerprints_only_once_they_are_committed(self):
+        # Without tests/fixtures/book_fingerprints.txt the book-text test skips in CI, and a doc that says every
+        # pull request is checked against it promises a check nobody runs.
+        hedge = "once the maintainer commits them"
+        committed = (ROOT / "tests" / "fixtures" / "book_fingerprints.txt").exists()
+        for path in (ROOT / "NOTICE.md", ROOT / "CONTRIBUTING.md", ROOT / "docs" / "INGESTION.md", ROOT / "tests" / "test_no_book_text.py"):
+            with self.subTest(path.name):
+                (self.assertNotIn if committed else self.assertIn)(hedge, path.read_text(encoding="utf-8"))
+        roadmap = (ROOT / "ROADMAP.md").read_text(encoding="utf-8")
+        item = roadmap[roadmap.index("\n## 1. "):roadmap.index("\n## 2. ")]
+        left = item[item.index("\nLeft:"):item.index("\nDone when:")]
+        (self.assertNotIn if committed else self.assertIn)("book fingerprints", left)
+
     def test_the_issue_forms_know_the_main_import_and_point_security_reports_away_from_issues(self):
         forms = ROOT / ".github" / "ISSUE_TEMPLATE"
         self.assertIn("make dragonbane", (forms / "import-went-wrong.yml").read_text(encoding="utf-8"))
