@@ -3,6 +3,7 @@ record read back from the log (the chronology, recall, history, the resume's lon
 places revisited), the people the GM made up, what word has spread, kinds of foes, where
 the story has put people, and a hero's story carried into the next adventure."""
 
+import ast
 import contextlib
 import io
 import json
@@ -493,6 +494,20 @@ class KeptReplay(CampaignTest):
                     with self.session() as c:
                         self.assertEqual(c.kept, 0)
                         self.assertEqual(c.state, campaign.fold(c.system, c.adventure, c.events))
+
+    def test_the_reducer_imports_nothing_that_reads_writes_or_rolls(self):
+        """The kept replay is only valid while reducer.py stays pure (its docstring says why): it imports nothing that
+        touches a file, the clock or the dice, none of the modules that read or write the campaign's folder, and it
+        opens and prints nothing itself."""
+        tree = ast.parse(Path(reducer.__file__).read_text(encoding="utf-8"))
+        modules = {alias.name for node in ast.walk(tree) if isinstance(node, ast.Import) for alias in node.names}
+        modules |= {("solo." if node.level else "") + (node.module or alias.name)
+                    for node in ast.walk(tree) if isinstance(node, ast.ImportFrom) for alias in node.names}
+        impure = {"os", "io", "pathlib", "shutil", "subprocess", "fcntl", "marshal", "random", "time", "datetime",
+                  "solo.dice", "solo.library", "solo.campaign", "solo.eventlog", "solo.commits"}
+        self.assertEqual(modules & impure, set())
+        called = {node.func.id for node in ast.walk(tree) if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)}
+        self.assertEqual(called & {"open", "print", "input", "exec", "eval", "__import__"}, set())
 
     def test_rebuild_trusts_only_the_log(self):
         self.grow()
