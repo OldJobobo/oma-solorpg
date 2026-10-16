@@ -8,6 +8,7 @@ import qs.Commons as Commons
 import qs.Ui
 import "book"
 import "book/Common.js" as Common
+import "table" as Table
 
 // oma-solorpg on the desktop: two windows and a watcher.
 //
@@ -16,7 +17,7 @@ import "book/Common.js" as Common
 // - The Table: a sidebar docked on the right. Home (your campaigns and the Hall of the
 //   Fallen), New adventure (pick an adventure and a hero, then begin) and Table (sheet,
 //   rolls, spells and abilities, fights and a Dragon's choice, death rolls, rests, light,
-//   gear and what is broken, oracle, clocks, log).
+//   gear and what is broken, oracle, clocks, log). Its widgets are in table/.
 // - The watcher: while a game is on, the desktop joins in (solo desk): a Dragon flashes
 //   the window borders and the screen gold, a Demon red, a blow jolts the screen, dying
 //   holds a red rim round it and death greys it, omens ripple it and arrive as
@@ -1187,98 +1188,15 @@ Item {
     onRunningChanged: if (!running && query.job !== null) root.answered(root.unstarted())
   }
 
-  // Text here comes from packs and from the GM's commits, so it is never read as HTML.
-  component Line: Text {
-    property int size: Commons.Style.font.body
-    Layout.fillWidth: true
-    textFormat: Text.PlainText
-    color: root.textColor
-    font.family: Commons.Style.font.family
-    font.pixelSize: size
-    wrapMode: Text.Wrap
-  }
-
-  component Heading: Text {
-    Layout.fillWidth: true
-    Layout.topMargin: Commons.Style.space(10)
-    textFormat: Text.PlainText
-    color: root.dim
-    font.family: Commons.Style.font.family
-    font.pixelSize: Commons.Style.font.caption
-    font.capitalization: Font.AllUppercase
-    font.letterSpacing: 1
-  }
-
-  component ErrorLine: Line {
-    property string place: ""
-    visible: text !== ""
-    color: Commons.Color.urgent
-    size: Commons.Style.font.bodySmall
-    text: root.errorsAt(place)
-  }
-
-  // A heading that folds its section away. Click it, or Enter or Space on it, to open or close.
-  component Fold: Heading {
-    id: fold
-    property string label: ""
-    property bool open: false
-    // What opening or closing it does; a fold whose state is kept elsewhere (a move group) says so.
-    property var toggle: () => fold.open = !fold.open
-    text: (open ? "▾ " : "▸ ") + label
-    color: foldMouse.containsMouse || activeFocus ? root.textColor : root.dim
-    activeFocusOnTab: true
-    Keys.onPressed: event => {
-      if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
-        fold.toggle()
-        event.accepted = true
-      }
-    }
-    Accessible.role: Accessible.Button
-    Accessible.name: label
-    Accessible.description: open ? "Open: click to fold it away" : "Folded: click to open it"
-    Accessible.onPressAction: fold.toggle()
-
-    MouseArea {
-      id: foldMouse
-      anchors.fill: parent
-      hoverEnabled: true
-      cursorShape: Qt.PointingHandCursor
-      onClicked: fold.toggle()
-    }
-  }
-
-  // A status tag (a condition held, a clue found). Clickable things are Buttons. Quiet
-  // tags are dim until lit, so the conditions the hero holds stand out from the rest.
-  component Tag: Rectangle {
-    id: tag
-    property string label: ""
-    property bool lit: false
-    property bool quiet: false
-    implicitWidth: tagText.implicitWidth + Commons.Style.space(12)
-    implicitHeight: tagText.implicitHeight + Commons.Style.space(6)
-    radius: Commons.Style.cornerRadius
-    color: lit ? Qt.rgba(Commons.Color.urgent.r, Commons.Color.urgent.g, Commons.Color.urgent.b, 0.25) : "transparent"
-    border.width: 1
-    border.color: lit ? Commons.Color.urgent : root.faint
-
-    Text {
-      id: tagText
-      anchors.centerIn: parent
-      textFormat: Text.PlainText
-      text: tag.label
-      color: tag.quiet && !tag.lit ? root.dim : root.textColor
-      font.family: Commons.Style.font.family
-      font.pixelSize: Commons.Style.font.caption
-    }
-  }
-
-  component Choice: Button {
-    foreground: root.textColor
-    bordered: true
-    fontSize: Commons.Style.font.bodySmall
-    horizontalPadding: Commons.Style.space(8)
-    verticalPadding: Commons.Style.space(3)
-  }
+  // The Table's widgets are in table/, a file each, and what they read from the Panel is given
+  // them here, once for every use: the Table's colours, and to an ErrorLine what went wrong at
+  // its place.
+  component Line: Table.Line { color: root.textColor }
+  component Heading: Table.Heading { color: root.dim }
+  component ErrorLine: Table.ErrorLine { text: root.errorsAt(place) }
+  component Fold: Table.Fold { textColor: root.textColor; dim: root.dim }
+  component Tag: Table.Tag { textColor: root.textColor; dim: root.dim; faint: root.faint }
+  component Choice: Table.Choice { foreground: root.textColor }
 
   // A button that runs a command. It waits, greyed, while one runs, so a double click can't do
   // the same thing twice.
@@ -1287,57 +1205,8 @@ Item {
     opacity: enabled ? 1 : 0.5
   }
 
-  component Primary: Button {
-    Layout.fillWidth: true
-    Layout.topMargin: Commons.Style.space(8)
-    foreground: root.textColor
-    bordered: true
-    selected: true
-    verticalPadding: Commons.Style.space(8)
-  }
-
-  // A card that can be clicked is a button to the keyboard (Tab to it, Enter or Space) and to a screen reader, by `name`.
-  component Card: Rectangle {
-    id: card
-    property bool selected: false
-    property bool clickable: true
-    property string name: ""
-    signal clicked()
-    default property alias content: cardColumn.data
-    Layout.fillWidth: true
-    implicitHeight: cardColumn.implicitHeight + Commons.Style.space(16)
-    radius: Commons.Style.cornerRadius
-    // Hovered or with the keyboard, it takes the shade dim is measured on; the keyboard's card is ringed in the text colour.
-    color: card.clickable && (cardMouse.containsMouse || card.activeFocus) ? root.shade : "transparent"
-    border.width: selected || card.activeFocus ? 2 : 1
-    border.color: card.activeFocus ? root.textColor : selected ? Commons.Color.accent : root.faint
-    activeFocusOnTab: clickable
-    Keys.onPressed: event => {
-      if (card.clickable && (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space)) {
-        card.clicked()
-        event.accepted = true
-      }
-    }
-    Accessible.role: clickable ? Accessible.Button : Accessible.Grouping
-    Accessible.name: name
-    Accessible.onPressAction: if (card.clickable) card.clicked()
-
-    // Under the content, so a button inside a card takes its own clicks.
-    MouseArea {
-      id: cardMouse
-      anchors.fill: parent
-      enabled: card.clickable
-      hoverEnabled: true
-      cursorShape: Qt.PointingHandCursor
-      onClicked: card.clicked()
-    }
-
-    ColumnLayout {
-      id: cardColumn
-      anchors { left: parent.left; right: parent.right; top: parent.top; margins: Commons.Style.space(8) }
-      spacing: Commons.Style.space(2)
-    }
-  }
+  component Primary: Table.Primary { foreground: root.textColor }
+  component Card: Table.Card { textColor: root.textColor; faint: root.faint; shade: root.shade }
 
   component Stepper: RowLayout {
     id: stepper

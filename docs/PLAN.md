@@ -136,7 +136,7 @@ Two surfaces, both the plugin's: the Book for the conversation, the Table for ev
 
 ## Frontend: the plugin
 
-`manifest.json` declares two kinds: `panel` (`Panel.qml`) and `bar-widget` (`BarWidget.qml`). Both are plain QML on the shell's own kit (`qs.Commons`, `qs.Ui`: Button, TextField), so the plugin follows the Omarchy theme and needs nothing installed.
+`manifest.json` declares two kinds: `panel` (`Panel.qml`) and `bar-widget` (`BarWidget.qml`). Both are plain QML on the shell's own kit (`qs.Commons`, `qs.Ui`: Button, TextField), so the plugin follows the Omarchy theme and needs nothing installed. `Panel.qml` holds the Table's screens and what they do, `table/` what the Table is built from, and `book/` the Book.
 
 ### Bar widget
 
@@ -312,6 +312,8 @@ Repository (also the plugin: `omarchy plugin add` clones it as-is):
 ```
 manifest.json               omarchy-shell plugin manifest (panel + bar widget)
 Panel.qml                   the table: Home, New adventure, Table
+table/                      what the table is built from:
+  Line.qml, Card.qml...     its widgets, a file each; Panel.qml gives them the Table's colours
 BarWidget.qml               the d20 bar button
 bin/solo                    CLI entry point
 solo/                       engine package, standard library only
