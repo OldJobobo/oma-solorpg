@@ -264,8 +264,8 @@ Item {
     }
   }
 
-  // Commands that change something, and reads: the runner runs them, one at a time and in the
-  // order asked for (table/SoloRunner.qml).
+  // Commands that change something: the runner runs them one at a time, in the order asked for
+  // (table/SoloRunner.qml).
   function run(args, place, done, failed) {
     runner.run(args, place, done, failed)
   }
@@ -289,6 +289,8 @@ Item {
     }
   }
 
+  // Commands that only read: the runner runs them one at a time too, the latest of each kind
+  // waiting its turn (table/SoloRunner.qml).
   function ask(kind, args, place) {
     runner.ask(kind, args, place)
   }
