@@ -22,7 +22,7 @@ import "table" as Table
 //   the window borders and the screen gold, a Demon red, a blow jolts the screen, dying
 //   holds a red rim round it and death greys it, omens ripple it and arrive as
 //   notifications, the table has sounds, and the screen warms like candlelight while the
-//   Book is open.
+//   Book is open (table/DeskWatcher.qml).
 //
 // The plugin never writes campaign files. It runs its own bin/solo and reads state.json,
 // which solo rewrites after every command, so the Book, the Table and the GM always agree
@@ -75,23 +75,10 @@ Item {
   property bool bookOpen: false
   property var turn: ({ status: "idle" })
   property var agentInfo: ({ agent: "", book: true })
-  property var effects: ({ borders: true, screen: true, sound: true, candle: true, omens: true, screensaver: true })
   property string pace: "normal"  // how long the GM thinks before it answers (solo gm pace)
-  // The table's sounds and what plays them ({play, sounds}, from solo desk sound).
-  property var sounds: ({})
-  // When the dice land, in seconds: the Book's tumble (book/DiceMoment.qml), or a quick
-  // throw with the Book shut. The sounds are cut to match.
-  readonly property real diceLand: 1.94
-  readonly property real diceLandShort: 0.5
-  // What the watcher has already reacted to, so a reload never replays old rolls.
-  property int fxSeen: -1
-  property bool fxDying: false
-  property int fxFailures: 0
-  property bool fxDead: false
-  property bool fxFighting: false
-  property int fxSaid: -1
-  // A roll just came in (not one already there when the game loaded): the Table's number tumbles.
-  signal rolled()
+  // Which desktop effects are on, and the table's sounds: the watcher's (table/DeskWatcher.qml).
+  property alias effects: watcher.effects
+  property alias sounds: watcher.sounds
 
   property int boons: 0
   property int banes: 0
@@ -187,22 +174,6 @@ Item {
     }
   }
 
-  // The desktop effects (solo desk). Detached: they must never hold up the table. `after`
-  // (seconds) holds one back to land with the Book's dice.
-  function desk(args, after) {
-    Quickshell.execDetached([root.solo].concat(root.campaign !== "" ? ["-C", root.campaign] : []).concat(["desk"])
-      .concat(after > 0 ? ["--after", after.toFixed(2)] : []).concat(args))
-  }
-
-  // The table's sounds, played straight from the cache (solo desk sound made them), so
-  // they keep time with the Book to the millisecond.
-  function sound(name, after) {
-    var path = root.sounds.sounds ? root.sounds.sounds[name] : ""
-    if (root.effects.sound === false || !root.sounds.play || !path) return
-    Quickshell.execDetached(["sh", "-c", 'sleep "$0"; exec "$@"', String(after > 0 ? after.toFixed(2) : 0)]
-      .concat(root.sounds.play).concat([path]))
-  }
-
   // The player's words to the GM (none: the GM carries on from what is recorded). They go
   // in on stdin, by way of the environment, never as an argument: the process list is
   // anyone's to read, a process's environment only its owner's.
@@ -251,103 +222,24 @@ Item {
     onTriggered: root.ask("watchdog", ["-C", root.campaign, "gm", "status"], "watchdog")
   }
 
-  // New beats in the story set off the desktop. The dice rattle and land with the Book's
-  // (quickly, with the Book shut), and what they bring lands with them: a Dragon floods the
-  // screen gold, a Demon drains it red, a blow jolts it. Omens ripple it and notify, a
-  // scene opens on a horn, a fight on a drum, a torch catches, the GM's words turn a page.
-  // Dying holds a red rim, closer with each failure; death greys the screen and
-  // tolls a bell. The screensaver keeps the GM's latest words while the Book is open.
-  function watch() {
-    if (!root.game || !root.game.story) return
-    var beats = root.game.story
-    var newest = beats.length ? beats[beats.length - 1].seq : 0
-    var pc = root.game.pc
-    var dead = !!(pc && pc.dead)
-    var dying = !!(pc && pc.dying) && !dead
-    var failures = dying ? pc.dying.failures || 0 : 0
-    var fighting = !!root.game.combat && !dead
-    if (root.fxSeen < 0) {
-      root.fxSeen = newest
-      root.fxDying = dying
-      root.fxFailures = failures
-      root.fxDead = dead
-      root.fxFighting = fighting
-      if (dying) root.desk(["dying", "on", String(failures)])
-      return
-    }
-    var fresh = beats.filter(b => b.seq > root.fxSeen)
-    root.fxSeen = Math.max(root.fxSeen, newest)
-    var roll = fresh.filter(b => b.kind === "roll").pop()
-    var land = roll ? (root.bookOpen ? root.diceLand : root.diceLandShort) : 0
-    if (roll) {
-      var outcome = roll.outcome || {}
-      root.rolled()
-      root.sound(root.bookOpen ? "dice" : "dice-short")
-      if (outcome.dragon) {
-        root.desk(["flash", "dragon"], land)
-        root.sound("dragon", land)
-      } else if (outcome.demon) {
-        root.desk(["flash", "demon"], land)
-        root.sound("demon", land)
-      }
-    }
-    if (fresh.some(b => b.kind === "hurt" && (b.dealt || 0) > 0)) {
-      root.desk(["flash", "hit"], land)
-      root.sound("hit", land)
-    }
-    fresh.filter(b => b.kind === "omen").forEach(b => {
-      root.desk(["omen", "--", b.text.replace(/^[^:]*\(\d+\):\s*/, "")])
-      root.sound("omen")
-    })
-    if (fresh.some(b => b.kind === "scene")) root.sound("scene")
-    if (fighting && !root.fxFighting) root.sound("drum", land)
-    if (root.game.light && fresh.some(b => b.kind === "light")) root.sound("torch")
-    if (root.bookOpen && fresh.some(b => b.kind === "gm")) root.sound("page")
-    if (dead && !root.fxDead) {
-      root.desk(["death"], land)
-      root.sound("bell", land)
-    } else if (dying !== root.fxDying || failures !== root.fxFailures) {
-      root.desk(dying ? ["dying", "on", String(failures)] : ["dying", "off"], land)
-      if (dying) root.sound("heartbeat", land)
-    }
-    root.fxDying = dying
-    root.fxFailures = failures
-    root.fxDead = dead
-    root.fxFighting = fighting
-    var said = root.game.last_said ? root.game.last_said.seq : -1
-    if (root.bookOpen && said !== root.fxSaid) {
-      root.fxSaid = said
-      root.desk(["screensaver", "on"])
-    }
+  // The desktop joins in while a game is on (table/DeskWatcher.qml).
+  Table.DeskWatcher {
+    id: watcher
+    solo: root.solo
+    campaign: root.campaign
+    game: root.game
+    bookOpen: root.bookOpen
   }
 
-  onGameChanged: root.watch()
-  // The game belongs to its campaign, and so does what it holds on the desktop: another one
-  // picked, or this one deleted, drops the game and lets a dying hero's red go (a deleted
-  // campaign's state.json is no longer watched when it goes, so nothing else would).
+  // The game belongs to its campaign: another one picked, or this one deleted, drops the game
+  // (and the watcher lets go of what it held on the desktop).
   onCampaignChanged: {
-    if (root.fxDying) root.desk(["dying", "off"])
     root.game = null
     root.lost = ""
     root.lostWhy = ""
-    root.fxDying = false
-    root.fxFailures = 0
-    root.fxDead = false
-    root.fxFighting = false
-    root.fxSeen = -1
-    root.fxSaid = -1
     root.turn = { status: "idle" }
     watchdog.stop()
     watchdog.waiting = false
-  }
-  onBookOpenChanged: {
-    if (root.bookOpen) {
-      root.desk(["candle", "on"])
-      root.desk(["screensaver", "on"])
-    } else {
-      root.desk(["candle", "off"])
-      root.desk(["screensaver", "off"])
-    }
   }
   // After a shell restart or a crash, nothing from an old session stays on the desktop.
   Component.onCompleted: {
@@ -2054,7 +1946,7 @@ Item {
               property int ticks: 0
 
               Connections {
-                target: root
+                target: watcher
                 function onRolled() {
                   rollCard.ticks = 0
                   tumble.interval = 40

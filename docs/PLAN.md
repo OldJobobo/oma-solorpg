@@ -315,6 +315,7 @@ Panel.qml                   the table: Home, New adventure, Table
 table/                      what the table is built from:
   Line.qml, Card.qml...     its widgets, a file each; Panel.qml gives them the Table's colours
   SoloRunner.qml            runs bin/solo: commands one at a time, reads, what went wrong where
+  DeskWatcher.qml           the desktop joining in (solo desk): dice, blows, dying, death, omens
 BarWidget.qml               the d20 bar button
 bin/solo                    CLI entry point
 solo/                       engine package, standard library only
