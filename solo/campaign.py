@@ -3,6 +3,14 @@
 events.jsonl is the source of truth. state.json is fold(packs, events), rewritten after
 each command for the panel, and safe to delete: `solo rebuild` recreates it. So is
 .solo/replay.marshal, where a long campaign keeps its replay for the next command.
+
+This file holds session(), which opens a campaign under the folder's lock, and Campaign's
+commands: rolls, moves, fights, magic, rests, the oracle, tracks, clocks and threats. The
+rest of it lives beside it. reducer.py folds the events into the state and tells each in a
+line, and does no I/O. eventlog.py reads and writes the folder: Campaign takes its opening,
+append, keep and save from eventlog.Log. commits.py checks what a commit says: Campaign
+takes that from commits.Commits. The names the engine and the tests read here
+(campaign.apply, campaign.describe, campaign.snapshot ...) are imported back.
 """
 
 import copy

@@ -123,7 +123,10 @@ The manifest sets `keepLoaded`, so the panel entry (the Table, the Book and the 
 |   packs               system pack (+ creation.toml), adventure pack  |
 |   library             bundled packs + ~/Games/solo (yours)           |
 |   creation            pre-made, random or guided characters          |
-|   campaign            events.jsonl -> state.json, lock, rests        |
+|   campaign            the commands: rolls, fights, rests; the lock   |
+|   reducer             events.jsonl -> state.json, a fold with no I/O |
+|   eventlog            events.jsonl, state.json, the kept replay      |
+|   commits             a commit checked before it is logged           |
 +----------------------------------------------------------------------+
                ^ one-time import
    PDFs (solo import book, or the agent) / Foundry "Export Data" JSON / Datasworn
@@ -318,7 +321,10 @@ solo/                       engine package, standard library only
   packs.py                  system/adventure packs, validation, branch conditions
   library.py                where packs and campaigns live, and the listing for the panel
   creation.py               character building from creation.toml, pre-mades, files
-  campaign.py               event log, state fold, actions, commits, rests, clocks
+  campaign.py               a campaign opened under its lock, and the commands: rolls, fights, magic, rests, clocks
+  reducer.py                events folded into state, and each told in a line; no I/O, so the kept replay holds
+  eventlog.py               the campaign's files: events.jsonl, state.json, the kept replay
+  commits.py                what a commit says, checked against the packs and the state
   foundry.py                Foundry export importer
   cli.py                    commands and output
 packs/dragonbane/           hand-written system pack, creation tables, pre-made heroes
