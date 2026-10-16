@@ -79,7 +79,6 @@ def _replay(state, event, adventure):
         state["problems"].append(f"#{event['seq']} {event['type']} was passed over: the packs no longer have {error}")
 
 
-
 def burn_option(state):
     """What burning momentum would do to the roll just made, when it would do anything:
     {momentum, reset, hit}. The table and the GM's report offer the burn from this, so
@@ -848,7 +847,6 @@ def _story_entry(state, event, entry):
     return {"seq": event["seq"], **story}
 
 
-
 def _odds_levels(system):
     """The odds an odds oracle reads, least likely first."""
     return [level for level, chance in sorted(system["oracle"]["odds"].items(), key=lambda level: level[1])]
@@ -1186,12 +1184,10 @@ def _duration(seconds):
         return f"{seconds} s"
 
 
-
 def _memory(value):
     """A memory as the line of text it is, its line breaks folded into spaces: on a line of its own, its "## Loose ends"
     would be a heading in what the next GM reads. A log written before memories were checked may hold a list: its lines, joined."""
     return "; ".join(" ".join(str(line).split()) for line in (value if isinstance(value, list) else [value]))
-
 
 
 def _attitude(value):
