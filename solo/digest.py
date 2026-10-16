@@ -1,8 +1,10 @@
-"""What the GM and the player read about the table, as text: the scene digest, where the table
-stopped, a person's card, what the campaign recalls and its whole story, and the lines they are
-made of (the hero, a clock, the fight, how long ago). `solo scene`, `resume`, `npc`, `recall` and
-`history` print it, and the Book's first prompt carries the first two. It lives apart from the
-commands, so what the GM reads can be found and changed in one place."""
+"""What the GM and the player read about the table, as text.
+
+The scene digest, where the table stopped, a person's card, what the campaign recalls and its
+whole story, and the lines they are made of (the hero, a clock, the fight, how long ago).
+`solo scene`, `resume`, `npc`, `recall` and `history` print it, and the Book's first prompt
+carries the first two. It lives apart from the commands, so what the GM reads can be found and
+changed in one place."""
 
 import json
 
