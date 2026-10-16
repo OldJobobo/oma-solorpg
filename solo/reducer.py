@@ -161,7 +161,7 @@ def _moments(event, state, adventure, seen, was_dead):
         say("stage", f"{event['label']} reached {event['at']}/{event['segments']}: {event.get('text') or event.get('note') or ''}".rstrip(": "))
     elif kind in ("fight", "join"):
         say("fight", ("a fight: " if kind == "fight" else "joining the fight: ") + ", ".join(f["name"] for f in event["foes"].values()),
-            {f["npc"] for f in event["foes"].values()})
+            dict.fromkeys(f["npc"] for f in event["foes"].values()))  # in the foes' order: a set's changes with the hash seed
     elif kind in ("damage", "wound", "ally") and event.get("down"):
         say("fight", f"{event.get('name') or event.get('target_name')} down")
     elif kind == "fight_end" and event.get("standing"):
@@ -210,7 +210,7 @@ def _moments(event, state, adventure, seen, was_dead):
             say("gear", "; ".join(filter(None, [pc.get("items_add") and "gained " + ", ".join(pc["items_add"]),
                                                 pc.get("items_remove") and "lost " + ", ".join(pc["items_remove"])])))
         if changes.get("learn"):
-            say("learn", "found out " + ", ".join(changes["learn"]), {k.partition(".")[0] for k in changes["learn"]})
+            say("learn", "found out " + ", ".join(changes["learn"]), dict.fromkeys(k.partition(".")[0] for k in changes["learn"]))
     if state["pc"] and state["pc"]["dead"] and not was_dead:
         say("death", f"{state['pc']['name']} died" + (f" ({state['last_blow']})" if state.get("last_blow") else ""))
     return found

@@ -8,6 +8,7 @@ import contextlib
 import io
 import json
 import marshal
+import os
 import random
 import shutil
 import types
@@ -580,3 +581,23 @@ class Commands(CliCase):
             say(c, campaign.CHRONICLE_EVERY)
         self.assertIn("since the last chronicle entry", self.run_json("commit", '{"note": "a pause"}')["chronicle"])
         self.assertNotIn("chronicle", self.run_json("commit", '{"chronicle": "Ragna reached the gate."}'))
+
+
+class MomentOrderTest(unittest.TestCase):
+    def test_the_people_of_a_moment_come_in_the_order_of_the_story_whatever_the_hash_seed(self):
+        # They were gathered in a set, so two replays of one log (another process, another seed) could list a
+        # fight's foes or what was found out in different orders, and a kept replay disagreed with a full one.
+        import subprocess
+        import sys
+        script = (
+            "import json; from solo import reducer\n"
+            "fight = {'type': 'fight', 'foes': {f'f{i}': {'name': n, 'npc': n} for i, n in enumerate("
+            "['priest', 'cultist', 'zombie', 'warden', 'ghoul', 'cultist', 'bat'])}}\n"
+            "learn = {'type': 'commit', 'changes': {'learn': ['vey.secret', 'tam.fear', 'odd.want', 'vey.want', 'ash.fear']}}\n"
+            "state = {'npcs': {}, 'factions': {}, 'consequences': {}, 'pc': None}\n"
+            "print(json.dumps([m['npcs'] for e in (fight, learn) for m in reducer._moments(e, state, {'scenes': {}}, set(), False)]))\n")
+        runs = {subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, check=True,
+                               cwd=Path(__file__).resolve().parent.parent, env={**os.environ, "PYTHONHASHSEED": str(seed)}).stdout
+                for seed in range(6)}
+        self.assertEqual(len(runs), 1, runs)
+        self.assertEqual(json.loads(runs.pop()), [["priest", "cultist", "zombie", "warden", "ghoul", "bat"], ["vey", "tam", "odd", "ash"]])
