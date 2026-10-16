@@ -33,7 +33,7 @@ Every pull request runs `make test` on Python 3.11 and on the newest release, wi
 - The engine never calls a model and never touches the network. The GM's adapter (`solo/gm.py`) is the one place that runs an agent.
 - A campaign's state is folded from its events by `solo/reducer.py`, which does no I/O: a new kind of event gets its `apply` and `describe` there, and the command that appends it goes in `solo/campaign.py`. A long campaign's kept replay is right only while the fold reads nothing but the packs and the events. Reading and writing the campaign's files is `solo/eventlog.py`'s, and checking what a commit says is `solo/commits.py`'s.
 - Anything a pack can hold is documented in [docs/PACK_FORMAT.md](docs/PACK_FORMAT.md) in the same change. A change that would break a pack written for the format before it raises `packs.FORMAT`, writes the sentence an author needs into `packs.UPGRADES`, and adds a row to the history there. A key that older packs simply don't use doesn't.
-- The panel (`Panel.qml`, built from what is in `table/`) never writes campaign files and never computes rules: it runs `solo` and reads `state.json`. If it needs a fact, the engine adds it to `state.json` or `solo library`.
+- The panel (`Panel.qml`, built from what is in `table/`) never writes campaign files and never computes rules: it runs `solo` (through `table/SoloRunner.qml`) and reads `state.json`. If it needs a fact, the engine adds it to `state.json` or `solo library`.
 - A desktop effect (`solo desk`) puts back exactly what it changed, and `solo desk restore` undoes them all ([docs/PLAN.md](docs/PLAN.md)).
 
 ## Writing an importer: `solo/books`

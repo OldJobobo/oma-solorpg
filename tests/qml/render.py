@@ -209,7 +209,7 @@ def main(out):
     book.setProperty("actionError", "")
 
     # Words the GM never got: the reason can run past the end of a line, and "try again" stays on the page after it.
-    # The words the plugin says when it couldn't run its own solo (Panel.qml's unstarted and unheard).
+    # The words the plugin says when it couldn't run its own solo (table/SoloRunner.qml's unstarted, Panel.qml's unheard).
     root.setProperty("turn", {"status": "error", "unsent": "I knock on the door.",
                               "error": "The plugin couldn't run /home/you/.config/omarchy/plugins/cabral.oma-solorpg/bin/solo. Is the plugin's "
                                        "folder complete? The GM didn't start, and your words weren't recorded: try again to send them."})

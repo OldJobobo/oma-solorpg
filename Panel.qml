@@ -50,17 +50,14 @@ Item {
   // The campaign whose card is asking "delete for good?", by folder.
   property string deleting: ""
   property string view: "home"
-  // What went wrong and where to say it, {text, place}, one for each source: the commands
-  // that change something (and a click refused before one ran), and the ones that only
-  // read. A read that fails never covers what a command said, nor the other way round.
-  property var error: ({ text: "", place: "" })
-  property var queryError: ({ text: "", place: "" })
-  // What a command said it did, for the few whose words are for the player (opening the GM).
-  property var notice: ({ text: "", place: "" })
-  // Commands that change something, waiting for the one running to end. While any runs or
-  // waits the Table is busy, and its buttons that run one wait too.
-  property var queue: []
-  readonly property bool busy: action.job !== null || queue.length > 0
+  // What went wrong and where, what a command said it did, the commands waiting and whether the
+  // Table is busy. The runner keeps them (table/SoloRunner.qml says how); the Table and the Book
+  // read them here.
+  property alias error: runner.error
+  property alias queryError: runner.queryError
+  property alias notice: runner.notice
+  property alias queue: runner.queue
+  property alias busy: runner.busy
 
   // New adventure. The seed makes the preview exactly the hero that Begin creates.
   property string pickedAdventure: ""
@@ -375,42 +372,10 @@ Item {
     }
   }
 
-  // Commands that change something, one at a time and in the order asked for: one asked for
-  // while another runs (from the Book, or Enter in a field) waits its turn, never lost.
-  // `done` runs after a success, with what the command printed; `failed` after anything else.
+  // Commands that change something, and reads: the runner runs them, one at a time and in the
+  // order asked for (table/SoloRunner.qml).
   function run(args, place, done, failed) {
-    root.error = { text: "", place: "" }
-    root.notice = { text: "", place: "" }
-    root.queue = root.queue.concat([{ args: [root.solo].concat(args), place: place, done: done || null, failed: failed || null }])
-    root.next()
-  }
-
-  function next() {
-    if (action.job === null && root.queue.length > 0) {
-      action.job = root.queue[0]
-      root.queue = root.queue.slice(1)
-      action.said = ""
-      action.out = ""
-      action.command = action.job.args
-      action.running = true
-    }
-  }
-
-  // A command has ended: `said` is what to tell the player ("" for nothing), `ok` whether it went through.
-  // `done` and `failed` are made here on root, never in a delegate: state.json is read again before the
-  // exit comes, and a delegate whose model changed is gone, and its functions with it. Whatever they do,
-  // the next command waiting runs.
-  function ran(said, ok) {
-    var job = action.job
-    action.job = null
-    currentFile.reload()
-    if (said !== "") root.error = { text: said, place: job.place }
-    try {
-      if (ok && job.done) job.done(action.out)
-      else if (!ok && job.failed) job.failed()
-    } finally {
-      root.next()
-    }
+    runner.run(args, place, done, failed)
   }
 
   function setPace(pace) {
@@ -432,53 +397,13 @@ Item {
     }
   }
 
-  // Commands that only read (JSON on stdout). One runs at a time; the latest request
-  // of each kind waits for its turn. What goes wrong shows at `place`, the kind unless said.
   function ask(kind, args, place) {
-    if (query.job !== null) {
-      var pending = Object.assign({}, query.pending)
-      pending[kind] = { args: args, place: place || kind }
-      query.pending = pending
-    } else {
-      query.out = ""
-      query.said = ""
-      query.job = { kind: kind, place: place || kind }
-      query.command = [root.solo].concat(args)
-      query.running = true
-    }
+    runner.ask(kind, args, place)
   }
 
-  // A read has ended (`said` as for ran()), and the next one waiting starts.
-  function answered(said) {
-    var job = query.job
-    query.job = null
-    if (said !== "") root.queryError = { text: said, place: job.place }
-    else if (root.queryError.place === job.place) root.queryError = { text: "", place: "" }
-    root.received(job.kind, query.out)
-    var kinds = Object.keys(query.pending)
-    if (kinds.length > 0) {
-      var next = query.pending[kinds[0]]
-      var rest = Object.assign({}, query.pending)
-      delete rest[kinds[0]]
-      query.pending = rest
-      root.ask(kinds[0], next.args, next.place)
-    }
-  }
-
-  // What solo said on stderr, as the player reads it; with nothing said, a failing exit code.
-  function trouble(said, code) {
-    var text = said.trim().replace(/^solo: /, "")
-    return text !== "" ? text : code !== 0 ? "solo stopped without saying why (exit code " + code + ")." : ""
-  }
-
-  // A process that never started has no exit: Quickshell only lets `running` go false.
-  function unstarted() {
-    return "The plugin couldn't run " + root.solo + ". Is the plugin's folder complete?"
-  }
-
-  // What went wrong at a place, from either source.
+  // What went wrong at a place, from the commands or the reads.
   function errorsAt(place) {
-    return [root.error, root.queryError].filter(e => e.place === place && e.text !== "").map(e => e.text).join("\n")
+    return runner.errorsAt(place)
   }
 
   function received(kind, text) {
@@ -1151,41 +1076,13 @@ Item {
     id: speaker
   }
 
-  // The command running now ({place, done}) and what it says on stdout and stderr. The
-  // streams end before the exit does, so the exit has all of it.
-  Process {
-    id: action
-    property var job: null
-    property string out: ""
-    property string said: ""
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: action.out = text
-    }
-    stderr: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: action.said = text
-    }
-    onExited: (exitCode, exitStatus) => root.ran(root.trouble(action.said, exitCode), exitCode === 0)
-    onRunningChanged: if (!running && action.job !== null) root.ran(root.unstarted(), false)
-  }
-
-  Process {
-    id: query
-    property var job: null          // {kind, place}
-    property var pending: ({})      // kind: {args, place}
-    property string out: ""
-    property string said: ""
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: query.out = text
-    }
-    stderr: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: query.said = text
-    }
-    onExited: (exitCode, exitStatus) => root.answered(root.trouble(query.said, exitCode))
-    onRunningChanged: if (!running && query.job !== null) root.answered(root.unstarted())
+  // What runs solo for the Table and the Book (table/SoloRunner.qml). When a command ends, which
+  // campaign is current is read again; what a read printed comes back here, to received().
+  Table.SoloRunner {
+    id: runner
+    solo: root.solo
+    currentFile: currentFile
+    onReceived: (kind, text) => root.received(kind, text)
   }
 
   // The Table's widgets are in table/, a file each, and what they read from the Panel is given
@@ -1546,7 +1443,7 @@ Item {
                   visible: root.deleting === modelData.path
                   spacing: Commons.Style.space(4)
                   Act {
-                    text: action.job !== null && action.job.place === "home" ? "Deleting…" : "Delete for good"
+                    text: runner.action.job !== null && runner.action.job.place === "home" ? "Deleting…" : "Delete for good"
                     foreground: Commons.Color.urgent
                     onClicked: root.deleteCampaign(modelData.path, modelData.current)
                   }
@@ -1818,7 +1715,7 @@ Item {
 
             Primary {
               id: beginButton
-              text: action.job !== null && action.job.place === "begin" ? "Starting…" : "Begin adventure"
+              text: runner.action.job !== null && runner.action.job.place === "begin" ? "Starting…" : "Begin adventure"
               enabled: root.adventure !== null && root.preview !== null && !root.busy
               opacity: enabled ? 1 : 0.5
               onClicked: root.begin()
