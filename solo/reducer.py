@@ -21,7 +21,7 @@ import json
 import unicodedata
 
 from . import SoloError, mechanics, oracle, packs
-from .packs import ATTITUDES
+from .packs import ATTITUDES, _attitude_word
 
 LIKELIHOOD = {
     "impossible": 5, "very unlikely": 15, "unlikely": 30, "even": 50,
@@ -315,10 +315,6 @@ def _snippet(text, folded, words, before=90, after=170):
     while end < len(text) and not text[end].isspace():
         end += 1
     return ("..." if start else "") + " ".join(text[start:end].split()) + ("..." if end < len(text) else "")
-
-
-def _attitude_word(value):
-    return next((name for name, number in ATTITUDES.items() if number == value), str(value))
 
 
 def route(adventure, state):

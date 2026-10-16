@@ -7,7 +7,7 @@ commands, so what the GM reads can be found and changed in one place."""
 import json
 
 from . import SoloError, campaign, combat, oracle, packs
-from .packs import ATTITUDES
+from .packs import _attitude_word as _attitude_name
 
 
 def scene_digest(c):
@@ -622,10 +622,6 @@ def _hero_line(pc):
     """Ragna, Dwarf, Fighter, Adult: HP 14/14, WP 11/11"""
     who = ", ".join([pc["name"], *map(str, pc.get("info", {}).values())])
     return who + ": " + ", ".join(f"{t.upper()} {v['value']:+d}" if "min" in v else f"{t.upper()} {v['value']}/{v['max']}" for t, v in pc["tracks"].items())
-
-
-def _attitude_name(value):
-    return next((name for name, number in ATTITUDES.items() if number == value), str(value))
 
 
 def _elapsed(seconds):

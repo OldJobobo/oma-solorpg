@@ -25,8 +25,8 @@ from pathlib import Path
 from . import SoloError, combat, creation, dice, library, magic, mechanics, oracle, packs
 from .commits import Commits, _clamp, _listed, _plural, _shift
 from .eventlog import Log, _saved
-from .packs import slug
-from .reducer import LIKELIHOOD, _attitude_word, _odds_levels, gm_line, profile_of, ready, replay
+from .packs import _attitude_word, slug
+from .reducer import LIKELIHOOD, _odds_levels, gm_line, profile_of, ready, replay
 # The rest of the engine and the tests read these here, where they were before reducer.py, eventlog.py and commits.py.
 from .commits import _CLOCK, _COMMIT_KEYS, _CONSEQUENCE_KEYS, _NPC_FIELDS, _PROMISE_KEYS, PROFILE_FIELDS  # noqa: F401
 from .eventlog import _KEEP_EVERY, snapshot  # noqa: F401

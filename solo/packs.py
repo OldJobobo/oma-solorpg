@@ -48,6 +48,10 @@ def toml_string(value):
     return json.dumps(str(value), ensure_ascii=False)
 
 
+def _attitude_word(value):
+    return next((name for name, number in ATTITUDES.items() if number == value), str(value))
+
+
 def load_data(path):
     """Read a .toml or .json file."""
     path = Path(path)
