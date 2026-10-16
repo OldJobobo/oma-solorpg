@@ -264,6 +264,9 @@ def main(out):
     # Begin runs `solo new --play`, which links solo and the skills into the home folder.
     os.environ["HOME"] = str(work / "home")
     os.environ["XDG_CACHE_HOME"] = str(work / "cache")
+    # The dice the Table's own commands roll (a cast, an attack clicked on the Table) are fixed too, a run to a run: unseeded,
+    # about one run in twenty cast a Dragon, and the fight after it needed more of the check's own dice than it was given.
+    os.environ["SOLO_SEED"] = "7"
     # Something to play the sounds with, so the plugin plays them.
     (work / "bin").mkdir()
     (work / "bin" / "pw-play").write_text("#!/bin/sh\nexit 0\n")
