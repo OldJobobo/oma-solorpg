@@ -496,9 +496,11 @@ class KeptReplay(CampaignTest):
                         self.assertEqual(c.state, campaign.fold(c.system, c.adventure, c.events))
 
     def test_the_reducer_imports_nothing_that_reads_writes_or_rolls(self):
-        """The kept replay is only valid while reducer.py stays pure (its docstring says why): it imports nothing that
-        touches a file, the clock or the dice, none of the modules that read or write the campaign's folder, and it
-        opens and prints nothing itself."""
+        """The kept replay is only valid while reducer.py stays pure (its docstring says why). This reads what a test
+        can: reducer.py's own imports name nothing that touches a file, the clock or the dice (os, pathlib, time,
+        random, solo.dice, solo.library ...) and none of the modules that read or write the campaign's folder, and it
+        opens and prints nothing itself. It does import packs and oracle, which read files and roll elsewhere: that
+        what it calls in them does neither is not checked here."""
         tree = ast.parse(Path(reducer.__file__).read_text(encoding="utf-8"))
         modules = {alias.name for node in ast.walk(tree) if isinstance(node, ast.Import) for alias in node.names}
         modules |= {("solo." if node.level else "") + (node.module or alias.name)
