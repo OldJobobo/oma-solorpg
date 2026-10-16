@@ -8,12 +8,15 @@ import io
 import json
 import marshal
 import random
+import shutil
+import types
 import unittest.mock
+from pathlib import Path
 
 from helpers import BUNDLED, DRAGONBANE, FIXTURES, CampaignTest, Dice
 from test_cli import CliCase
 
-from solo import SoloError, campaign, cli, eventlog, gm
+from solo import SoloError, campaign, cli, eventlog, gm, reducer
 
 MINE = FIXTURES / "delve"
 
@@ -469,6 +472,27 @@ class KeptReplay(CampaignTest):
         with self.session() as c:
             self.assertEqual(c.kept, 0)
             self.assertEqual(c.state, campaign.fold(c.system, c.adventure, c.events))
+
+    def test_a_change_to_the_reducer_or_what_it_runs_replays_from_the_start(self):
+        """The kept replay is what reducer.py, and the engine's modules it runs, made of the log: an edit or a pull that
+        changed one of them must not have an old replay used for it. The engine whose files the key reads here is a copy
+        of solo/, changed a file at a time, so the tree the tests run from is never touched."""
+        engine = self.tmp / "engine"
+        engine.mkdir()
+        for path in Path(eventlog.__file__).parent.glob("*.py"):
+            shutil.copy2(path, engine / path.name)
+        runs = [module for module in vars(reducer).values() if isinstance(module, types.ModuleType) and module.__name__.startswith("solo.")]
+        with unittest.mock.patch.object(eventlog, "__file__", str(engine / "eventlog.py")):
+            self.grow()
+            for module in (reducer, *runs):
+                with self.subTest(module=module.__name__):
+                    with self.session() as c:
+                        self.assertEqual(c.kept, len(c.events))  # kept again by the last session, for the engine as it is now
+                    path = engine / Path(module.__file__).name
+                    path.write_text(path.read_text(encoding="utf-8") + "\n# changed\n", encoding="utf-8")
+                    with self.session() as c:
+                        self.assertEqual(c.kept, 0)
+                        self.assertEqual(c.state, campaign.fold(c.system, c.adventure, c.events))
 
     def test_rebuild_trusts_only_the_log(self):
         self.grow()
