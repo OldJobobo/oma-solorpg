@@ -13,7 +13,7 @@ import unittest.mock
 from helpers import BUNDLED, DRAGONBANE, FIXTURES, CampaignTest, Dice
 from test_cli import CliCase
 
-from solo import SoloError, campaign, cli, gm
+from solo import SoloError, campaign, cli, eventlog, gm
 
 MINE = FIXTURES / "delve"
 
@@ -462,7 +462,7 @@ class KeptReplay(CampaignTest):
         with self.session() as c:
             self.assertEqual(c.kept, 0)
             self.assertIn("Ragna chalks a mark on the gate", [m["text"] for m in campaign.moments(c.chronology())])
-        with unittest.mock.patch.object(campaign, "_replay_key", return_value=["another engine"]):
+        with unittest.mock.patch.object(eventlog, "_replay_key", return_value=["another engine"]):
             with self.session() as c:
                 self.assertEqual(c.kept, 0)
         self.kept().write_bytes(b"damaged")

@@ -9,7 +9,7 @@ import unittest.mock
 
 from helpers import CampaignTest, Dice, LikelihoodTest
 
-from solo import SoloError, campaign, cli, packs
+from solo import SoloError, campaign, cli, eventlog, packs
 
 
 class CheckTest(CampaignTest):
@@ -458,7 +458,7 @@ class TornLogTest(CampaignTest):
                     self.session().__enter__()
 
     def test_each_event_is_on_the_disk_before_the_command_goes_on(self):
-        with self.session() as c, unittest.mock.patch("solo.campaign.os.fsync", wraps=os.fsync) as fsync:
+        with self.session() as c, unittest.mock.patch("solo.eventlog.os.fsync", wraps=os.fsync) as fsync:
             c.say("The road is long.")
             c.say("I walk on.", "player")
         self.assertEqual(fsync.call_count, 2)
@@ -473,7 +473,7 @@ class TornLogTest(CampaignTest):
             with self.assertRaisesRegex(SoloError, "couldn't write to .*events.jsonl \\(No space left on device\\), so the command stopped there"):
                 with self.session() as c:
                     c.say("The road is long.")
-                    with unittest.mock.patch("solo.campaign.os.write", half):
+                    with unittest.mock.patch("solo.eventlog.os.write", half):
                         c.say("I walk on.", "player")
         come_due.assert_not_called()  # nothing more is written after the write that failed
         self.assertTrue(self.log().read_bytes().endswith(b'"text": "The road is long.", "scene": "road"}\n'))
@@ -504,7 +504,7 @@ class TornLogTest(CampaignTest):
             pass  # a command that only reads (solo state, solo log)
         made = json.loads(path.read_text())
         self.assertFalse(made["last_check"]["outcome"]["pushable"])
-        with unittest.mock.patch.object(campaign, "_replay_key", return_value=["the packs, edited"]), self.session():
+        with unittest.mock.patch.object(eventlog, "_replay_key", return_value=["the packs, edited"]), self.session():
             pass
         self.assertNotEqual(json.loads(path.read_text())["made_from"], made["made_from"])
 
