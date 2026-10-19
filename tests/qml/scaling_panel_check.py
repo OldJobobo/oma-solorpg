@@ -60,12 +60,27 @@ def check(item, panel, out, work, engine, wait, process_type):
     QMetaObject.invokeMethod(gear, "clicked")
     wait(300)
     # Moving existing global preferences must preserve their save/readback path.
+    # CI has no real Book-capable agent installed; exercise both capability modes
+    # explicitly rather than depending on whichever agent the host discovers.
+    settings = find(item, "tableSettings")
+    for _ in range(40):
+        if not settings.property("busy"):
+            break
+        wait(50)
+    expect(not settings.property("busy"), "settings queries did not finish")
+    saved_agent = item.property("agentInfo")
+    item.setProperty("agentInfo", {"agent": "fixture", "book": False})
+    wait(50)
+    expect(not find(item, "settingsPace_quick").property("enabled"), "terminal GM pace was editable")
+    item.setProperty("agentInfo", {"agent": "fixture", "book": True})
+    wait(100)
     QMetaObject.invokeMethod(find(item, "settingsPace_quick"), "clicked")
     wait(250)
     expect(item.property("pace") == "quick", "GM pace did not save")
     QMetaObject.invokeMethod(find(item, "settingsPace_normal"), "clicked")
     wait(250)
     expect(item.property("pace") == "normal", "GM pace did not restore")
+    item.setProperty("agentInfo", saved_agent)
     for enabled in (False, True):
         QMetaObject.invokeMethod(find(item, "settingsEffect_sound"), "toggled")
         wait(250)
