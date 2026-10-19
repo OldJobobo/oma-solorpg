@@ -381,7 +381,7 @@ Whether the GM holds an adventure together is a different question, and `tests/g
 python3 tests/gm_eval/run.py red-tusk-opening   # a few minutes and real model calls
 ```
 
-The QML can be checked without an Omarchy desktop, with PySide6 (`pip install PySide6-Essentials`):
+The QML can be checked without an Omarchy desktop, with PySide6. To match CI, activate a Python 3.14 virtual environment and run `python -m pip install "PySide6-Essentials==6.11.*"` (see [Running the checks](CONTRIBUTING.md#running-the-checks)). PySide6 is only needed for these offscreen tests, not to run the Omarchy plugin:
 
 ```bash
 make qml-check                              # Panel.qml and BarWidget.qml loaded with stand-ins for Quickshell, screenshots included
