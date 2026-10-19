@@ -244,7 +244,7 @@ Rectangle {
       wrapMode: Text.Wrap
       font.family: tableau.theme.mono
       font.pixelSize: tableau.theme.small
-      color: tableau.heroStruck ? tableau.theme.text : tableau.theme.urgent
+      color: tableau.heroStruck ? tableau.theme.text : tableau.theme.urgentText
       text: tableau.last ? tableau.last.text : ""
     }
 
@@ -256,7 +256,7 @@ Rectangle {
       font.family: tableau.theme.mono
       font.pixelSize: tableau.theme.small
       font.bold: true
-      color: tableau.theme.urgent
+      color: tableau.theme.urgentText
       text: tableau.fight && tableau.fight.incoming ? tableau.fight.incoming.name + " is about to hit: " + tableau.fight.incoming.damage
         + ". Evade, parry or take it (on the table, or tell the GM)." : ""
       SequentialAnimation on opacity {

@@ -159,7 +159,7 @@ Column {
     font.family: torch.theme.mono
     font.pixelSize: torch.theme.small
     font.italic: true
-    color: torch.theme.urgent
+    color: torch.theme.urgentText
     text: "It is dark here."
     SequentialAnimation on opacity {
       running: !torch.light && torch.dark && torch.visible
