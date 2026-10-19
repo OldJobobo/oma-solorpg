@@ -24,7 +24,7 @@ COLUMNS = ("at", "scenario", "commit", "agent", "model", "effort", "seed", "run"
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("scenarios", nargs="*", help="scenario names (scenarios/<name>.toml) or files; default: all")
-    parser.add_argument("--agent", default="claude", help="the GM agent (claude, codex)")
+    parser.add_argument("--agent", default="claude", help="the GM agent (claude, codex, pi)")
     parser.add_argument("--model", help="the GM's model (default: the agent's own default)")
     parser.add_argument("--effort", help="the GM's effort level, e.g. low, medium, high (default: the normal pace's)")
     parser.add_argument("--turns", type=int, help="cap every scenario at this many player turns")

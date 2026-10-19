@@ -342,14 +342,14 @@ def _preflight(skill_dirs):
         lines.append(("optional", "hyprctl not found, so no desktop effects: they need Hyprland, and the game plays without them"))
     agent = gm.default_agent()
     if not agent:
-        lines.append(("todo", "no default agent: choose Claude Code or Codex with omarchy default agent, or set AGENT=claude"))
+        lines.append(("todo", "no default agent: choose Claude Code, Codex or Pi with omarchy default agent, or set AGENT=claude"))
     elif not shutil.which(agent):
         lines.append(("todo", f"the default agent is {agent}, and {agent} isn't on PATH: install it, or choose another with omarchy default agent"))
     elif gm.supported(agent):
         lines.append(("ok", f"the GM is {agent}, which the Book runs"))
     else:
         lines.append(("todo", f"the default agent is {agent}, which the Book can't run: it opens in a terminal instead (solo play --terminal), "
-                              "or choose Claude Code or Codex with omarchy default agent"))
+                              "or choose Claude Code, Codex or Pi with omarchy default agent"))
     if not skill_dirs:
         lines.append(("todo", "no agent found (claude, codex or pi), so no skills were linked: install one and run make install again"))
     if importlib.util.find_spec("pymupdf"):
@@ -2053,7 +2053,7 @@ def _parser(only=None):
     sub = command("gm", cmd_gm, "the Book's GM: turn [text | -], stop, status, agent, pace [quick|normal|careful], budget [dollars]")
     sub.add_argument("action", choices=["turn", "stop", "status", "agent", "pace", "budget"])
     sub.add_argument("text", nargs="*", help="turn: what the player says (none: the GM opens or picks up the story); pace: the new pace; budget: dollars a session may spend")
-    sub.add_argument("--agent", help="turn: an agent other than the default (claude, codex)")
+    sub.add_argument("--agent", help="turn: an agent other than the default (claude, codex, pi)")
     sub.add_argument("--turns", type=int, help="budget: GM turns a session may run (for an agent that doesn't say what a turn costs)")
     sub.add_argument("--reset", action="store_true", help="budget: start counting this campaign's session again")
 
