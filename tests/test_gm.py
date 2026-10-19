@@ -67,7 +67,7 @@ class Agents(CampaignTest):
                 sys.exit(0)
             with open({str(self.tmp / (name + '.calls'))!r}, "a") as f:
                 f.write(json.dumps(sys.argv[1:] + [sys.stdin.read()]) + "\\n")
-            if {fail_resume!r} and ("--resume" in sys.argv or "resume" in sys.argv):
+            if {fail_resume!r} and ("--resume" in sys.argv or "resume" in sys.argv or "--session" in sys.argv):
                 print("No conversation found with session ID", file=sys.stderr)
                 sys.exit(1)
             print({lines!r})
@@ -360,7 +360,7 @@ class GmTest(Agents):
         self.assertEqual(self.said(), [("player", "Hi")])  # the player's words stay; the next turn answers them
 
     def test_unsupported_agents_and_busy_turns_are_refused(self):
-        result = gm.turn(self.root, "Hi", agent="pi")
+        result = gm.turn(self.root, "Hi", agent="another-agent")
         self.assertIn("can't write in the Book", result["error"])
         (self.root / ".solo").mkdir(exist_ok=True)
         import fcntl
@@ -770,8 +770,10 @@ class DefaultAgent(CliCase):
         self.new_game()
         shown = json.loads(self.solo("-C", self.game, "gm", "agent")[1])
         self.assertEqual((shown["agent"], shown["book"]), ("", False))
-        self.assertIn("install Claude Code or Codex", shown["why"])  # for the Book to show
+        self.assertIn("install Claude Code, Codex or Pi", shown["why"])  # for the Book to show
         self.assertIn("No coding agent was found", self.ask())
+        self.install("pi")
+        self.assertEqual((gm.default_agent(), self.ask()), ("pi", "pi Build the pack."))
         self.install("codex")
         self.assertEqual((gm.default_agent(), self.ask()), ("codex", "codex Build the pack."))
         self.install("claude")
@@ -785,8 +787,10 @@ class DefaultAgent(CliCase):
             self.assertEqual((gm.default_agent(), self.ask()), ("claude", "claude Build the pack."))
         omarchy.write_text("pi\n")
         shown = json.loads(self.solo("-C", self.game, "gm", "agent")[1])
-        self.assertEqual((shown["agent"], shown["book"]), ("pi", False))
-        self.assertIn("can't write in the Book yet", shown["why"])
+        self.assertEqual((shown["agent"], shown["book"]), ("pi", True))
+        self.assertNotIn("why", shown)
+        omarchy.write_text("another-agent\n")
+        self.assertIn("can't write in the Book yet", json.loads(self.solo("-C", self.game, "gm", "agent")[1])["why"])
 
 
 class SkillFacts(CliCase):

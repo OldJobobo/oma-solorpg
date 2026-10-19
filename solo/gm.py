@@ -8,7 +8,7 @@ recorded with the rest of the conversation (`said` events), so the campaign stil
 the transcript and any agent session can be thrown away.
 
 Only agents with a headless mode that streams JSON and resumes a session are driven
-here: Claude Code and Codex. Any other default agent keeps its terminal window
+here: Claude Code, Codex and Pi. Any other default agent keeps its terminal window
 (`solo play --terminal`); the Book still shows the story as it is recorded.
 
 This is the only part of solo that runs an agent. The engine still never calls a model.
@@ -105,20 +105,20 @@ _DOING = {
 
 def default_agent():
     """The player's coding agent, by the rule bin/ask-agent follows too: $AGENT, else the one Omarchy
-    launches (`omarchy default agent`), else claude if it is on PATH, else codex if it is, else none ("")."""
+    launches (`omarchy default agent`), else claude, codex or pi if one is on PATH, else none ("")."""
     chosen = os.environ.get("AGENT", "").strip()
     if chosen:
         return chosen
     try:
         return (Path.home() / ".config/omarchy/defaults/agent").read_text(encoding="utf-8").split()[0]
     except (OSError, IndexError):
-        return next((name for name in ("claude", "codex") if shutil.which(name)), "")
+        return next((name for name in ("claude", "codex", "pi") if shutil.which(name)), "")
 
 
 def why_not(agent):
     """Why the Book can't run `agent` as its GM, in a sentence for the player, or None when it can."""
     if not agent:
-        return "No coding agent was found: install Claude Code or Codex, or choose one with: omarchy default agent <name>"
+        return "No coding agent was found: install Claude Code, Codex or Pi, or choose one with: omarchy default agent <name>"
     elif not supported(agent):
         return f"Your default agent ({agent}) can't write in the Book yet. Open the GM in a terminal instead."
     elif not shutil.which(agent):
@@ -397,13 +397,17 @@ class Adapter:
     def read(self, event, result, live):
         raise NotImplementedError
 
-    def run(self, root, prompt, session, live, left=None):
+    def environment(self, root):
         env = {k: v for k, v in os.environ.items() if k not in NESTING}
         # The GM's `solo` is this plugin's, whether or not `solo setup` put one on PATH.
         # SOLO_BOOK: this turn's final message is recorded by `turn`, so `solo say` stands down.
         env.update(PATH=f"{REPO / 'bin'}:{env.get('PATH', '')}", PWD=str(root), SOLO_GM=str(root), SOLO_BOOK="1")
         # Every `solo` command the GM runs, refused ones too, for `solo report` (a play test's own trace file wins).
         env.setdefault("SOLO_TRACE", str(Path(root) / ".solo" / "trace.jsonl"))
+        return env
+
+    def run(self, root, prompt, session, live, left=None):
+        env = self.environment(root)
         # stderr goes to a file: a pipe nobody reads while stdout streams can fill and stall the agent.
         # The prompt goes in on stdin, from a file only the player can read: the player's words and
         # the table's events never show in the process list, where other users could read them.
@@ -449,6 +453,9 @@ class Adapter:
                     if isinstance(event, dict):
                         result["heard"] = True
                         self.read(event, result, live)
+                        if result.pop("limit", False):
+                            _end_group(process)
+                            break
             # Reaped: its pid may soon be another process's, and turn.json mustn't point a stop at it.
             live.update(force=True, agent_pid=None)
             _trace_denied(env["SOLO_TRACE"], result.get("denied"))
@@ -458,7 +465,7 @@ class Adapter:
             result["error"] = f"The GM said nothing for {limit:g} seconds, so its turn was ended. Try again."
         elif late.is_set():
             result["error"] = f"The GM's turn ran past {f'{ceiling:g} seconds' if ceiling < 120 else f'{ceiling / 60:g} minutes'}, so it was ended. Try again."
-        elif process.returncode < 0:
+        elif process.returncode < 0 and not result["error"]:
             result["stopped"] = True
         elif process.returncode and not result["text"]:
             # An agent can report a lost session on stderr, in its own error event, or both.
@@ -565,9 +572,79 @@ class Codex(Adapter):
             result["error"] = _first_line(message or "") or "The GM ran into an error."
 
 
-ADAPTERS = {"claude": Claude(), "codex": Codex()}
-# What each agent says when it has no session by the id it was given to resume: Claude Code, then Codex.
-_LOST = re.compile(r"no conversation found with session id|no rollout found for thread id|no thread with id", re.I)
+class Pi(Adapter):
+    """Pi: one JSON-streamed turn, with only the campaign engine exposed as a tool."""
+
+    priced = True
+
+    def environment(self, root):
+        env = super().environment(root)
+        env["SOLO_GM_COMMANDS"] = json.dumps(campaign_commands())
+        return env
+
+    def command(self, session, left=None):
+        command = ["pi", "--mode", "json", "--no-extensions", "--no-mcp", "--no-skills", "--no-prompt-templates",
+                   "--no-context-files", "--no-approve", "--tools", "solo", "--extension", str(REPO / "solo" / "pi-gm.mjs"),
+                   "--system-prompt", str(REPO / "skills" / "solo-gm" / "SKILL.md"),
+                   "--session-dir", ".solo/pi-sessions", "--thinking", effort(), "--offline"] + _model()
+        # Pi reads a piped prompt literally, including leading slashes and @file-looking text.
+        return command + (["--session", session] if session else [])
+
+    def read(self, event, result, live):
+        kind = event.get("type")
+        message = event.get("message") or {}
+        if kind == "session":
+            result["session"] = event.get("id") or result["session"]
+        elif kind == "message_start" and message.get("role") == "assistant":
+            result.update(text="", error="")  # a retry or the reply after a tool, not the preceding aside
+            live.reset()
+        elif kind == "message_update":
+            delta = event.get("assistantMessageEvent") or {}
+            if delta.get("type") == "text_delta":
+                live.update(status="writing", text=live.data["text"] + delta.get("delta", ""))
+            elif delta.get("type") == "toolcall_start":
+                live.reset()
+        elif kind == "tool_execution_start":
+            args = (event.get("args") or {}).get("args") or []
+            live.update(force=True, doing=doing("solo " + " ".join(args)), text="", status="thinking")
+        elif kind == "message_end" and message.get("role") == "assistant":
+            if message.get("model"):
+                live.update(model=message["model"])
+            used = message.get("usage") or {}
+            total = result.setdefault("usage", {"model_calls": 0, "input_tokens": 0, "cached_input_tokens": 0,
+                                                 "output_tokens": 0, "cost_usd": None})
+            total["model_calls"] += 1
+            total["input_tokens"] += sum(used.get(k) or 0 for k in ("input", "cacheRead", "cacheWrite"))
+            total["cached_input_tokens"] += used.get("cacheRead") or 0
+            total["output_tokens"] += used.get("output") or 0
+            cost = (used.get("cost") or {}).get("total")
+            if cost is not None:
+                total["cost_usd"] = (total["cost_usd"] or 0) + cost
+            reason = message.get("stopReason")
+            if reason == "stop":
+                result["text"] = "\n\n".join(block.get("text", "") for block in message.get("content", []) if block.get("type") == "text")
+                live.update(force=True, status="writing", text=result["text"])
+            elif reason == "aborted":
+                result["stopped"] = True
+            elif reason == "error":
+                result["error"] = _first_line(message.get("errorMessage") or "") or "The GM ran into an error."
+            elif reason == "length":
+                result["error"] = "The GM's reply reached the model's output limit. Try again, or ask for less at a time."
+            elif reason == "toolUse" and total["model_calls"] >= _max_turns():
+                result.update(error=_STOPPED_AT["error_max_turns"], limit=True)
+        elif kind == "auto_retry_start":
+            result.update(text="", error="")
+            live.reset()
+        elif kind == "auto_retry_end" and not event.get("success"):
+            result["error"] = _first_line(event.get("finalError") or "") or "The GM ran into an error."
+        elif kind == "agent_settled" and event.get("aborted"):
+            result["stopped"] = True
+
+
+ADAPTERS = {"claude": Claude(), "codex": Codex(), "pi": Pi()}
+# What agents say when the session to resume no longer exists.
+_LOST = re.compile(r"no conversation found with session id|no rollout found for thread id|no thread with id|"
+                   r"no session found|session (?:file )?not found|session file .+ does not exist", re.I)
 # What Claude Code's result says when a limit ended the turn.
 _STOPPED_AT = {
     "error_max_turns": "The GM used all the model calls a turn is allowed and was stopped. Try again, or ask for less at a time.",
