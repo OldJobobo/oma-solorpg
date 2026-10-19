@@ -2,7 +2,7 @@
 
 A solo virtual tabletop for [Omarchy](https://omarchy.org). You play a tabletop RPG alone, and your coding agent is the game master.
 
-It is a VTT, not a video game. There are no graphics beyond text: the scene is a page of prose, the map is a list of exits, a fight is drawn in characters, and faces are text portraits. What it gives you is what a VTT gives a table: dice that roll themselves, a character sheet that keeps count, fights with initiative and hit points, clocks and hidden countdowns, an oracle, and a record of everything that happened. The game master is whatever agent Omarchy runs for you (Claude Code or Codex), headless behind a window called the Book.
+It is a VTT, not a video game. There are no graphics beyond text: the scene is a page of prose, the map is a list of exits, a fight is drawn in characters, and faces are text portraits. What it gives you is what a VTT gives a table: dice that roll themselves, a character sheet that keeps count, fights with initiative and hit points, clocks and hidden countdowns, an oracle, and a record of everything that happened. The game master is whatever agent Omarchy runs for you (Claude Code, Codex or Pi), headless behind a window called the Book.
 
 - `solo` owns the dice, the rules, character creation and the campaign state. It is standard-library Python (3.11+), with no network access and no API keys. The agent brings the model.
 - An omarchy-shell plugin is the table: a d20 in the bar, the Book where the story is told, and a Table docked beside it where you start adventures, make heroes, roll, rest and ask the oracle.
@@ -26,7 +26,7 @@ You need:
 
 - Omarchy
 - `make` and Python 3.11 or newer
-- Claude Code (`claude`) or Codex (`codex`), as Omarchy's default agent
+- Claude Code (`claude`), Codex (`codex`) or Pi 1.3+ (`pi`), as Omarchy's default agent
 
 ```bash
 git clone https://github.com/cabral/oma-solorpg ~/Code/oma-solorpg && cd ~/Code/oma-solorpg
@@ -97,7 +97,7 @@ python3 -m venv ~/.venvs/solo && ~/.venvs/solo/bin/pip install pymupdf
 
 ### No agent found
 
-The Book runs Omarchy's default agent headless, and it can drive two: Claude Code (`claude`) and Codex (`codex`). `solo setup` says which agent it found. If it found none, install one of them and make it Omarchy's default agent (`omarchy default agent`), then run `make install` again so its skill folder gets the GM skills. Another agent still plays, in a terminal: Terminal on the table, or `solo play --terminal`.
+The Book runs Omarchy's default agent headless, and it can drive three: Claude Code (`claude`), Codex (`codex`) and Pi (`pi`, version 1.3 or newer). `solo setup` says which agent it found. If it found none, install one of them and make it Omarchy's default agent (`omarchy default agent`), then run `make install` again so its skill folder gets the GM skills. Another agent still plays, in a terminal: Terminal on the table, or `solo play --terminal`.
 
 ### Python too old
 
@@ -150,9 +150,13 @@ solo character elf mage --seed 7                           # just look at a hero
 - Omens from hidden countdowns reach you as omens, never as numbers.
 - When your hero dies, the Book closes on a gravestone with your last words, and Home keeps them in the Hall of the Fallen.
 
-The GM runs headless: `solo gm turn` drives Claude Code or Codex one turn at a time and streams what it writes. GM pace, under the table's settings, sets how long it thinks before it answers: Quick answers sooner and spends fewer tokens, Careful thinks longer about the rules. It is the agent's effort level (low, medium or high), one pace for every campaign (`solo gm pace`). Other agents open in a terminal (Terminal on the table, or `solo play --terminal`), and the Book still shows the story as it is recorded.
+The GM runs headless: `solo gm turn` drives Claude Code, Codex or Pi one turn at a time and streams what it writes. GM pace, under the table's settings, sets how long it thinks before it answers: Quick answers sooner and spends fewer tokens, Careful thinks longer about the rules. It is the agent's effort level (low, medium or high), one pace for every campaign (`solo gm pace`). Other agents open in a terminal (Terminal on the table, or `solo play --terminal`), and the Book still shows the story as it is recorded.
 
-A GM turn is held in code, not only by the GM's instructions. Claude Code gets two tools, Bash and Read, and Bash may run only the GM's own `solo` commands; a recent Claude Code also runs with `--restricted` and `--permission-mode dontAsk`, so none of your own Claude Code settings or allow rules reach the GM. Codex's sandbox keeps the GM inside the campaign folder, but Codex has no list of allowed commands, so untrusted adventure text is held back less under Codex than under Claude Code. Every turn has a time limit, and every GM session a spending limit (`solo gm budget`), counted in `~/.local/state/solo`, outside the campaign folder the GM can write. The commands that are yours alone (`solo strike`, `solo prefs`, and setting the budget or the pace) refuse to run inside a GM turn.
+A GM turn is held in code, not only by the GM's instructions. Claude Code gets two tools, Bash and Read, and Bash may run only the GM's own `solo` commands; a recent Claude Code also runs with `--restricted` and `--permission-mode dontAsk`, so none of your own Claude Code settings or allow rules reach the GM. Codex's sandbox keeps the GM inside the campaign folder, but Codex has no list of allowed commands, so untrusted adventure text is held back less under Codex than under Claude Code.
+
+Pi gets only a `solo` tool that calls this plugin's engine directly with an argument list (and optional stdin), never a shell. Its normal extensions, MCP servers, context files and project configuration are disabled for the Book; the GM skill is supplied explicitly. It uses your Pi model and credentials, streams the reply and resumes a campaign-local session. Pi's reported token usage and cost count toward the same session budget. This is a tool boundary, not an operating-system sandbox.
+
+Every turn has a time limit, and every GM session a spending limit (`solo gm budget`), counted in `~/.local/state/solo`, outside the campaign folder the GM can write. The commands that are yours alone (`solo strike`, `solo prefs`, and setting the budget or the pace) refuse to run inside a GM turn.
 
 ## The desktop joins in
 
@@ -165,10 +169,10 @@ While a game is on, Omarchy plays along:
 - When they die, the screen goes grey and cold for a while and a bell tolls.
 - Omens ripple the screen and arrive as notifications.
 - The table has sounds, all made on the spot the first time they're needed: dice that rattle and land in time with the Book's, a chime for a Dragon, a growl for a Demon, a war drum when a fight starts, a torch catching, a page turning when the GM speaks.
-- The screen warms like candlelight while the Book is open, and the screensaver shows your hero instead of the logo.
+- With Candlelight enabled under Desktop effects, the screen warms while the Book is open. It is off by default because it changes the whole desktop's night light. The screensaver shows your hero instead of the logo.
 - The bar's d20 lights up when the GM is waiting for you, pulses while you're dying and turns into a skull when you die.
 
-Each of these puts back exactly what it changed (your border colours, your own screen shader, your screen temperature, your screensaver text), and each can be switched off under Desktop effects on the table.
+Each of these puts back exactly what it changed (your border colours, your own screen shader, your screen temperature, your screensaver text), and each can be switched off under Desktop effects on the table. If you change the night light while the Book is open, Candlelight leaves your newer choice alone when it closes.
 
 ### Pin the Table to a workspace
 

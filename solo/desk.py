@@ -55,12 +55,12 @@ SCREENSAVER = Path.home() / ".config/omarchy/branding/screensaver.txt"
 
 
 def settings():
-    """Which effects are on (all of them unless the player switched one off)."""
+    """Which effects are on. Candlelight changes the desktop's night light, so it is opt-in."""
     try:
         saved = json.loads(_settings_path().read_text(encoding="utf-8"))
     except (OSError, ValueError):
         saved = {}
-    return {name: bool(saved.get(name, True)) for name in EFFECTS}
+    return {name: bool(saved.get(name, name != "candle")) for name in EFFECTS}
 
 
 def set_settings(changes):
@@ -340,8 +340,8 @@ def sound_kit():
 # Candlelight ----------------------------------------------------------------------------
 
 def candle(on):
-    """Warm the screen while the Book is open, like Omarchy's night light, and put the
-    temperature back afterwards. Only when hyprsunset is running."""
+    """When opted in, warm the screen while the Book is open and put the temperature back
+    afterwards, unless the player changed it meanwhile. Only when hyprsunset is running."""
     with _lock():
         if on and settings()["candle"]:
             now = _temperature()
@@ -349,12 +349,20 @@ def candle(on):
                 return False
             if _saved("temperature") is None:
                 _save("temperature", now)
-            _run(["hyprctl", "hyprsunset", "temperature", str(min(now, CANDLE))])
+            if _run(["hyprctl", "hyprsunset", "temperature", str(min(now, CANDLE))]) is None:
+                return False
         else:
             original = _saved("temperature")
             if original is None:
                 return False
-            _run(["hyprctl", "hyprsunset", "temperature", str(original)])
+            now = _temperature()
+            if now is None:
+                return False  # keep the saved temperature for a later restore
+            if now != min(original, CANDLE):
+                _forget("temperature")  # a newer nightlight choice belongs to the player
+                return False
+            if _run(["hyprctl", "hyprsunset", "temperature", str(original)]) is None:
+                return False
             _forget("temperature")
     if shutil.which("omarchy-shell"):
         _run(["omarchy-shell", "-q", "nightlight", "refresh"])
