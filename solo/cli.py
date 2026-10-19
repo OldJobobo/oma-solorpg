@@ -87,7 +87,13 @@ class _Parser(argparse.ArgumentParser):
 
 class _Uncoloured(argparse.HelpFormatter):
     def _set_color(self, color):
-        pass
+        # 3.15 initializes lazy caches here; interpolated help still needs them.
+        if sys.version_info >= (3, 15):
+            super()._set_color(False)
+
+    def _apply_text_markup(self, text):
+        # Python 3.15 styles help during validation too; this formatter only checks text.
+        return text
 
 
 def _trace(argv, error):
