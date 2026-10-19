@@ -92,6 +92,10 @@ def main(out):
         QTest.keyClick(view, Qt.Key_Space)
         assert root.property("bookScale") == scale
     assert not increase.property("enabled")
+    reset.forceActiveFocus()
+    QTest.keyClick(view, Qt.Key_Enter)
+    assert root.property("bookScale") == 1
+    root.setProperty("bookScale", 2)
     # Hero scrolling cannot move the fixed scale footer away.
     QTest.qWait(100)
     before = footer.mapToScene(QPointF(0, 0))

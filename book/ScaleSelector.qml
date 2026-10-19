@@ -27,6 +27,9 @@ Item {
     property string hint: ""
     enabled: !selector.busy
     focusPolicy: Qt.StrongFocus
+    // AbstractButton handles Space; Return/Enter need explicit activation on Qt 6.11.
+    Keys.onReturnPressed: if (enabled) clicked()
+    Keys.onEnterPressed: if (enabled) clicked()
     hoverEnabled: true
     leftPadding: Math.round(selector.theme.body * 0.4)
     rightPadding: leftPadding
