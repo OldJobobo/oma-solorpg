@@ -602,7 +602,6 @@ Item {
               font.family: book.theme.serif
               font.pixelSize: book.theme.prose
               color: book.theme.text
-              selectionColor: book.theme.accent
               onActiveFocusChanged: if (activeFocus) textSelection.clear()
               selectionColor: book.theme.selection
               selectedTextColor: book.theme.selectedText
@@ -673,7 +672,6 @@ Item {
                 font.family: book.theme.serif
                 font.pixelSize: book.theme.prose
                 color: book.theme.text
-                selectionColor: book.theme.accent
                 onActiveFocusChanged: if (activeFocus) textSelection.clear()
                 selectionColor: book.theme.selection
                 selectedTextColor: book.theme.selectedText
