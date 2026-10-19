@@ -52,6 +52,27 @@ The clone is pinned to a commit on purpose. The commit in [Quick start](#quick-s
 
 `make` alone lists every target. `AGENT=codex make rules ...` picks the agent for the targets that use one; the default is Omarchy's default agent.
 
+## Interface scale and settings
+
+Omarchy's global scaling is useful for the whole desktop, but you may prefer to keep your bar and other applications small while making SoloRPG easier to read. SoloRPG can scale independently—or enlarge just the Book without enlarging the Table.
+
+The gear at the top of the Table flips the sidebar over to **Settings**. Use × or Esc to return; the Book, drafts and workspace pin stay in place. GM pace and atmosphere switches now live here too.
+
+- **Book scale** changes only the floating story window.
+- **Table & settings scale** changes both faces of the sidebar together, not the Book.
+- Both offer **1×, 1.25×, 1.5×, 1.75× and 2×**, applied live and saved across campaigns and restarts.
+- The discreet − / scale / + control at the bottom of the Book's hero sidebar changes only the Book. Click the scale value to reset the Book to 1×.
+
+Neither control changes desktop, monitor or bar scaling. Scales are player-owned preferences in `$XDG_STATE_HOME/solo/ui.json` (normally `~/.local/state/solo/ui.json`), not campaign state. They can also be read or changed from the CLI:
+
+```bash
+solo ui
+solo ui --book-scale=1.5
+solo ui --table-scale=1.25
+```
+
+`solo ui --scale=1.5` explicitly sets both scales for compatibility with the original shared-scale format. Existing `{"scale": N}` preferences initialize both surfaces at N until a scoped choice is saved. To disable the settings flip animation, set `SOLO_REDUCED_MOTION=1` in the shell's environment.
+
 ## Update
 
 ```bash
@@ -71,7 +92,7 @@ Read what changed before you check it out, for the reason the clone is pinned: [
 These stay, for you to delete if you want them gone:
 
 - `~/Games/solo`: your campaigns, and the packs and adventures you built or imported;
-- `~/.local/state/solo`: which campaign is current, the GM's pace and budget, and the desktop effects you switched off;
+- `~/.local/state/solo`: which campaign is current, the GM's pace and budget, interface scales, and the desktop effects you switched off;
 - `~/.cache/solo` and `~/.cache/solo-play`: parsed packs and the sounds, made again when needed.
 
 ## Troubleshooting
@@ -364,6 +385,7 @@ Don't publish packs built from books you bought. They stay in `~/Games/solo`, wh
 | `solo strike [--note N] [--line L] [--veil V]` | the X-card, the Book's "cut the GM's last message": it leaves the page and `recall`, and the GM is told not to come back to it (the player's, not the GM's) |
 | `solo report [-n N] [--no-messages] [--out F]` | a bug report safe to post: ids, numbers and dice, the GM's commands and the engine and pack versions, with the books' words left out |
 | `solo review [--trace F]` | the campaign checked as a play test would: refused commands, bookkeeping in the story, foes that never struck back, consequences never paid, a person with two names |
+| `solo ui [--book-scale N] [--table-scale N]` | persistent player-owned scales; Book independently of Table and settings (1×–2×); `--scale N` explicitly sets both |
 | `solo desk flash\|dying\|death\|candle\|omen\|screensaver\|sound\|restore\|settings` | desktop effects, always restored |
 | `solo recall <words>` / `history` | the GM's long memory: search everything said and written down, or the whole story in order |
 | `solo state` / `log` / `rebuild` / `validate` / `outline` | inspection, repair and review |

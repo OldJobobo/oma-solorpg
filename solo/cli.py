@@ -1001,6 +1001,20 @@ def _budget(args):
     _json({"limit": limit, **({"spent": {k: v for k, v in gm.spent(root, saved).items() if k != "session"}} if root else {})})
 
 
+def cmd_ui(args):
+    """Player-owned app appearance, independent of campaigns and desktop effects."""
+    from . import ui
+    changes = args.scale is not None or args.book_scale is not None or args.table_scale is not None
+    if changes and os.environ.get("SOLO_BOOK"):
+        raise SoloError("interface scales are the player's to set: the GM can read them, never change them")
+    if args.scale is not None:
+        if args.book_scale is not None or args.table_scale is not None:
+            raise SoloError("use --scale on its own, or set --book-scale and --table-scale")
+        _json(ui.set_scale(args.scale))
+    else:
+        _json(ui.set_scales(book_scale=args.book_scale, table_scale=args.table_scale))
+
+
 def cmd_desk(args):
     """Desktop effects for the plugin: flash, dying, death, candle, omen, screensaver,
     sound, restore, settings."""
@@ -2046,6 +2060,11 @@ def _parser(only=None):
     sub.add_argument("--agent", help="turn: an agent other than the default (claude, codex, pi)")
     sub.add_argument("--turns", type=int, help="budget: GM turns a session may run (for an agent that doesn't say what a turn costs)")
     sub.add_argument("--reset", action="store_true", help="budget: start counting this campaign's session again")
+
+    sub = command("ui", cmd_ui, "player-owned interface scales (JSON): Book independently of Table and settings")
+    sub.add_argument("--book-scale", type=float, help="Book scale: 1, 1.25, 1.5, 1.75 or 2")
+    sub.add_argument("--table-scale", type=float, help="Table and settings scale: 1, 1.25, 1.5, 1.75 or 2")
+    sub.add_argument("--scale", type=float, help="set both scales explicitly (compatibility)")
 
     sub = command("desk", cmd_desk, "desktop effects: flash dragon|demon|hit, dying on [failures]|off, death, candle on|off, omen <text>, screensaver on|off, sound [name], restore, settings [name=on|off]")
     sub.add_argument("--after", type=float, default=0, metavar="SECONDS", help="wait first (to land with the Book's dice)")

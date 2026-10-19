@@ -8,6 +8,7 @@ Item {
   width: 1280
   height: 860
   property var game: null
+  property real bookScale: 1
   property var turn: ({ status: "idle" })
 
   Solo.Theme {
@@ -23,11 +24,20 @@ Item {
     property real radius: 4
   }
 
+  ScaledViewport {
+    id: viewport
+    objectName: "bookViewport"
+    anchors.fill: parent
+    factor: harness.bookScale
+  }
   BookView {
     id: view
     objectName: "book"
+    parent: viewport.canvas
     anchors.fill: parent
     theme: theme
+    bookScale: harness.bookScale
+    onScaleRequested: value => harness.bookScale = value
     game: harness.game
     turn: harness.turn
     active: false

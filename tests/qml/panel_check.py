@@ -212,6 +212,8 @@ def main(out):
     os.environ["XDG_CONFIG_HOME"] = str(work / "config")  # Never use the player's local recordings.
     # Something to play the sounds with, so the plugin plays them.
     (work / "bin").mkdir()
+    # Child CLI commands use this interpreter, not a host version-manager shim.
+    (work / "bin" / "python3").symlink_to(Path(sys.executable).resolve())
     (work / "bin" / "pw-play").write_text("#!/bin/sh\nexit 0\n")
     (work / "bin" / "pw-play").chmod(0o755)
     os.environ["PATH"] = f"{work / 'bin'}:{os.environ['PATH']}"
@@ -222,7 +224,7 @@ def main(out):
     # The campaign (its hero died) is the current one, so Home lists it and the Hall remembers the hero.
     plugin = work / "plugin"
     plugin.mkdir()
-    for name in ("book", "bin", "solo", "packs", "examples", "skills", "templates", "Theme.qml", "WorkspacePin.qml"):
+    for name in ("book", "bin", "solo", "packs", "examples", "skills", "templates", "Theme.qml", "WorkspacePin.qml", "SettingsView.qml"):
         (plugin / name).symlink_to(REPO / name)
     (plugin / "Panel.qml").write_text(LAYER_SHELL.sub("", (REPO / "Panel.qml").read_text()).replace(EDGES, f"width: 360; height: {HEIGHT}"))
     shutil.copy(REPO / "BarWidget.qml", plugin / "BarWidget.qml")
@@ -278,6 +280,8 @@ def main(out):
     errors += workspace_pinning(item, panel, out, engine, wait)
     import header_check
     errors += header_check.check(item, panel, out, engine, wait)
+    import scaling_panel_check
+    errors += scaling_panel_check.check(item, panel, out, work, engine, wait, Process)
     item.show("home")
     wait(2500)
     panel.grabWindow().save(str(out / "home.png"))
