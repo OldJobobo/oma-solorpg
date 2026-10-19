@@ -209,7 +209,7 @@ def main(out):
     # Begin runs `solo new --play`, which links solo and the skills into the home folder.
     os.environ["HOME"] = str(work / "home")
     os.environ["XDG_CACHE_HOME"] = str(work / "cache")
-    os.environ["XDG_CONFIG_HOME"] = str(work / "config")
+    os.environ["XDG_CONFIG_HOME"] = str(work / "config")  # Never use the player's local recordings.
     # Something to play the sounds with, so the plugin plays them.
     (work / "bin").mkdir()
     # Child CLI commands use this interpreter, not a host version-manager shim.
@@ -224,7 +224,7 @@ def main(out):
     # The campaign (its hero died) is the current one, so Home lists it and the Hall remembers the hero.
     plugin = work / "plugin"
     plugin.mkdir()
-    for name in ("book", "bin", "solo", "packs", "examples", "skills", "templates", "WorkspacePin.qml", "SettingsView.qml"):
+    for name in ("book", "bin", "solo", "packs", "examples", "skills", "templates", "Theme.qml", "WorkspacePin.qml", "SettingsView.qml"):
         (plugin / name).symlink_to(REPO / name)
     (plugin / "Panel.qml").write_text(LAYER_SHELL.sub("", (REPO / "Panel.qml").read_text()).replace(EDGES, f"width: 360; height: {HEIGHT}"))
     shutil.copy(REPO / "BarWidget.qml", plugin / "BarWidget.qml")
@@ -276,6 +276,7 @@ def main(out):
     item.open(json.dumps({"view": "table"}))
     wait(1500)
     panel.grabWindow().save(str(out / "table.png"))
+    errors += themed_surfaces(item, engine, wait)
     errors += workspace_pinning(item, panel, out, engine, wait)
     import header_check
     errors += header_check.check(item, panel, out, engine, wait)
@@ -292,6 +293,7 @@ def main(out):
     wait(1500)
     errors += begin_and_ask(item, panel, out, work, wait)
     errors += an_x_card(item, panel, out, work, wait)
+    errors += recorded_audio(item, work, wait)
     errors += desk_moments(item, panel, out, work, wait)
     errors += deleted_while_dying(item, bar, work, wait)
     errors += a_game_of_moves(item, panel, out, work, wait)
@@ -306,6 +308,22 @@ def main(out):
     return 0
 
 
+def themed_surfaces(item, engine, wait):
+    """The Table must pass complete native border specs through, not just a color."""
+    surface = item.findChild(QObject, "tableSurface")
+    borders = engine.singletonInstance("qs.Commons", "Border")
+    def spec():
+        value = surface.property("borderSpec")
+        return value.toVariant() if hasattr(value, "toVariant") else value
+    assert spec()["gradient"]["enabled"]
+    assert spec()["gradient"]["angle"] == 35
+    assert len(spec()["gradient"]["colors"]) == 2
+    assert spec()["widths"] == {"top": 2, "right": 2, "bottom": 2, "left": 2}
+    borders.setProperty("popupWidths", {"top": 0, "right": 3, "bottom": 2, "left": 1})
+    wait(20)
+    assert spec()["widths"] == {"top": 0, "right": 3, "bottom": 2, "left": 1}
+    borders.setProperty("popupWidths", {"top": 2, "right": 2, "bottom": 2, "left": 2})
+    return []
 def workspace_pinning(item, panel, out, engine, wait):
     """The real header button, shell toggle state, and independent Book/GM state."""
     import workspace_check
@@ -431,6 +449,86 @@ def an_x_card(item, panel, out, work, wait):
     said = [" ".join(str(a) for a in command) for command in LAUNCHED]
     if not any("gm turn" in line for line in said):
         problems.append(f"the GM wasn't asked to carry on after the cut (launched: {said})")
+    return problems
+
+
+def recorded_audio(item, work, wait):
+    """Real animation landings play once; page volume and mute reach the player."""
+    from helpers import Dice
+    from solo import campaign
+    game = Path((work / "state" / "solo" / "current").read_text().strip())
+    old_sounds = item.property("sounds").toVariant()
+    old_effects = item.property("effects").toVariant()
+    old_book = item.property("bookOpen")
+    parts = {name: f"/recorded sounds/{name}.wav" for name in ("dice-roll", "dice-roll-short", "dice-land")}
+    item.setProperty("sounds", {**old_sounds, "split_dice": True, "sounds": {**old_sounds["sounds"], **parts}})
+    item.setProperty("effects", {**old_effects, "sound": True})
+    problems = []
+
+    def played(name):
+        return sum(bool(command) and command[-1] == parts[name] for command in LAUNCHED)
+
+    def throw():
+        LAUNCHED.clear()
+        with campaign.session(game) as c:
+            event = c.check("awareness", rng=Dice(10, 3, 3, 3, 3))
+        wait(250)
+        return event["seq"]
+
+    item.setProperty("bookOpen", False)
+    wait(100)
+    throw()
+    if played("dice-roll-short") != 1 or played("dice-land"):
+        problems.append("recorded dice: Table must start only its short rolling clip")
+    wait(1250)
+    if played("dice-land") != 1:
+        problems.append("recorded dice: Table landing must play once")
+    wait(900)
+    if played("dice-land") != 1:
+        problems.append("recorded dice: hidden Book duplicated a Table landing")
+
+    item.setProperty("bookOpen", True)
+    wait(100)
+    seq = throw()
+    if played("dice-roll") != 1 or played("dice-land"):
+        problems.append("recorded dice: Book must start only its full rolling clip")
+    wait(1050)
+    QMetaObject.invokeMethod(item, "diceLanded", Q_ARG("QVariant", seq), Q_ARG("QVariant", True), Q_ARG("QVariant", str(game) + "-old"))
+    if played("dice-land"):
+        problems.append("recorded dice: sibling animation or stale campaign landed early")
+    wait(1350)
+    if played("dice-land") != 1:
+        problems.append("recorded dice: Book impact must follow its actual landing")
+    QMetaObject.invokeMethod(item, "diceLanded", Q_ARG("QVariant", seq), Q_ARG("QVariant", True), Q_ARG("QVariant", str(game)))
+    if played("dice-land") != 1:
+        problems.append("recorded dice: repeated signal duplicated an impact")
+    combined = {old_sounds["sounds"]["dice"], old_sounds["sounds"]["dice-short"]}
+    if any(command and command[-1] in combined for command in LAUNCHED):
+        problems.append("recorded dice: combined synthesis played over the recordings")
+
+    LAUNCHED.clear()
+    QMetaObject.invokeMethod(item, "sound", Q_ARG("QVariant", "page"), Q_ARG("QVariant", 0))
+    if len(LAUNCHED) != 1 or "--volume=0.75" not in LAUNCHED[0]:
+        problems.append("page turn: quieter player command was not used")
+    item.setProperty("effects", {**old_effects, "sound": False})
+    throw()
+    wait(2400)
+    if any(played(name) for name in parts):
+        problems.append("recorded dice: mute must suppress rolling and landing")
+
+    item.setProperty("effects", {**old_effects, "sound": True})
+    throw()
+    item.setProperty("campaign", "")
+    wait(2400)
+    if played("dice-land"):
+        problems.append("recorded dice: campaign switch did not cancel the pending impact")
+    item.setProperty("campaign", str(game))
+    wait(400)
+    if played("dice-land"):
+        problems.append("recorded dice: campaign reload replayed an old landing")
+    item.setProperty("sounds", old_sounds)
+    item.setProperty("effects", old_effects)
+    item.setProperty("bookOpen", old_book)
     return problems
 
 

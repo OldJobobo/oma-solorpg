@@ -14,7 +14,7 @@ Text {
   color: theme.dim
   wrapMode: Text.NoWrap
   text: steps.map(function(step, i) {
-    var mark = step.here ? "<span style=\"color:" + theme.accent + "\">◉</span>" : "○"
+    var mark = step.here ? "<span style=\"color:" + theme.accentText + "\">◉</span>" : "○"
     var name = step.here ? "<span style=\"color:" + theme.text + "\">" + route.html(step.title) + "</span>" : route.html(step.title)
     var ways = step.unexplored > 0 ? " <span style=\"color:" + theme.faint + "\">" + "╌".repeat(2) + " " + step.unexplored + "?</span>" : ""
     return (i > 0 ? "│<br>" : "") + mark + " " + name + ways

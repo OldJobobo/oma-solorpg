@@ -79,22 +79,6 @@ class _Parser(argparse.ArgumentParser):
     def error(self, message):
         self.exit(2, f"solo: {message} (see {self.prog} --help)\n")
 
-    def _get_validation_formatter(self):
-        # Python 3.14 checks each argument with a formatter that first sets up help's colours, and importing
-        # them took ten milliseconds of every command. The check reads no colours; --help still has them.
-        return _Uncoloured(prog=self.prog)
-
-
-class _Uncoloured(argparse.HelpFormatter):
-    def _set_color(self, color):
-        # 3.15 initializes lazy caches here; interpolated help still needs them.
-        if sys.version_info >= (3, 15):
-            super()._set_color(False)
-
-    def _apply_text_markup(self, text):
-        # Python 3.15 styles help during validation too; this formatter only checks text.
-        return text
-
 
 def _trace(argv, error):
     """SOLO_TRACE=<file>: one JSON line per command, refused ones included, so a play test

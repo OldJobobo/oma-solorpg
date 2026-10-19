@@ -171,6 +171,8 @@ solo character elf mage --seed 7                           # just look at a hero
 - Omens from hidden countdowns reach you as omens, never as numbers.
 - When your hero dies, the Book closes on a gravestone with your last words, and Home keeps them in the Hall of the Fallen.
 
+Drag across a story passage or Codex entry to select text, then press **Super+C** (Omarchy's default), **Ctrl+C**, **Ctrl+Shift+C** or **Ctrl+Insert** to copy plain text. Double-click selects a word; Shift-click extends the selection. Right-click for **Copy** or **Select passage**: Copy uses the selection, or the whole passage if nothing is selected. **Ctrl+A** selects the current passage; **Esc** clears it. Reading stays read-only. Auto-scrolling pauses during selection or an open Copy menu, and a visible streaming passage holds its displayed words steady while selected; clearing the selection shows the latest text. Selections are per passage and are released when a passage is hidden/recycled or the campaign changes. The composer remains editable.
+
 The GM runs headless: `solo gm turn` drives Claude Code, Codex or Pi one turn at a time and streams what it writes. GM pace, under the table's settings, sets how long it thinks before it answers: Quick answers sooner and spends fewer tokens, Careful thinks longer about the rules. It is the agent's effort level (low, medium or high), one pace for every campaign (`solo gm pace`). Other agents open in a terminal (Terminal on the table, or `solo play --terminal`), and the Book still shows the story as it is recorded.
 
 A GM turn is held in code, not only by the GM's instructions. Claude Code gets two tools, Bash and Read, and Bash may run only the GM's own `solo` commands; a recent Claude Code also runs with `--restricted` and `--permission-mode dontAsk`, so none of your own Claude Code settings or allow rules reach the GM. Codex's sandbox keeps the GM inside the campaign folder, but Codex has no list of allowed commands, so untrusted adventure text is held back less under Codex than under Claude Code.
@@ -178,6 +180,10 @@ A GM turn is held in code, not only by the GM's instructions. Claude Code gets t
 Pi gets only a `solo` tool that calls this plugin's engine directly with an argument list (and optional stdin), never a shell. Its normal extensions, MCP servers, context files and project configuration are disabled for the Book; the GM skill is supplied explicitly. It uses your Pi model and credentials, streams the reply and resumes a campaign-local session. Pi's reported token usage and cost count toward the same session budget. This is a tool boundary, not an operating-system sandbox.
 
 Every turn has a time limit, and every GM session a spending limit (`solo gm budget`), counted in `~/.local/state/solo`, outside the campaign folder the GM can write. The commands that are yours alone (`solo strike`, `solo prefs`, and setting the budget or the pace) refuse to run inside a GM turn.
+
+### Following your Omarchy theme
+
+The Table follows the shell's complete popup border treatment, including gradients and per-side widths. The Book's links and writing fields follow the shell's normal, hover, focus, pressed, selected and text-selection styles; links are keyboard accessible too. Muted labels and placeholders use the theme's muted color, with a contrast guard for readable text on dark and light surfaces. Error text has its own readable ink without changing the underlying effect colors. The Book keeps its serif prose, and the RPG's fixed gold, border flashes and screen effects stay unchanged.
 
 ## The desktop joins in
 
@@ -189,11 +195,17 @@ While a game is on, Omarchy plays along:
 - While your hero is dying, the borders stay dark red and a red rim closes round the screen, further with every failed death roll.
 - When they die, the screen goes grey and cold for a while and a bell tolls.
 - Omens ripple the screen and arrive as notifications.
-- The table has sounds, all made on the spot the first time they're needed: dice that rattle and land in time with the Book's, a chime for a Dragon, a growl for a Demon, a war drum when a fight starts, a torch catching, a page turning when the GM speaks.
+- The table has recorded dice that rattle and land in time with the Book, and a quieter recorded page turn when the GM speaks. The CC0 dice recordings are by OldJobobo; the CC0 page turn is credited to Owlish Media (see `assets/sounds/README.md`). The other sounds—a chime for a Dragon, a growl for a Demon, a war drum when a fight starts, a torch catching—are synthesized on the spot the first time they're needed.
 - With Candlelight enabled under Desktop effects, the screen warms while the Book is open. It is off by default because it changes the whole desktop's night light. The screensaver shows your hero instead of the logo.
 - The bar's d20 lights up when the GM is waiting for you, pulses while you're dying and turns into a skull when you die.
 
 Each of these puts back exactly what it changed (your border colours, your own screen shader, your screen temperature, your screensaver text), and each can be switched off under Desktop effects on the table. If you change the night light while the Book is open, Candlelight leaves your newer choice alone when it closes.
+
+### Recorded sound overrides
+
+Bundled recordings work offline with no conversion tools. Valid mono/stereo integer-PCM WAVs in `$XDG_CONFIG_HOME/solo/sounds` (normally `~/.config/solo/sounds`) override them. `page.wav` replaces the page turn; supply all three of `dice-roll.wav`, `dice-roll-short.wav` and `dice-land.wav` to replace the recorded dice set. The impact plays once from the chosen Book/Table animation's actual landing, not an estimated delay. Mute still applies, and switching campaigns cancels a pending impact.
+
+Recordings must be no longer than 30 seconds or 16 MiB per file, at 8–192 kHz. Invalid overrides are left untouched and ignored. An incomplete local dice set uses the bundled set; if that is unavailable too, the synthesized combined dice sounds remain the fallback. Reload the plugin after changing recordings. Page turns play at 75% volume with PipeWire/PulseAudio; other sounds retain their volume.
 
 ### Pin the Table to a workspace
 
@@ -399,7 +411,7 @@ Whether the GM holds an adventure together is a different question, and `tests/g
 python3 tests/gm_eval/run.py red-tusk-opening   # a few minutes and real model calls
 ```
 
-The QML can be checked without an Omarchy desktop, with PySide6 (`pip install PySide6-Essentials`):
+The QML can be checked without an Omarchy desktop, with PySide6. To match CI, activate a Python 3.14 virtual environment and run `python -m pip install "PySide6-Essentials==6.11.*"` (see [Running the checks](CONTRIBUTING.md#running-the-checks)). PySide6 is only needed for these offscreen tests, not to run the Omarchy plugin:
 
 ```bash
 make qml-check                              # Panel.qml and BarWidget.qml loaded with stand-ins for Quickshell, screenshots included

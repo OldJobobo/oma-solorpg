@@ -22,7 +22,9 @@ make test         # the engine's tests: python3 -m unittest discover -s tests
 make qml-check    # Panel.qml and BarWidget.qml, loaded offscreen with stand-ins for the shell
 ```
 
-The engine and its tests are standard library only, on Python 3.11 or newer. Run one file with `python3 -m unittest discover -s tests -p "test_packs.py"`. Two kinds of test skip themselves when their tool is missing: the ones that read PDFs need PyMuPDF (`sudo pacman -S python-pymupdf` on Omarchy; [the README](README.md#pymupdf) has other systems), and the shader compile check needs `glslangValidator`. `make qml-check` needs PySide6 (`pip install PySide6-Essentials`) and writes screenshots to a temporary folder.
+The engine and its tests are standard library only, on Python 3.11 or newer. Run one file with `python3 -m unittest discover -s tests -p "test_packs.py"`. Two kinds of test skip themselves when their tool is missing: the ones that read PDFs need PyMuPDF (`sudo pacman -S python-pymupdf` on Omarchy; [the README](README.md#pymupdf) has other systems), and the shader compile check needs `glslangValidator`. `make qml-check` writes screenshots to a temporary folder. To reproduce the QML CI environment, use a Python 3.14 virtual environment with `python -m pip install "PySide6-Essentials==6.11.*"`, then run `make qml-check` with that environment activated. PySide6 6.11 requires Python older than 3.15; update the Python/Qt pair together after validating the QML suite.
+
+PySide6 is an offscreen test dependency, not a plugin runtime dependency. Omarchy loads the plugin inside its existing Quickshell process, using the shell's shared theme and UI components. The test stand-ins do not replace checking the plugin in the real shell.
 
 Every pull request runs `make test` on Python 3.11 and on the newest release, with PyMuPDF and `glslangValidator` installed so the tests that need them run, and `make qml-check` with PySide6 ([.github/workflows/test.yml](.github/workflows/test.yml)). The result shows on the pull request without anyone running it.
 

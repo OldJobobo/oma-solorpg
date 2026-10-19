@@ -100,12 +100,15 @@ Item {
   property var agentInfo: ({ agent: "", book: true })
   property var effects: ({ borders: true, screen: true, sound: true, candle: false, omens: true, screensaver: true })
   property string pace: "normal"  // how long the GM thinks before it answers (solo gm pace)
-  // The table's sounds and what plays them ({play, sounds}, from solo desk sound).
+  // Prepared sounds and players ({play, commands, sounds, split_dice}, from solo desk sound).
   property var sounds: ({})
   // When the dice land, in seconds: the Book's tumble (book/DiceMoment.qml), or a quick
   // throw with the Book shut. The sounds are cut to match.
   readonly property real diceLand: 1.94
   readonly property real diceLandShort: 0.5
+  // Recorded impacts follow the selected animation, never a sibling or an old campaign.
+  property int diceSoundSeq: -1
+  property bool diceSoundBook: false
   // What the watcher has already reacted to, so a reload never replays old rolls.
   property int fxSeen: -1
   property bool fxDying: false
@@ -170,8 +173,8 @@ Item {
     ? (library.adventures.filter(a => a.id === root.pickedAdventure)[0] || library.adventures[0]) : null
   readonly property var system: adventure ? library.systems.filter(s => s.id === adventure.system)[0] || null : null
 
-  readonly property color textColor: Shell.Color.popups.text
-  readonly property color dim: Qt.darker(Shell.Color.popups.text, 1.6)
+  readonly property color textColor: theme.text
+  readonly property color dim: theme.dim
   readonly property color faint: Qt.rgba(textColor.r, textColor.g, textColor.b, 0.15)
 
   function open(payloadJson) {
@@ -205,13 +208,19 @@ Item {
       .concat(after > 0 ? ["--after", after.toFixed(2)] : []).concat(args))
   }
 
-  // The table's sounds, played straight from the cache (solo desk sound made them), so
-  // they keep time with the Book to the millisecond.
+  // WAVs may be bundled, supplied locally, or synthesized in the cache.
   function sound(name, after) {
     var path = root.sounds.sounds ? root.sounds.sounds[name] : ""
-    if (root.effects.sound === false || !root.sounds.play || !path) return
+    var command = (root.sounds.commands || {})[name] || root.sounds.play
+    if (root.effects.sound === false || !command || !path) return
     Quickshell.execDetached(["sh", "-c", 'sleep "$0"; exec "$@"', String(after > 0 ? after.toFixed(2) : 0)]
-      .concat(root.sounds.play).concat([path]))
+      .concat(command).concat([path]))
+  }
+
+  function diceLanded(seq, fromBook, campaignAtThrow) {
+    if (root.diceSoundSeq < 0 || campaignAtThrow !== root.campaign || seq !== root.diceSoundSeq || fromBook !== root.diceSoundBook) return
+    root.diceSoundSeq = -1
+    root.sound("dice-land")
   }
 
   // The player's words to the GM (none: the GM carries on from what is recorded). They go
@@ -254,8 +263,10 @@ Item {
     var land = roll ? (root.bookOpen ? root.diceLand : root.diceLandShort) : 0
     if (roll) {
       var outcome = roll.outcome || {}
+      root.diceSoundSeq = root.sounds.split_dice ? roll.seq : -1
+      root.diceSoundBook = root.bookOpen
       root.rolled()
-      root.sound(root.bookOpen ? "dice" : "dice-short")
+      root.sound(root.sounds.split_dice ? (root.bookOpen ? "dice-roll" : "dice-roll-short") : (root.bookOpen ? "dice" : "dice-short"))
       if (outcome.dragon) {
         root.desk(["flash", "dragon"], land)
         root.sound("dragon", land)
@@ -308,6 +319,7 @@ Item {
     root.fxFighting = false
     root.fxSeen = -1
     root.fxSaid = -1
+    root.diceSoundSeq = -1
     root.turn = { status: "idle" }
   }
   onBookOpenChanged: {
@@ -851,8 +863,8 @@ Item {
 
   function rollColor() {
     var outcome = root.lastCheck ? root.lastCheck.outcome : null
-    return outcome && outcome.dragon ? theme.gold : outcome && !outcome.success ? Shell.Color.urgent
-      : outcome && (outcome.successes > 1 || outcome.hit === "strong_hit") ? Shell.Color.accent : root.textColor
+    return outcome && outcome.dragon ? theme.gold : outcome && !outcome.success ? theme.urgentText
+      : outcome && (outcome.successes > 1 || outcome.hit === "strong_hit") ? theme.accentText : root.textColor
   }
 
   function visibleClocks() {
@@ -933,28 +945,7 @@ Item {
     }
   }
 
-  // Omarchy's theme, in the words the Book uses. The Book is plain QtQuick and reads only this.
-  QtObject {
-    id: theme
-    readonly property color text: Shell.Color.popups.text
-    readonly property color dim: root.dim
-    readonly property color faint: Qt.rgba(text.r, text.g, text.b, 0.22)
-    readonly property color background: Shell.Color.popups.background
-    readonly property color surface: Qt.tint(Shell.Color.popups.background, Qt.rgba(text.r, text.g, text.b, 0.05))
-    readonly property color accent: Shell.Color.accent
-    readonly property color urgent: Shell.Color.urgent
-    // Dragons and candlelight: one warm gold that reads on dark and light themes alike.
-    readonly property color gold: "#d9a441"
-    readonly property string mono: Style.font.family
-    readonly property string serif: "serif"
-    readonly property real small: Style.font.bodySmall
-    readonly property real body: Style.font.body
-    readonly property real prose: Math.round(Style.font.body * 1.5)
-    readonly property real title: Style.font.title
-    readonly property real heading: Math.round(Style.font.heading * 1.2)
-    readonly property real display: Style.font.display
-    readonly property real radius: Style.cornerRadius
-  }
+  Theme { id: theme }
 
   // The Book: a normal window, so Hyprland tiles it beside the Table.
   FloatingWindow {
@@ -992,6 +983,7 @@ Item {
       onSend: text => root.speak(text)
       onStop: Quickshell.execDetached([root.solo, "-C", root.campaign, "gm", "stop"])
       onRetry: root.speak("")
+      onDiceLanded: (seq, campaignAtThrow) => root.diceLanded(seq, true, campaignAtThrow)
       // The X-card: cut the GM's last message (a line or a veil too, if the player made it one), then the GM carries on without it.
       onCut: (note, line, veil) => root.act(["strike"].concat(note !== "" ? ["--note", note] : []).concat(line !== "" ? ["--line", line] : [])
                                               .concat(veil !== "" ? ["--veil", veil] : []), "book", () => root.speak(""))
@@ -1110,7 +1102,7 @@ Item {
   component ErrorLine: Line {
     property string place: ""
     visible: root.error !== "" && root.errorAt === place
-    color: Shell.Color.urgent
+    color: theme.urgentText
     size: Style.font.bodySmall
     text: root.error
   }
@@ -1439,13 +1431,12 @@ Item {
         }
       }
     }
-    Rectangle {
+    BorderSurface {
       id: tableSurface
       objectName: "tableSurface"
       anchors.fill: parent
       color: Shell.Color.popups.background
-      border.width: 1
-      border.color: Shell.Color.popups.border
+      borderSpec: Border.surfaceSpec("popups", "border", Shell.Color.popups.border, Math.max(1, Style.space(2)))
       radius: Style.cornerRadius
       visible: tableFlip.side === Flipable.Front
       Keys.onEscapePressed: root.close()
@@ -1606,7 +1597,7 @@ Item {
                   visible: root.deleting === modelData.path
                   Layout.topMargin: Style.space(4)
                   size: Style.font.bodySmall
-                  color: Shell.Color.urgent
+                  color: theme.urgentText
                   text: "Delete this campaign for good? The story, " + (modelData.hero || "the hero") + " and the whole log go with it"
                         + (modelData.dead ? ", and " + modelData.hero + " leaves the Hall of the Fallen." : ".")
                 }
@@ -1615,7 +1606,7 @@ Item {
                   spacing: Style.space(4)
                   Choice {
                     text: action.running && root.errorAt === "home" ? "Deleting…" : "Delete for good"
-                    foreground: Shell.Color.urgent
+                    foreground: theme.urgentText
                     enabled: !action.running
                     onClicked: {
                       var wasCurrent = modelData.current
@@ -1725,7 +1716,7 @@ Item {
 
             Line {
               visible: root.adventure !== null && root.system === null
-              color: Shell.Color.urgent
+              color: theme.urgentText
               size: Style.font.bodySmall
               text: "This adventure's system pack isn't installed, or its rules aren't built from your books yet (make dragonbane)."
             }
@@ -2023,7 +2014,7 @@ Item {
             // At 0 HP only the death roll is left to click (or, alone, rallying and saving yourself).
             Line {
               visible: root.atZero
-              color: Shell.Color.urgent
+              color: theme.urgentText
               font.bold: true
               text: root.atZero && root.labels.dying ? root.pc.name + " is dying: " + root.pc.dying.successes + " of " + root.labels.dying.rally
                 + " successes, " + root.pc.dying.failures + " of " + root.labels.dying.die + " failures. Any hit is a failure." : ""
@@ -2216,10 +2207,14 @@ Item {
               spacing: Style.space(10)
               property string face: root.rollFace()
               property int ticks: 0
+              property int soundSeq: -1
+              property string campaignAtThrow: ""
 
               Connections {
                 target: root
                 function onRolled() {
+                  rollCard.campaignAtThrow = root.campaign
+                  rollCard.soundSeq = root.diceSoundSeq
                   rollCard.ticks = 0
                   tumble.interval = 40
                   tumble.restart()
@@ -2235,6 +2230,7 @@ Item {
                     stop()
                     rollCard.face = Qt.binding(() => root.rollFace())
                     land.restart()
+                    root.diceLanded(rollCard.soundSeq, false, rollCard.campaignAtThrow)
                   } else {
                     var outcome = root.lastCheck ? root.lastCheck.outcome : {}
                     var most = outcome.score !== undefined ? 11 : outcome.result !== undefined ? 20 : Math.max(3, (outcome.successes || 0) + 2)
@@ -2715,7 +2711,7 @@ Item {
 
             Line {
               visible: root.fight !== null && !!root.fight.incoming
-              color: Shell.Color.urgent
+              color: theme.urgentText
               font.bold: true
               text: root.fight && root.fight.incoming ? root.fight.incoming.name + " hits: " + root.fight.incoming.damage
                 + " damage" + (root.kit.armor ? ", armor " + root.kit.armor : "") : ""
@@ -2818,7 +2814,7 @@ Item {
 
               Line {
                 size: Style.font.bodySmall
-                color: root.game && root.game.dark && !root.game.light ? Shell.Color.urgent : root.textColor
+                color: root.game && root.game.dark && !root.game.light ? theme.urgentText : root.textColor
                 text: root.game && root.game.light ? root.game.light.label + ": " + root.hours(root.game.light.left) + " left"
                   : root.game && root.game.dark ? "It is dark here." : "No light burning."
               }
@@ -2983,7 +2979,7 @@ Item {
             Line {
               visible: root.game !== null && !!root.game.load
               size: Style.font.bodySmall
-              color: root.game && root.game.load && root.game.load.over ? Shell.Color.urgent : root.dim
+              color: root.game && root.game.load && root.game.load.over ? theme.urgentText : root.dim
               text: root.game && root.game.load ? "Carrying " + root.game.load.carried + " of " + root.game.load.capacity + (root.game.load.over ? ": over the load" : "") : ""
             }
 

@@ -160,6 +160,8 @@ test:
 
 qml-check:
 	QT_QPA_PLATFORM=offscreen python3 tests/qml/scale_check.py $${TMPDIR:-/tmp}/oma-solorpg-scale
+	QT_QPA_PLATFORM=offscreen python3 tests/qml/selection_check.py $${TMPDIR:-/tmp}/oma-solorpg-selection-qml
+	QT_QPA_PLATFORM=offscreen python3 tests/qml/theme_check.py $${TMPDIR:-/tmp}/oma-solorpg-theme-qml
 	QT_QPA_PLATFORM=offscreen python3 tests/qml/workspace_check.py
 	QT_QPA_PLATFORM=offscreen python3 tests/qml/sidebar_check.py $${TMPDIR:-/tmp}/oma-solorpg-sidebar
 	QT_QPA_PLATFORM=offscreen python3 tests/qml/panel_check.py $${TMPDIR:-/tmp}/oma-solorpg-qml

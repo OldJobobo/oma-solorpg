@@ -317,9 +317,14 @@ class SoundTest(unittest.TestCase):
         import tempfile
         self.cache = tempfile.TemporaryDirectory()
         self.addCleanup(self.cache.cleanup)
-        patch = unittest.mock.patch.dict(os.environ, {"XDG_CACHE_HOME": self.cache.name})
+        patch = unittest.mock.patch.dict(os.environ, {"XDG_CACHE_HOME": self.cache.name,
+                                                     "XDG_CONFIG_HOME": str(Path(self.cache.name) / "config")})
         patch.start()
         self.addCleanup(patch.stop)
+
+        bundle = unittest.mock.patch.object(sounds, "BUNDLED", Path(self.cache.name) / "no-bundle")
+        bundle.start()
+        self.addCleanup(bundle.stop)
 
     def test_every_sound_is_a_short_clean_wav(self):
         for name in sounds.names():
