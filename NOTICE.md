@@ -33,11 +33,20 @@ Apart from that, the book's text is kept as written.
 
 What isn't here: the rest of Ironsworn's text (its NPCs, the atlas, the truths) is licensed CC BY-NC-SA by Tomkin Press, which is for non-commercial use only and asks the same license of anything built from it, so the importer takes only what is marked CC BY and says what it left out. Tomkin Press's images, icons, trade dress and other design elements aren't licensed for use, and this project uses none; it is not an official Tomkin Press or Ironsworn product.
 
+## Recorded sounds
+
+The WAV recordings in `assets/sounds/` are CC0 1.0 Universal, not MIT:
+
+- Dice rolling and landing (`dice-roll.wav`, `dice-roll-short.wav`, `dice-land.wav`): recorded by OldJobobo and dedicated to the public domain under CC0.
+- Page turn (`page.wav`): credited to Owlish Media; supplied by OldJobobo as CC0.
+
+CC0 does not require attribution. These credits acknowledge the contributors. See `assets/sounds/README.md` for file details and `assets/sounds/LICENSE-CC0.txt` for the dedication.
+
 ## What is this project's
 
 The engine, the plugin, the skills, The Red Tusk Hall, The Bell Under the Hill (its text and its people are original), the heroes Ragna, Hrafna, Torvald and Eydis, the hero name lists, the text portraits, the `system.toml`, `creation.toml` and pre-made heroes of `packs/ironsworn`, and the made-up test rules in `tests/fixtures` are this project's own, under the MIT License ([LICENSE](LICENSE)).
 
-That license covers the code and this project's own content. It does not cover Dragonbane, its terms or the "A Supplement for Dragonbane" logo, which belong to Fria Ligan AB and are used under its license (above).
+That license covers the code and this project's own content, except for the separately dedicated CC0 recordings above. It does not cover Dragonbane, its terms or the "A Supplement for Dragonbane" logo, which belong to Fria Ligan AB and are used under its license (above).
 
 ## Generative AI
 

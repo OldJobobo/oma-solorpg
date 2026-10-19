@@ -174,11 +174,17 @@ While a game is on, Omarchy plays along:
 - While your hero is dying, the borders stay dark red and a red rim closes round the screen, further with every failed death roll.
 - When they die, the screen goes grey and cold for a while and a bell tolls.
 - Omens ripple the screen and arrive as notifications.
-- The table has sounds, all made on the spot the first time they're needed: dice that rattle and land in time with the Book's, a chime for a Dragon, a growl for a Demon, a war drum when a fight starts, a torch catching, a page turning when the GM speaks.
+- The table has recorded dice that rattle and land in time with the Book, and a quieter recorded page turn when the GM speaks. The CC0 dice recordings are by OldJobobo; the CC0 page turn is credited to Owlish Media (see `assets/sounds/README.md`). The other sounds—a chime for a Dragon, a growl for a Demon, a war drum when a fight starts, a torch catching—are synthesized on the spot the first time they're needed.
 - With Candlelight enabled under Desktop effects, the screen warms while the Book is open. It is off by default because it changes the whole desktop's night light. The screensaver shows your hero instead of the logo.
 - The bar's d20 lights up when the GM is waiting for you, pulses while you're dying and turns into a skull when you die.
 
 Each of these puts back exactly what it changed (your border colours, your own screen shader, your screen temperature, your screensaver text), and each can be switched off under Desktop effects on the table. If you change the night light while the Book is open, Candlelight leaves your newer choice alone when it closes.
+
+### Recorded sound overrides
+
+Bundled recordings work offline with no conversion tools. Valid mono/stereo integer-PCM WAVs in `$XDG_CONFIG_HOME/solo/sounds` (normally `~/.config/solo/sounds`) override them. `page.wav` replaces the page turn; supply all three of `dice-roll.wav`, `dice-roll-short.wav` and `dice-land.wav` to replace the recorded dice set. The impact plays once from the chosen Book/Table animation's actual landing, not an estimated delay. Mute still applies, and switching campaigns cancels a pending impact.
+
+Recordings must be no longer than 30 seconds or 16 MiB per file, at 8–192 kHz. Invalid overrides are left untouched and ignored. An incomplete local dice set uses the bundled set; if that is unavailable too, the synthesized combined dice sounds remain the fallback. Reload the plugin after changing recordings. Page turns play at 75% volume with PipeWire/PulseAudio; other sounds retain their volume.
 
 ### Pin the Table to a workspace
 

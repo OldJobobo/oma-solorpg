@@ -32,6 +32,7 @@ Item {
   signal cut(string note, string line, string veil)   // the X-card: cut the GM's last message, and maybe add a line or a veil
   signal openTable()
   signal openTerminal()
+  signal diceLanded(int seq, string campaignAtThrow)
 
   BookTextSelection { id: textSelection; objectName: "bookTextSelection" }
 
@@ -91,6 +92,7 @@ Item {
     if (scene) titleCard.show(scene.title, game.title)
     else if (roll && roll.kind === "roll") {
       // What the dice bring lands when they do (see dice.onSettled).
+      dice.campaignAtThrow = book.campaign
       dice.show(roll)
       hurtOnLanding = hurt
       hurt = false
@@ -783,7 +785,9 @@ Item {
     objectName: "dice"
     theme: book.theme
     gpu: book.gpu
+    property string campaignAtThrow: ""
     onSettled: outcome => {
+      book.diceLanded(dice.beat.seq, dice.campaignAtThrow)
       if (book.hurtOnLanding) book.strike("hurt")
       else if (outcome.dragon) book.strike("dragon")
       else if (outcome.demon) book.strike("demon")
