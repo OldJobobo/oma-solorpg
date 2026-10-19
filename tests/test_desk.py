@@ -22,6 +22,8 @@ class DeskTest(CampaignTest):
         self.bin = self.tmp / "bin"
         self.bin.mkdir()
         self.calls = self.tmp / "hyprctl.calls"
+        self.temperature = self.tmp / "temperature"
+        self.temperature.write_text("6000")
         hyprctl = self.bin / "hyprctl"
         hyprctl.write_text(textwrap.dedent(f"""\
             #!/usr/bin/env python3
@@ -34,12 +36,20 @@ class DeskTest(CampaignTest):
             elif args[:2] == ["getoption", "decoration:screen_shader"]:
                 print(json.dumps({{"option": "decoration:screen_shader", "str": "/home/me/vibrance.frag", "set": True}}))
             elif args == ["hyprsunset", "temperature"]:
-                print("6000")
+                print(open({str(self.temperature)!r}).read())
+            elif args[:2] == ["hyprsunset", "temperature"] and len(args) == 3:
+                open({str(self.temperature)!r}, "w").write(args[2])
             """))
         hyprctl.chmod(hyprctl.stat().st_mode | stat.S_IEXEC)
         patch = unittest.mock.patch.dict(os.environ, {"PATH": f"{self.bin}:/usr/bin:/bin", "XDG_RUNTIME_DIR": str(self.tmp / "run")})
         patch.start()
         self.addCleanup(patch.stop)
+        # Never refresh the real shell or send a desktop notification from a test.
+        which = shutil.which
+        patcher = unittest.mock.patch.object(shutil, "which", side_effect=lambda name: which(name, path=str(self.bin))
+                                            if name in ("omarchy-shell", "omarchy-notification-send", "notify-send") else which(name))
+        patcher.start()
+        self.addCleanup(patcher.stop)
         for name, value in (("PACE", 0), ("SCREENSAVER", self.tmp / "branding" / "screensaver.txt")):
             patcher = unittest.mock.patch.object(desk, name, value)
             patcher.start()
@@ -78,12 +88,71 @@ class DeskTest(CampaignTest):
         self.assertEqual(self.evals(), [])
         self.assertEqual(self.shaders(), [])
 
+    def test_candlelight_is_opt_in_even_with_other_settings_saved(self):
+        self.assertFalse(desk.settings()["candle"])
+        self.assertFalse(desk.candle(True))  # no settings file yet
+        self.assertTrue(all(on for name, on in desk.settings().items() if name != "candle"))
+        for changes in ({}, {"sound": False}):
+            with self.subTest(changes=changes):
+                desk.set_settings(changes)
+                self.assertFalse(desk.settings()["candle"])
+                self.assertFalse(desk.candle(True))
+                self.assertEqual(self.temperature.read_text(), "6000")
+                self.assertIsNone(desk._saved("temperature"))
+        self.assertEqual(self.told(), [])
+
     def test_candlelight_warms_and_restores_the_temperature(self):
+        desk.set_settings({"candle": True})
         desk.candle(True)
         desk.candle(True)  # twice: still remembers 6000, not the candle
         desk.candle(False)
         sets = [c[2] for c in self.told() if c[:2] == ["hyprsunset", "temperature"] and len(c) == 3]
         self.assertEqual(sets, ["3400", "3400", "6000"])
+        self.assertIsNone(desk._saved("temperature"))
+
+    def test_candlelight_restores_both_daylight_and_a_warmer_nightlight(self):
+        desk.set_settings({"candle": True})
+        for original in (6500, 3000):
+            with self.subTest(original=original):
+                self.temperature.write_text(str(original))
+                self.assertTrue(desk.candle(True))
+                self.assertEqual(int(self.temperature.read_text()), min(original, desk.CANDLE))
+                self.assertTrue(desk.restore()["candle"])
+                self.assertEqual(int(self.temperature.read_text()), original)
+
+    def test_restoring_candlelight_leaves_a_manual_nightlight_change_alone(self):
+        desk.set_settings({"candle": True})
+        for chosen in (6500, 4000, 3000):
+            with self.subTest(chosen=chosen):
+                self.temperature.write_text("4000")  # nightlight was on before the Book opened
+                desk.candle(True)
+                self.temperature.write_text(str(chosen))  # the player changes it while reading
+                self.assertFalse(desk.restore()["candle"])
+                self.assertEqual(int(self.temperature.read_text()), chosen)
+                self.assertIsNone(desk._saved("temperature"))
+
+    def test_switching_candlelight_off_restores_an_effect_already_in_place(self):
+        desk.set_settings({"candle": True})
+        desk.candle(True)
+        desk.set_settings({"candle": False})
+        self.assertEqual(self.temperature.read_text(), "6000")
+        self.assertFalse(desk.candle(True))
+        self.assertEqual(self.temperature.read_text(), "6000")
+
+    def test_a_failed_candlelight_restore_keeps_the_temperature_for_a_retry(self):
+        desk.set_settings({"candle": True})
+        desk.candle(True)
+        run = desk._run
+        for failed in (["hyprctl", "hyprsunset", "temperature"],
+                       ["hyprctl", "hyprsunset", "temperature", "6000"]):
+            with self.subTest(failed=failed):
+                with unittest.mock.patch.object(desk, "_run", side_effect=lambda cmd: None if cmd == failed else run(cmd)):
+                    self.assertFalse(desk.candle(False))
+                self.assertEqual(desk._saved("temperature"), 6000)
+                self.assertEqual(self.temperature.read_text(), "3400")
+        self.assertTrue(desk.candle(False))
+        self.assertEqual(self.temperature.read_text(), "6000")
+        self.assertIsNone(desk._saved("temperature"))
 
     def test_the_screensaver_shows_the_hero_and_goes_back(self):
         saver = desk.SCREENSAVER

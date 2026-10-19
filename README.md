@@ -165,10 +165,10 @@ While a game is on, Omarchy plays along:
 - When they die, the screen goes grey and cold for a while and a bell tolls.
 - Omens ripple the screen and arrive as notifications.
 - The table has sounds, all made on the spot the first time they're needed: dice that rattle and land in time with the Book's, a chime for a Dragon, a growl for a Demon, a war drum when a fight starts, a torch catching, a page turning when the GM speaks.
-- The screen warms like candlelight while the Book is open, and the screensaver shows your hero instead of the logo.
+- With Candlelight enabled under Desktop effects, the screen warms while the Book is open. It is off by default because it changes the whole desktop's night light. The screensaver shows your hero instead of the logo.
 - The bar's d20 lights up when the GM is waiting for you, pulses while you're dying and turns into a skull when you die.
 
-Each of these puts back exactly what it changed (your border colours, your own screen shader, your screen temperature, your screensaver text), and each can be switched off under Desktop effects on the table.
+Each of these puts back exactly what it changed (your border colours, your own screen shader, your screen temperature, your screensaver text), and each can be switched off under Desktop effects on the table. If you change the night light while the Book is open, Candlelight leaves your newer choice alone when it closes.
 
 ## How a turn works
 

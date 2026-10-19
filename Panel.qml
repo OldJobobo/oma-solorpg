@@ -63,7 +63,7 @@ Item {
   property bool bookOpen: false
   property var turn: ({ status: "idle" })
   property var agentInfo: ({ agent: "", book: true })
-  property var effects: ({ borders: true, screen: true, sound: true, candle: true, omens: true, screensaver: true })
+  property var effects: ({ borders: true, screen: true, sound: true, candle: false, omens: true, screensaver: true })
   property string pace: "normal"  // how long the GM thinks before it answers (solo gm pace)
   // The table's sounds and what plays them ({play, sounds}, from solo desk sound).
   property var sounds: ({})
@@ -2845,7 +2845,7 @@ Item {
                     borders: "Dragons flash the window borders gold, Demons red; dying holds them red",
                     screen: "The whole screen answers: gold for a Dragon, red for a Demon or a blow, a red rim while dying, grey at death",
                     sound: "Dice, bells, drums and heartbeats, in time with the Book",
-                    candle: "The screen warms while the Book is open",
+                    candle: "Warm the whole screen while the Book is open (off by default)",
                     omens: "What the hidden clocks stir up arrives as a notification",
                     screensaver: "The screensaver shows your hero while the Book is open",
                   })[modelData[0]]
