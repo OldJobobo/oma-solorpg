@@ -96,6 +96,8 @@ The desktop effects (`solo desk`) are the plugin's, not the engine's: they never
 
 The manifest sets `keepLoaded`, so the panel entry (the Table, the Book and the watcher) stays alive between summons and reacts to the game with both windows closed.
 
+The Table's optional workspace pin is shell-local state (`WorkspacePin.qml`), never campaign data. It keeps the requested-open state separate from `opened`, which reports actual visibility so the shell can summon a hidden Table. A summon explicitly activates the pinned workspace; opening the Book never does. The layer surface follows the pinned workspace's monitor, and regular/special workspace changes only affect visibility, not the Book, GM or watcher. Closing keeps the pin and unpinning restores global visibility. Empty workspaces can disappear from Hyprland's model, so their ID, name and monitor are remembered; only an explicit summon recreates them (workspace names are encoded as Lua string literals for Lua Hyprland). Named workspaces can return with a different ID. Pins reset when the plugin reloads.
+
 ## Principles
 
 - Mechanics come from code, narrative facts from the adventure text, and state only from validated commits. The model interprets and narrates.

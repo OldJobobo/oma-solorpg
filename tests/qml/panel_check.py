@@ -45,6 +45,9 @@ def prop(kind, name, default, notify=None):
 
 
 class Shell(QObject):
+    screensChanged = Signal()
+    screens = prop("QVariantList", "screens", [], notify=screensChanged)
+
     @Slot(str, result=str)
     def env(self, name):
         return os.environ.get(name, "")
@@ -52,6 +55,24 @@ class Shell(QObject):
     @Slot("QVariantList")
     def execDetached(self, command):
         LAUNCHED.append(list(command))
+
+
+class Screen(QObject):
+    nameChanged = Signal()
+    name = prop(str, "name", "DP-1", notify=nameChanged)
+
+
+class Hyprland(QObject):
+    rawEvent = Signal(QObject)
+    workspaces = prop("QVariantMap", "workspaces", {"values": []})
+
+    @Slot(QObject, result=QObject)
+    def monitorFor(self, screen):
+        return None
+
+    @Slot()
+    def refreshMonitors(self):
+        pass
 
 
 class Collector(QObject):
@@ -158,7 +179,9 @@ class FileView(QObject):
 
 class PanelWindow(QQuickItem):
     colorChanged = Signal()
+    screenChanged = Signal()
     color = prop(QColor, "color", QColor("transparent"), notify=colorChanged)
+    screen = prop(QObject, "screen", None, notify=screenChanged)
 
 
 class FloatingWindow(QQuickItem):
@@ -197,7 +220,7 @@ def main(out):
     # The campaign (its hero died) is the current one, so Home lists it and the Hall remembers the hero.
     plugin = work / "plugin"
     plugin.mkdir()
-    for name in ("book", "bin", "solo", "packs", "examples", "skills", "templates"):
+    for name in ("book", "bin", "solo", "packs", "examples", "skills", "templates", "WorkspacePin.qml"):
         (plugin / name).symlink_to(REPO / name)
     (plugin / "Panel.qml").write_text(LAYER_SHELL.sub("", (REPO / "Panel.qml").read_text()).replace(EDGES, f"width: 360; height: {HEIGHT}"))
     shutil.copy(REPO / "BarWidget.qml", plugin / "BarWidget.qml")
@@ -206,7 +229,9 @@ def main(out):
 
     app = QGuiApplication(sys.argv)
     shell = Shell()  # held here for the run: QML keeps no reference of its own to a singleton instance
+    hyprland = Hyprland()
     qmlRegisterSingletonInstance(QObject, "Quickshell", 1, 0, "Quickshell", shell)
+    qmlRegisterSingletonInstance(QObject, "Quickshell.Hyprland", 1, 0, "Hyprland", hyprland)
     qmlRegisterType(PanelWindow, "Quickshell", 1, 0, "PanelWindow")
     qmlRegisterType(FloatingWindow, "Quickshell", 1, 0, "FloatingWindow")
     qmlRegisterType(Process, "Quickshell.Io", 1, 0, "Process")
@@ -247,6 +272,9 @@ def main(out):
     item.open(json.dumps({"view": "table"}))
     wait(1500)
     panel.grabWindow().save(str(out / "table.png"))
+    errors += workspace_pinning(item, panel, out, engine, wait)
+    import header_check
+    errors += header_check.check(item, panel, out, engine, wait)
     item.show("home")
     wait(2500)
     panel.grabWindow().save(str(out / "home.png"))
@@ -270,6 +298,73 @@ def main(out):
         print("QML errors:\n  " + "\n  ".join(errors))
         return 2
     return 0
+
+
+def workspace_pinning(item, panel, out, engine, wait):
+    """The real header button, shell toggle state, and independent Book/GM state."""
+    import workspace_check
+    problems = []
+    pin = item.findChild(QObject, "workspacePin")
+    window = item.findChild(QObject, "tableWindow")
+    button = item.findChild(QObject, "workspacePinButton")
+    assert pin is not None and window is not None and button is not None
+    screen = Screen(window)  # held by the window for the rest of the check
+    second_screen = Screen(window)
+    second_screen.setProperty("name", "DP-2")
+    pin.setProperty("hyprland", workspace_check.snapshot(engine))
+    window.setProperty("screen", screen)
+    pin.setProperty("screens", [screen, second_screen])
+    item.open('{"view":"table"}')
+    wait(100)
+    if not item.property("opened") or button.property("text") != chr(0xF0931):
+        problems.append("the Table did not start unpinned")
+    QMetaObject.invokeMethod(button, "clicked")
+    wait(100)
+    if not button.property("selected") or pin.property("workspaceId") != 3 or button.property("text") != chr(0xF0403):
+        problems.append("the header's Pin button did not pin the Table")
+    panel.grabWindow().save(str(out / "table-pinned.png"))
+    def variant(value):
+        return value.toVariant() if hasattr(value, "toVariant") else value
+
+    turn = variant(item.property("turn"))
+    item.setProperty("turn", {"status": "writing", "text": "A GM turn in progress"})
+    away = workspace_check.snapshot(engine, active=4)
+    pin.setProperty("hyprland", away)
+    wait(100)
+    if item.property("opened") or window.property("visible") or not pin.property("requested"):
+        problems.append("the hidden Table still reported open to the shell, or lost its requested-open state")
+    if variant(item.property("turn")).get("status") != "writing":
+        problems.append("changing workspace interrupted the GM")
+    item.setProperty("turn", turn)
+    item.open('{"book":true}')
+    wait(200)
+    if not item.property("bookOpen") or item.property("opened") or away.property("calls").toVariant():
+        problems.append("opening the Book summoned the pinned Table's workspace")
+    item.open('{"view":"table"}')  # what the shell's toggle does when opened is false
+    if away.property("calls").toVariant() != [3]:
+        problems.append("the shell could not summon a pinned Table from another workspace")
+    pin.setProperty("hyprland", workspace_check.snapshot(engine))
+    wait(100)
+    if not item.property("opened"):
+        problems.append("the Table did not return on its workspace")
+    item.close()
+    if item.property("opened") or not pin.property("pinned"):
+        problems.append("closing the Table did not keep its pin")
+    item.open('{"view":"table"}')
+    pin.setProperty("hyprland", workspace_check.snapshot(engine, active=4, moved=True))
+    wait(100)
+    if not item.property("opened") or window.property("screen").property("name") != "DP-2":
+        problems.append("the Table did not follow its pinned workspace to another screen")
+    QMetaObject.invokeMethod(button, "clicked")
+    wait(100)
+    if window.property("screen").property("name") != "DP-2":
+        problems.append("unpinning jumped back to the old screen")
+    pin.setProperty("hyprland", workspace_check.snapshot(engine, active=4))
+    wait(100)
+    if not item.property("opened") or pin.property("pinned"):
+        problems.append("unpinning did not restore the original global behavior")
+    item.setProperty("bookOpen", False)
+    return problems
 
 
 def begin_and_ask(item, panel, out, work, wait):
