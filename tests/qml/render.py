@@ -27,6 +27,9 @@ def main(out):
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
     data = Path(tempfile.mkdtemp())
+    # Creating the render fixtures must never replace the player's current game.
+    os.environ["XDG_STATE_HOME"] = str(data / "state")
+    os.environ["SOLO_HOME"] = str(data / "games")
     scenario.play(data)
     scenario.play_ironsworn(data)
     fight = json.loads((data / "fight.json").read_text())
@@ -35,6 +38,7 @@ def main(out):
 
     app = QGuiApplication(sys.argv)
     view = QQuickView()
+    view.engine().addImportPath(str(HERE / "stubs"))
     errors = []
     view.statusChanged.connect(lambda status: errors.extend(e.toString() for e in view.errors()))
     view.engine().warnings.connect(lambda warnings: errors.extend(w.toString() for w in warnings))

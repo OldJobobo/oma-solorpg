@@ -160,6 +160,10 @@ Pi gets only a `solo` tool that calls this plugin's engine directly with an argu
 
 Every turn has a time limit, and every GM session a spending limit (`solo gm budget`), counted in `~/.local/state/solo`, outside the campaign folder the GM can write. The commands that are yours alone (`solo strike`, `solo prefs`, and setting the budget or the pace) refuse to run inside a GM turn.
 
+### Following your Omarchy theme
+
+The Table follows the shell's complete popup border treatment, including gradients and per-side widths. The Book's links and writing fields follow the shell's normal, hover, focus, pressed, selected and text-selection styles; links are keyboard accessible too. Muted labels and placeholders use the theme's muted color, with a contrast guard for readable text on dark and light surfaces. Error text has its own readable ink without changing the underlying effect colors. The Book keeps its serif prose, and the RPG's fixed gold, border flashes and screen effects stay unchanged.
+
 ## The desktop joins in
 
 While a game is on, Omarchy plays along:
@@ -379,7 +383,7 @@ Whether the GM holds an adventure together is a different question, and `tests/g
 python3 tests/gm_eval/run.py red-tusk-opening   # a few minutes and real model calls
 ```
 
-The QML can be checked without an Omarchy desktop, with PySide6 (`pip install PySide6-Essentials`):
+The QML can be checked without an Omarchy desktop, with PySide6. To match CI, activate a Python 3.14 virtual environment and run `python -m pip install "PySide6-Essentials==6.11.*"` (see [Running the checks](CONTRIBUTING.md#running-the-checks)). PySide6 is only needed for these offscreen tests, not to run the Omarchy plugin:
 
 ```bash
 make qml-check                              # Panel.qml and BarWidget.qml loaded with stand-ins for Quickshell, screenshots included

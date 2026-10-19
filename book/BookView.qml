@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Effects
 import QtQuick.Layouts
+import QtQuick.Controls as Controls
 import "Md.js" as Md
 
 // The Book: where the story is read and told. The GM's narration streams in as it is
@@ -150,21 +151,37 @@ Item {
     color: book.theme.background
   }
 
-  component Link: Text {
+  // Quiet links at rest, native themed controls on hover, press and keyboard focus.
+  component Link: Controls.AbstractButton {
     id: link
-    signal clicked()
-    textFormat: Text.PlainText
-    font.family: book.theme.mono
-    font.pixelSize: book.theme.small
-    color: !enabled ? book.theme.faint : linkMouse.containsMouse ? book.theme.accent : book.theme.dim
-    MouseArea {
-      id: linkMouse
-      anchors.fill: parent
-      anchors.margins: -6
-      hoverEnabled: true
-      cursorShape: Qt.PointingHandCursor
-      onClicked: link.clicked()
+    property bool selected: false
+    property real maximumWidth: Infinity
+    readonly property string controlState: !enabled ? "disabled" : down ? "pressed"
+      : activeFocus ? "focus" : hovered ? "hover-cursor" : selected ? "selected" : "normal"
+    hoverEnabled: true
+    focusPolicy: Qt.StrongFocus
+    implicitWidth: Math.min(maximumWidth, implicitContentWidth + leftPadding + rightPadding)
+    implicitHeight: implicitContentHeight + topPadding + bottomPadding
+    leftPadding: book.theme.controlPaddingX / 2 + book.theme.controlInset
+    rightPadding: leftPadding
+    topPadding: book.theme.controlPaddingY / 2 + book.theme.controlInset
+    bottomPadding: topPadding
+    background: ControlSurface {
+      theme: book.theme
+      framed: false
+      controlState: link.controlState
     }
+    contentItem: Text {
+      text: link.text
+      textFormat: Text.PlainText
+      wrapMode: Text.Wrap
+      font.family: book.theme.mono
+      font.pixelSize: book.theme.small
+      color: book.theme.controlText(link.controlState)
+      horizontalAlignment: Text.AlignHCenter
+      verticalAlignment: Text.AlignVCenter
+    }
+    HoverHandler { cursorShape: link.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor }
   }
 
   // The page: the hero in the margin beside a column of text, centred in a wide window.
@@ -278,7 +295,7 @@ Item {
             textFormat: Text.PlainText
             font.family: book.theme.mono
             font.pixelSize: book.theme.small
-            color: book.theme.urgent
+            color: book.theme.urgentText
             width: parent.width
             wrapMode: Text.Wrap
             text: book.pc ? (book.pc.dying ? "DYING · " + book.pc.dying.successes + " saved, " + book.pc.dying.failures + " lost\n" : "")
@@ -305,7 +322,7 @@ Item {
             textFormat: Text.PlainText
             font.family: book.theme.mono
             font.pixelSize: book.theme.small
-            color: book.theme.urgent
+            color: book.theme.urgentText
             text: book.actionError
           }
 
@@ -352,17 +369,22 @@ Item {
       // The story ------------------------------------------------------------------------
 
       ColumnLayout {
+        id: storyColumn
         objectName: "bookStory"
         Layout.fillWidth: true
         Layout.fillHeight: true
         spacing: book.theme.body * 0.8
 
-        RowLayout {
+        GridLayout {
+          objectName: "bookHeader"
           Layout.fillWidth: true
-          spacing: book.theme.body
+          columns: storyColumn.width < book.theme.small * 50 ? 1 : 2
+          columnSpacing: book.theme.controlGap
+          rowSpacing: book.theme.controlGap
 
           Column {
             Layout.fillWidth: true
+            Layout.minimumWidth: 0
             Text {
               width: parent.width
               elide: Text.ElideRight
@@ -377,14 +399,23 @@ Item {
               textFormat: Text.PlainText
               font.family: book.theme.mono
               font.pixelSize: book.theme.small
+              width: parent.width
+              wrapMode: Text.Wrap
               color: book.theme.dim
               text: book.game ? book.game.title + " · " + book.elapsed(book.game.time) : ""
             }
           }
 
-          Link { text: "codex"; onClicked: book.codexOpen = !book.codexOpen }
-          Link { text: "table"; onClicked: book.openTable() }
-          Link { text: "terminal"; onClicked: book.openTerminal() }
+          Flow {
+            objectName: "bookNavigation"
+            Layout.alignment: Qt.AlignRight
+            Layout.maximumWidth: storyColumn.width
+            Layout.preferredWidth: codexLink.implicitWidth + tableLink.implicitWidth + terminalLink.implicitWidth + spacing * 2
+            spacing: book.theme.controlGap
+            Link { id: codexLink; objectName: "codexLink"; maximumWidth: parent.width; text: "codex"; selected: book.codexOpen; onClicked: book.codexOpen = !book.codexOpen }
+            Link { id: tableLink; maximumWidth: parent.width; text: "table"; onClicked: book.openTable() }
+            Link { id: terminalLink; maximumWidth: parent.width; text: "terminal"; onClicked: book.openTerminal() }
+          }
         }
 
         Tableau {
@@ -493,7 +524,7 @@ Item {
                   textFormat: Text.PlainText
                   font.family: book.theme.mono
                   font.pixelSize: book.theme.small
-                  color: book.turn.status === "error" ? book.theme.urgent : book.theme.dim
+                  color: book.turn.status === "error" ? book.theme.urgentText : book.theme.dim
                   text: book.turn.status === "error" ? book.turn.error || "The GM ran into a problem." : "Stopped."
                 }
                 Link { text: "try again"; onClicked: book.retry() }
@@ -535,21 +566,24 @@ Item {
           Link { objectName: "cutLink"; text: "cut the GM's last message"; onClicked: { book.cutting = true; cutInput.forceActiveFocus() } }
         }
 
-        Rectangle {
+        ControlSurface {
           id: cutPanel
           objectName: "cutPanel"
+          theme: book.theme
+          baseColor: book.theme.surface
+          controlState: cutInput.activeFocus ? "focus" : cutHover.hovered ? "hover-cursor" : "normal"
           Layout.fillWidth: true
           visible: book.canCut && book.cutting
-          implicitHeight: cutColumn.implicitHeight + book.theme.body * 1.6
-          radius: book.theme.radius
-          color: book.theme.surface
-          border.width: 1
-          border.color: book.theme.urgent
+          implicitHeight: cutColumn.implicitHeight + (book.theme.inputPaddingY + book.theme.controlInset) * 2
+          HoverHandler { id: cutHover }
 
           ColumnLayout {
             id: cutColumn
-            anchors { left: parent.left; right: parent.right; top: parent.top; margins: book.theme.body * 0.8 }
-            spacing: book.theme.body * 0.6
+            anchors { left: parent.left; right: parent.right; top: parent.top }
+            anchors.leftMargin: book.theme.controlPaddingX + book.theme.controlInset
+            anchors.rightMargin: anchors.leftMargin
+            anchors.topMargin: book.theme.inputPaddingY + book.theme.controlInset
+            spacing: book.theme.controlGap
 
             Text {
               Layout.fillWidth: true
@@ -570,6 +604,9 @@ Item {
               color: book.theme.text
               selectionColor: book.theme.accent
               onActiveFocusChanged: if (activeFocus) textSelection.clear()
+              selectionColor: book.theme.selection
+              selectedTextColor: book.theme.selectedText
+              selectByMouse: true
               clip: true
               Keys.onEscapePressed: book.cutting = false
               Keys.onReturnPressed: book.cutIt("")
@@ -577,37 +614,47 @@ Item {
                 visible: cutInput.text === ""
                 textFormat: Text.PlainText
                 font: cutInput.font
-                color: book.theme.faint
+                objectName: "cutPlaceholder"
+                width: parent.width
+                elide: Text.ElideRight
+                color: book.theme.inputText(book.theme.placeholder, cutPanel.controlState)
                 text: "what to avoid (optional)"
               }
             }
 
-            RowLayout {
-              spacing: book.theme.body
-              Link { objectName: "cutNow"; text: "cut"; onClicked: book.cutIt("") }
-              Link { objectName: "cutLine"; text: "cut, and never again"; enabled: cutInput.text.trim() !== ""; onClicked: book.cutIt("line") }
-              Link { objectName: "cutVeil"; text: "cut, off screen only"; enabled: cutInput.text.trim() !== ""; onClicked: book.cutIt("veil") }
-              Item { Layout.fillWidth: true }
-              Link { text: "keep it"; onClicked: book.cutting = false }
+            Flow {
+              objectName: "cutActions"
+              Layout.fillWidth: true
+              spacing: book.theme.controlGap
+              Link { objectName: "cutNow"; maximumWidth: parent.width; text: "cut"; onClicked: book.cutIt("") }
+              Link { objectName: "cutLine"; maximumWidth: parent.width; text: "cut, and never again"; enabled: cutInput.text.trim() !== ""; onClicked: book.cutIt("line") }
+              Link { objectName: "cutVeil"; maximumWidth: parent.width; text: "cut, off screen only"; enabled: cutInput.text.trim() !== ""; onClicked: book.cutIt("veil") }
+              Link { maximumWidth: parent.width; text: "keep it"; onClicked: book.cutting = false }
             }
           }
         }
 
         // Writing to the GM ------------------------------------------------------------------
 
-        Rectangle {
+        ControlSurface {
+          id: composer
+          objectName: "composerSurface"
+          theme: book.theme
+          baseColor: book.theme.surface
+          controlState: input.activeFocus ? "focus" : composerHover.hovered ? "hover-cursor" : "normal"
           Layout.fillWidth: true
           visible: book.agent.book !== false
-          implicitHeight: Math.min(input.implicitHeight, book.theme.prose * 8) + book.theme.body * 1.6
-          radius: book.theme.radius
-          color: book.theme.surface
-          border.width: 1
-          border.color: input.activeFocus ? book.theme.accent : book.theme.faint
+          implicitHeight: Math.max(Math.min(input.implicitHeight, book.theme.prose * 8), sendButton.implicitHeight)
+            + (book.theme.inputPaddingY + book.theme.controlInset) * 2
+          HoverHandler { id: composerHover }
 
           RowLayout {
             anchors.fill: parent
-            anchors.margins: book.theme.body * 0.8
-            spacing: book.theme.body
+            anchors.leftMargin: book.theme.controlPaddingX + book.theme.controlInset
+            anchors.rightMargin: anchors.leftMargin
+            anchors.topMargin: book.theme.inputPaddingY + book.theme.controlInset
+            anchors.bottomMargin: anchors.topMargin
+            spacing: book.theme.controlGap
 
             Flickable {
               id: inputFlick
@@ -628,6 +675,9 @@ Item {
                 color: book.theme.text
                 selectionColor: book.theme.accent
                 onActiveFocusChanged: if (activeFocus) textSelection.clear()
+                selectionColor: book.theme.selection
+                selectedTextColor: book.theme.selectedText
+                selectByMouse: true
                 focus: true
                 Keys.onReturnPressed: event => {
                   if (event.modifiers & Qt.ShiftModifier) event.accepted = false
@@ -640,13 +690,18 @@ Item {
                   visible: input.text === "" && !input.activeFocus || input.text === "" && book.busy
                   textFormat: Text.PlainText
                   font: input.font
-                  color: book.theme.faint
+                  objectName: "bookPlaceholder"
+                  width: parent.width
+                  elide: Text.ElideRight
+                  color: book.theme.inputText(book.theme.placeholder, composer.controlState)
                   text: book.dead ? "An epilogue, if you want one…" : book.busy ? "The GM is writing…" : "What do you do?"
                 }
               }
             }
 
             Link {
+              id: sendButton
+              objectName: "sendButton"
               Layout.alignment: Qt.AlignBottom
               text: book.busy ? "stop" : "send ↵"
               enabled: book.busy || input.text.trim() !== ""

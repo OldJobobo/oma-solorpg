@@ -1,5 +1,6 @@
 import QtQuick
 import "../../book"
+import "../.." as Solo
 
 // Renders the Book with a theme like Omarchy's default (Tokyo Night) for screenshots.
 Item {
@@ -9,17 +10,8 @@ Item {
   property var game: null
   property var turn: ({ status: "idle" })
 
-  QtObject {
+  Solo.Theme {
     id: theme
-    objectName: "theme"
-    property color text: "#c0caf5"
-    property color dim: Qt.darker(text, 1.6)
-    property color faint: Qt.rgba(text.r, text.g, text.b, 0.22)
-    property color background: "#1a1b26"
-    property color surface: "#20212e"
-    property color accent: "#7aa2f7"
-    property color urgent: "#f7768e"
-    property color gold: "#e0af68"
     property string mono: "DejaVu Sans Mono"
     property string serif: "DejaVu Serif"
     property real small: 12

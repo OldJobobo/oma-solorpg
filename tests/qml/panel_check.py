@@ -220,7 +220,7 @@ def main(out):
     # The campaign (its hero died) is the current one, so Home lists it and the Hall remembers the hero.
     plugin = work / "plugin"
     plugin.mkdir()
-    for name in ("book", "bin", "solo", "packs", "examples", "skills", "templates", "WorkspacePin.qml"):
+    for name in ("book", "bin", "solo", "packs", "examples", "skills", "templates", "Theme.qml", "WorkspacePin.qml"):
         (plugin / name).symlink_to(REPO / name)
     (plugin / "Panel.qml").write_text(LAYER_SHELL.sub("", (REPO / "Panel.qml").read_text()).replace(EDGES, f"width: 360; height: {HEIGHT}"))
     shutil.copy(REPO / "BarWidget.qml", plugin / "BarWidget.qml")
@@ -272,6 +272,7 @@ def main(out):
     item.open(json.dumps({"view": "table"}))
     wait(1500)
     panel.grabWindow().save(str(out / "table.png"))
+    errors += themed_surfaces(item, engine, wait)
     errors += workspace_pinning(item, panel, out, engine, wait)
     import header_check
     errors += header_check.check(item, panel, out, engine, wait)
@@ -300,6 +301,22 @@ def main(out):
     return 0
 
 
+def themed_surfaces(item, engine, wait):
+    """The Table must pass complete native border specs through, not just a color."""
+    surface = item.findChild(QObject, "tableSurface")
+    borders = engine.singletonInstance("qs.Commons", "Border")
+    def spec():
+        value = surface.property("borderSpec")
+        return value.toVariant() if hasattr(value, "toVariant") else value
+    assert spec()["gradient"]["enabled"]
+    assert spec()["gradient"]["angle"] == 35
+    assert len(spec()["gradient"]["colors"]) == 2
+    assert spec()["widths"] == {"top": 2, "right": 2, "bottom": 2, "left": 2}
+    borders.setProperty("popupWidths", {"top": 0, "right": 3, "bottom": 2, "left": 1})
+    wait(20)
+    assert spec()["widths"] == {"top": 0, "right": 3, "bottom": 2, "left": 1}
+    borders.setProperty("popupWidths", {"top": 2, "right": 2, "bottom": 2, "left": 2})
+    return []
 def workspace_pinning(item, panel, out, engine, wait):
     """The real header button, shell toggle state, and independent Book/GM state."""
     import workspace_check
