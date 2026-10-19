@@ -290,6 +290,20 @@ class CliTest(CliCase):
         solo.stderr.close()
         self.assertEqual((solo.wait(), err), (1, ""))
 
+    def test_help_initializes_the_formatter_in_a_fresh_process(self):
+        for args in (("--help",), ("roll", "--help")):
+            for color in ("0", "1"):
+                with self.subTest(args=args, color=color):
+                    env = {**os.environ, "FORCE_COLOR": color}
+                    env.pop("NO_COLOR", None)
+                    result = subprocess.run(
+                        [sys.executable, str(ROOT / "bin" / "solo"), *args],
+                        env=env, capture_output=True, text=True, timeout=30,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertIn("usage:", result.stdout)
+                    self.assertEqual(result.stderr, "")
+
     def test_a_usage_mistake_is_one_line_too(self):
         with self.assertRaises(SystemExit) as exit:
             self.solo("check")
