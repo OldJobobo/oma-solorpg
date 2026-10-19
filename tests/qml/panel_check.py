@@ -314,11 +314,11 @@ def workspace_pinning(item, panel, out, engine, wait):
     pin.setProperty("hyprland", workspace_check.snapshot(engine))
     item.open('{"view":"table"}')
     wait(100)
-    if not item.property("opened") or button.property("text") != "Pin":
+    if not item.property("opened") or button.property("text") != chr(0xF0931):
         problems.append("the Table did not start unpinned")
     QMetaObject.invokeMethod(button, "clicked")
     wait(100)
-    if not button.property("selected") or pin.property("workspaceId") != 3:
+    if not button.property("selected") or pin.property("workspaceId") != 3 or button.property("text") != chr(0xF0403):
         problems.append("the header's Pin button did not pin the Table")
     panel.grabWindow().save(str(out / "table-pinned.png"))
     def variant(value):

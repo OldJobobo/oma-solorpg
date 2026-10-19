@@ -1333,7 +1333,9 @@ Item {
 
             Choice {
               objectName: "workspacePinButton"
-              text: workspacePin.pinned ? "Pinned" : "Pin"
+              text: String.fromCodePoint(workspacePin.pinned ? 0xF0403 : 0xF0931) // nf-md-pin / nf-md-pin_outline
+              fontFamily: "Symbols Nerd Font"
+              Accessible.name: workspacePin.pinned ? "Unpin Table from workspace" : "Pin Table to workspace"
               selected: workspacePin.pinned
               enabled: workspacePin.pinned || workspacePin.current !== null
               tooltipText: workspacePin.pinned ? "Pinned to workspace " + workspacePin.workspaceId + ". Click to unpin."

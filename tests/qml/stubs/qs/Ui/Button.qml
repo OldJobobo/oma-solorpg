@@ -9,6 +9,7 @@ Rectangle {
   property bool selected: false
   property bool bordered: false
   property color foreground: Color.foreground
+  property string fontFamily: Style.font.family
   property real fontSize: Style.font.body
   property real horizontalPadding: 8
   property real verticalPadding: 4
@@ -24,7 +25,7 @@ Rectangle {
     anchors.centerIn: parent
     text: button.text
     color: button.foreground
-    font.family: Style.font.family
+    font.family: button.fontFamily
     font.pixelSize: button.fontSize
   }
   MouseArea { anchors.fill: parent; onClicked: button.clicked() }
