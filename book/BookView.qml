@@ -197,8 +197,11 @@ Item {
 
       Flickable {
         id: side
+        objectName: "bookSidebar"
         Layout.fillHeight: true
-        Layout.preferredWidth: Math.max(sideColumn.implicitWidth, book.theme.small * 16)
+        // The portrait and meters set the margin, not an unwrapped vow or place name.
+        Layout.preferredWidth: Math.max(heroPortrait.implicitWidth, vitals.implicitWidth, book.theme.small * 16)
+        Layout.maximumWidth: Layout.preferredWidth
         contentHeight: sideColumn.implicitHeight
         boundsBehavior: Flickable.StopAtBounds
         clip: true
@@ -206,9 +209,11 @@ Item {
 
         Column {
           id: sideColumn
+          width: side.width
           spacing: book.theme.body * 0.7
 
           Portrait {
+            id: heroPortrait
             theme: book.theme
             portrait: book.game ? book.game.portrait : null
             cell: book.theme.small
@@ -219,6 +224,8 @@ Item {
             font.family: book.theme.serif
             font.pixelSize: book.theme.heading
             color: book.theme.text
+            width: parent.width
+            wrapMode: Text.Wrap
             text: book.pc ? book.pc.name : ""
           }
 
@@ -227,26 +234,34 @@ Item {
             font.family: book.theme.mono
             font.pixelSize: book.theme.small
             color: book.theme.dim
+            width: parent.width
+            wrapMode: Text.Wrap
             text: book.pc ? Object.keys(book.pc.info).map(k => book.pc.info[k]).join(" · ") : ""
           }
 
-          Repeater {
-            model: book.pc ? Object.keys(book.pc.tracks).filter(k => book.pc.tracks[k].min === undefined) : []
-            delegate: Meter {
-              required property string modelData
-              theme: book.theme
-              label: modelData
-              value: book.pc.tracks[modelData].value
-              maximum: book.pc.tracks[modelData].max
-            }
-          }
+          Column {
+            id: vitals
+            objectName: "bookVitals"
+            spacing: sideColumn.spacing
 
-          // Momentum runs below zero, so it has a bar of its own (Ironsworn).
-          Momentum {
-            visible: !!book.pc && !!book.pc.tracks.momentum && !!book.game.labels.momentum
-            theme: book.theme
-            track: book.pc && book.pc.tracks.momentum ? book.pc.tracks.momentum : ({ value: 0, max: 10 })
-            spec: book.game && book.game.labels.momentum ? book.game.labels.momentum : ({ min: -6, max: 10 })
+            Repeater {
+              model: book.pc ? Object.keys(book.pc.tracks).filter(k => book.pc.tracks[k].min === undefined) : []
+              delegate: Meter {
+                required property string modelData
+                theme: book.theme
+                label: modelData
+                value: book.pc.tracks[modelData].value
+                maximum: book.pc.tracks[modelData].max
+              }
+            }
+
+            // Momentum runs below zero, so it has a bar of its own (Ironsworn).
+            Momentum {
+              visible: !!book.pc && !!book.pc.tracks.momentum && !!book.game.labels.momentum
+              theme: book.theme
+              track: book.pc && book.pc.tracks.momentum ? book.pc.tracks.momentum : ({ value: 0, max: 10 })
+              spec: book.game && book.game.labels.momentum ? book.game.labels.momentum : ({ min: -6, max: 10 })
+            }
           }
 
           Text {
@@ -255,6 +270,8 @@ Item {
             font.family: book.theme.mono
             font.pixelSize: book.theme.small
             color: book.theme.urgent
+            width: parent.width
+            wrapMode: Text.Wrap
             text: book.pc ? (book.pc.dying ? "DYING · " + book.pc.dying.successes + " saved, " + book.pc.dying.failures + " lost\n" : "")
               + book.pc.conditions.join(" · ") : ""
           }
@@ -297,6 +314,7 @@ Item {
 
           Progress {
             id: vows
+            width: side.width
             theme: book.theme
             progress: book.game && book.game.progress ? book.game.progress : ({})
             spec: book.game && book.game.labels ? book.game.labels.progress : null
@@ -314,6 +332,8 @@ Item {
           }
 
           Route {
+            width: side.width
+            wrapMode: Text.Wrap
             theme: book.theme
             steps: book.game && book.game.route ? book.game.route : []
           }
@@ -323,6 +343,7 @@ Item {
       // The story ------------------------------------------------------------------------
 
       ColumnLayout {
+        objectName: "bookStory"
         Layout.fillWidth: true
         Layout.fillHeight: true
         spacing: book.theme.body * 0.8

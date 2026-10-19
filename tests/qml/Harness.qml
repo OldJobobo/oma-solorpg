@@ -11,6 +11,7 @@ Item {
 
   QtObject {
     id: theme
+    objectName: "theme"
     property color text: "#c0caf5"
     property color dim: Qt.darker(text, 1.6)
     property color faint: Qt.rgba(text.r, text.g, text.b, 0.22)
