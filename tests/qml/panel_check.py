@@ -204,12 +204,16 @@ def main(out):
     work = Path(tempfile.mkdtemp())
     os.environ["XDG_STATE_HOME"] = str(work / "state")
     os.environ["SOLO_HOME"] = str(work / "games")
+    os.environ["SOLO_SEED"] = "5"  # UI rolls must not randomly leave a Dragon's choice waiting.
     os.environ["XDG_RUNTIME_DIR"] = str(work / "run")
     # Begin runs `solo new --play`, which links solo and the skills into the home folder.
     os.environ["HOME"] = str(work / "home")
     os.environ["XDG_CACHE_HOME"] = str(work / "cache")
+    os.environ["XDG_CONFIG_HOME"] = str(work / "config")
     # Something to play the sounds with, so the plugin plays them.
     (work / "bin").mkdir()
+    # Child CLI commands use this interpreter, not a host version-manager shim.
+    (work / "bin" / "python3").symlink_to(Path(sys.executable).resolve())
     (work / "bin" / "pw-play").write_text("#!/bin/sh\nexit 0\n")
     (work / "bin" / "pw-play").chmod(0o755)
     os.environ["PATH"] = f"{work / 'bin'}:{os.environ['PATH']}"
