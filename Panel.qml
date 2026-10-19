@@ -91,12 +91,15 @@ Item {
   property var agentInfo: ({ agent: "", book: true })
   property var effects: ({ borders: true, screen: true, sound: true, candle: false, omens: true, screensaver: true })
   property string pace: "normal"  // how long the GM thinks before it answers (solo gm pace)
-  // The table's sounds and what plays them ({play, sounds}, from solo desk sound).
+  // Prepared sounds and players ({play, commands, sounds, split_dice}, from solo desk sound).
   property var sounds: ({})
   // When the dice land, in seconds: the Book's tumble (book/DiceMoment.qml), or a quick
   // throw with the Book shut. The sounds are cut to match.
   readonly property real diceLand: 1.94
   readonly property real diceLandShort: 0.5
+  // Recorded impacts follow the selected animation, never a sibling or an old campaign.
+  property int diceSoundSeq: -1
+  property bool diceSoundBook: false
   // What the watcher has already reacted to, so a reload never replays old rolls.
   property int fxSeen: -1
   property bool fxDying: false
@@ -196,13 +199,19 @@ Item {
       .concat(after > 0 ? ["--after", after.toFixed(2)] : []).concat(args))
   }
 
-  // The table's sounds, played straight from the cache (solo desk sound made them), so
-  // they keep time with the Book to the millisecond.
+  // WAVs may be bundled, supplied locally, or synthesized in the cache.
   function sound(name, after) {
     var path = root.sounds.sounds ? root.sounds.sounds[name] : ""
-    if (root.effects.sound === false || !root.sounds.play || !path) return
+    var command = (root.sounds.commands || {})[name] || root.sounds.play
+    if (root.effects.sound === false || !command || !path) return
     Quickshell.execDetached(["sh", "-c", 'sleep "$0"; exec "$@"', String(after > 0 ? after.toFixed(2) : 0)]
-      .concat(root.sounds.play).concat([path]))
+      .concat(command).concat([path]))
+  }
+
+  function diceLanded(seq, fromBook, campaignAtThrow) {
+    if (root.diceSoundSeq < 0 || campaignAtThrow !== root.campaign || seq !== root.diceSoundSeq || fromBook !== root.diceSoundBook) return
+    root.diceSoundSeq = -1
+    root.sound("dice-land")
   }
 
   // The player's words to the GM (none: the GM carries on from what is recorded). They go
@@ -245,8 +254,10 @@ Item {
     var land = roll ? (root.bookOpen ? root.diceLand : root.diceLandShort) : 0
     if (roll) {
       var outcome = roll.outcome || {}
+      root.diceSoundSeq = root.sounds.split_dice ? roll.seq : -1
+      root.diceSoundBook = root.bookOpen
       root.rolled()
-      root.sound(root.bookOpen ? "dice" : "dice-short")
+      root.sound(root.sounds.split_dice ? (root.bookOpen ? "dice-roll" : "dice-roll-short") : (root.bookOpen ? "dice" : "dice-short"))
       if (outcome.dragon) {
         root.desk(["flash", "dragon"], land)
         root.sound("dragon", land)
@@ -298,6 +309,7 @@ Item {
     root.fxFighting = false
     root.fxSeen = -1
     root.fxSaid = -1
+    root.diceSoundSeq = -1
     root.turn = { status: "idle" }
   }
   onBookOpenChanged: {
@@ -909,6 +921,7 @@ Item {
       onSend: text => root.speak(text)
       onStop: Quickshell.execDetached([root.solo, "-C", root.campaign, "gm", "stop"])
       onRetry: root.speak("")
+      onDiceLanded: (seq, campaignAtThrow) => root.diceLanded(seq, true, campaignAtThrow)
       // The X-card: cut the GM's last message (a line or a veil too, if the player made it one), then the GM carries on without it.
       onCut: (note, line, veil) => root.act(["strike"].concat(note !== "" ? ["--note", note] : []).concat(line !== "" ? ["--line", line] : [])
                                               .concat(veil !== "" ? ["--veil", veil] : []), "book", () => root.speak(""))
@@ -2058,10 +2071,14 @@ Item {
               spacing: Style.space(10)
               property string face: root.rollFace()
               property int ticks: 0
+              property int soundSeq: -1
+              property string campaignAtThrow: ""
 
               Connections {
                 target: root
                 function onRolled() {
+                  rollCard.campaignAtThrow = root.campaign
+                  rollCard.soundSeq = root.diceSoundSeq
                   rollCard.ticks = 0
                   tumble.interval = 40
                   tumble.restart()
@@ -2077,6 +2094,7 @@ Item {
                     stop()
                     rollCard.face = Qt.binding(() => root.rollFace())
                     land.restart()
+                    root.diceLanded(rollCard.soundSeq, false, rollCard.campaignAtThrow)
                   } else {
                     var outcome = root.lastCheck ? root.lastCheck.outcome : {}
                     var most = outcome.score !== undefined ? 11 : outcome.result !== undefined ? 20 : Math.max(3, (outcome.successes || 0) + 2)

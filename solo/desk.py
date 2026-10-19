@@ -332,9 +332,11 @@ def sound(name):
 
 
 def sound_kit():
-    """Every sound made ready, and how to play them: {"play": command or None, "sounds":
-    {name: path}}. The plugin plays them itself, so they land exactly with the Book."""
-    return {"play": sounds.player(), "sounds": {name: str(sounds.path(name)) for name in sounds.names()}}
+    """Prepared WAVs and players; split dice land from the animation's settled signal."""
+    parts = sounds.dice_parts()
+    return {"play": sounds.player(), "commands": {"page": sounds.player("page")},
+            "sounds": {**{name: str(sounds.path(name)) for name in sounds.names()}, **parts},
+            "split_dice": bool(parts)}
 
 
 # Candlelight ----------------------------------------------------------------------------

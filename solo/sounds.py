@@ -1,11 +1,9 @@
-"""The table's sounds, made here rather than shipped: dice rattling and landing, a Dragon's
-chime, a Demon's growl, a blow, a heartbeat, a knell, an omen on the wind, a page turning,
-a torch catching, a scene opening and a war drum.
+"""Recorded CC0 dice and page turns, with synthesized sounds for the rest of the table.
 
-Each is synthesised with the standard library into a small WAV in the cache the first time
-it is asked for, and kept there; changing a recipe means raising VERSION. The plugin plays
-them with whatever the desktop has (pw-play on Omarchy). The dice are timed to the Book:
-they tumble exactly as its dice change faces and land when they do.
+Local PCM WAVs override bundled recordings; missing recordings fall back to standard-
+library synthesis. Changing a synthesis recipe means raising VERSION. Split dice play
+an impact from the animation's actual landing signal, not a guessed delay. The bundled
+recordings' credits and CC0 dedication live in assets/sounds/README.md.
 """
 
 import array
@@ -25,6 +23,9 @@ RATE = 22050
 TICKS = [0.045 * k + 0.0016 * sum(i * i for i in range(k)) for k in range(1, 15)]
 LAND = TICKS[-1]
 PLAYERS = (["pw-play"], ["paplay"], ["aplay", "-q"])
+# Optional local recordings. A complete set keeps the landing separate from the roll.
+DICE_PARTS = ("dice-roll", "dice-roll-short", "dice-land")
+BUNDLED = Path(__file__).resolve().parent.parent / "assets" / "sounds"
 
 
 def names():
@@ -32,9 +33,12 @@ def names():
 
 
 def path(name):
-    """The WAV for a sound, made now if it isn't in the cache yet."""
+    """A local override, bundled recording, or synthesized sound kept in the cache."""
     if name not in RECIPES:
         raise KeyError(name)
+    override = _override(name) or _recording(BUNDLED / f"{name}.wav")
+    if override is not None:
+        return override
     folder = _folder()
     target = folder / f"{name}-{VERSION}.wav"
     if not target.exists():
@@ -45,14 +49,55 @@ def path(name):
     return target
 
 
-def player():
-    """The command that plays a WAV on this desktop, or None."""
-    return next((list(p) for p in PLAYERS if shutil.which(p[0])), None)
+def dice_parts():
+    """Prefer a complete local set, then the complete bundle; never mix partial sets."""
+    for parts in ({name: _override(name) for name in DICE_PARTS},
+                  {name: _recording(BUNDLED / f"{name}.wav") for name in DICE_PARTS}):
+        if all(parts.values()):
+            return {name: str(path) for name, path in parts.items()}
+    return {}
+
+
+def _override(name):
+    base = os.environ.get("XDG_CONFIG_HOME")
+    folder = (Path(base) if base else Path.home() / ".config") / "solo" / "sounds"
+    return _recording(folder / f"{name}.wav")
+
+
+def _recording(target):
+    """Validate a bounded integer-PCM WAV before handing it to the desktop player."""
+    try:
+        if not target.is_file() or target.stat().st_size > 16 * 1024 * 1024:
+            return None
+        with wave.open(str(target), "rb") as recording:
+            channels, width, rate, frames, compression, _ = recording.getparams()
+            if compression != "NONE" or channels not in (1, 2) or width not in (1, 2, 3, 4):
+                return None
+            if not 8000 <= rate <= 192000 or not 0 < frames <= rate * 30:
+                return None
+            # A valid header is not enough: don't hand a truncated recording to the player.
+            recording.setpos(frames - 1)
+            if len(recording.readframes(1)) != channels * width:
+                return None
+    except (OSError, EOFError, ValueError, wave.Error):
+        return None
+    return target
+
+
+def player(name=None):
+    """The WAV player, with a gentler page turn (including local recordings)."""
+    command = next((list(p) for p in PLAYERS if shutil.which(p[0])), None)
+    if command and name == "page":
+        if command[0] == "pw-play":
+            command += ["--volume=0.75"]
+        elif command[0] == "paplay":
+            command += ["--volume=49152"]  # PulseAudio's full scale is 65536.
+    return command
 
 
 def play(name):
     """Play a sound and return at once (it carries on by itself)."""
-    command = player()
+    command = player(name)
     if not command:
         return False
     try:
