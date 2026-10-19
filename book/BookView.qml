@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Effects
 import QtQuick.Layouts
+import QtQuick.Controls as Controls
 import "Md.js" as Md
 
 // The Book: where the story is read and told. The GM's narration streams in as it is
@@ -12,6 +13,9 @@ import "Md.js" as Md
 Item {
   id: book
   property var theme
+  property real bookScale: 1
+  property bool scaleBusy: false
+  property string scaleError: ""
   property var game: null          // state.json
   property var turn: ({ status: "idle" })   // .solo/turn.json
   property var agent: ({ agent: "", book: true })
@@ -19,11 +23,13 @@ Item {
   property string actionError: ""  // why the last thing clicked here (light a torch) was refused
   property bool active: true       // the window is showing
   property bool codexOpen: false
+  property bool combatExpanded: false
   property bool epitaphDismissed: false
   property bool cutting: false     // the X-card panel is open
   property int seen: -1            // the newest story seq already shown (no replays on load)
   readonly property bool epitaphShown: dead && !epitaphDismissed
 
+  signal scaleRequested(real value)
   signal send(string text)
   signal stop()
   signal retry()
@@ -53,6 +59,7 @@ Item {
     seen = -1
     epitaphDismissed = false
     codexOpen = false
+    combatExpanded = false
     cutting = false
     storyModel.clear()
     storyNewest = -1
@@ -187,155 +194,202 @@ Item {
       NumberAnimation { target: page; property: "x"; to: 0; duration: 90 }
     }
 
-    RowLayout {
+    GridLayout {
       id: pageRow
+      objectName: "bookPageLayout"
       anchors { top: parent.top; bottom: parent.bottom; horizontalCenter: parent.horizontalCenter; margins: book.theme.body * 1.4 }
-      width: Math.min(book.width - book.theme.body * 2.8, (side.visible ? side.Layout.preferredWidth + spacing : 0) + book.measure)
-      spacing: book.theme.body * 2.4
+      width: Math.min(book.width - book.theme.body * 2.8, (sideFrame.visible ? sideFrame.Layout.preferredWidth + columnSpacing : 0) + book.measure)
+      readonly property bool stacked: width < sideFrame.Layout.preferredWidth + book.theme.body * 29
+      columns: stacked ? 1 : 2
+      columnSpacing: book.theme.body * 2.4
+      rowSpacing: book.theme.body * 0.8
 
       // The hero ------------------------------------------------------------------------
 
-      Flickable {
-        id: side
-        objectName: "bookSidebar"
-        Layout.fillHeight: true
-        // The portrait and meters set the margin, not an unwrapped vow or place name.
-        Layout.preferredWidth: Math.max(heroPortrait.implicitWidth, vitals.implicitWidth, book.theme.small * 16)
-        Layout.maximumWidth: Layout.preferredWidth
-        contentHeight: sideColumn.implicitHeight
-        boundsBehavior: Flickable.StopAtBounds
-        clip: true
+      ColumnLayout {
+        id: sideFrame
+        objectName: "bookSidebarFrame"
         visible: book.pc !== null
+        Layout.fillHeight: !pageRow.stacked
+        Layout.fillWidth: pageRow.stacked
+        // Zooming a small Book stacks the independently scrolling hero above
+        // the story. Keep the scale footer reachable instead of hiding it.
+        Layout.preferredHeight: pageRow.stacked ? Math.max(scaleFooter.implicitHeight + book.theme.body * 2,
+          Math.min(pageRow.height * 0.3, sideColumn.implicitHeight + scaleFooter.implicitHeight + spacing)) : -1
+        Layout.minimumHeight: 0
+        Layout.preferredWidth: Math.ceil(Math.max(heroPortrait.implicitWidth, vitals.implicitWidth, book.theme.small * 16, scaleFooter.implicitWidth))
+        Layout.minimumWidth: pageRow.stacked ? 0 : Layout.preferredWidth
+        Layout.maximumWidth: pageRow.stacked ? Infinity : Layout.preferredWidth
+        spacing: book.theme.body * 0.7
 
-        Column {
-          id: sideColumn
-          width: side.width
-          spacing: book.theme.body * 0.7
-
-          Portrait {
-            id: heroPortrait
-            theme: book.theme
-            portrait: book.game ? book.game.portrait : null
-            cell: book.theme.small
-          }
-
-          Text {
-            textFormat: Text.PlainText
-            font.family: book.theme.serif
-            font.pixelSize: book.theme.heading
-            color: book.theme.text
-            width: parent.width
-            wrapMode: Text.Wrap
-            text: book.pc ? book.pc.name : ""
-          }
-
-          Text {
-            textFormat: Text.PlainText
-            font.family: book.theme.mono
-            font.pixelSize: book.theme.small
-            color: book.theme.dim
-            width: parent.width
-            wrapMode: Text.Wrap
-            text: book.pc ? Object.keys(book.pc.info).map(k => book.pc.info[k]).join(" · ") : ""
-          }
+        Flickable {
+          id: side
+          objectName: "bookSidebar"
+          Layout.fillHeight: true
+          Layout.fillWidth: true
+          Layout.minimumHeight: 0
+          Layout.minimumWidth: 0
+          contentHeight: sideColumn.implicitHeight
+          boundsBehavior: Flickable.StopAtBounds
+          clip: true
 
           Column {
-            id: vitals
-            objectName: "bookVitals"
-            spacing: sideColumn.spacing
+            id: sideColumn
+            width: side.width
+            spacing: book.theme.body * 0.7
 
-            Repeater {
-              model: book.pc ? Object.keys(book.pc.tracks).filter(k => book.pc.tracks[k].min === undefined) : []
-              delegate: Meter {
-                required property string modelData
+            Portrait {
+              id: heroPortrait
+              visible: !pageRow.stacked
+              theme: book.theme
+              portrait: book.game ? book.game.portrait : null
+              cell: book.theme.small
+            }
+
+            Text {
+              textFormat: Text.PlainText
+              font.family: book.theme.serif
+              font.pixelSize: book.theme.heading
+              color: book.theme.text
+              width: parent.width
+              wrapMode: Text.Wrap
+              text: book.pc ? book.pc.name : ""
+            }
+
+            Text {
+              textFormat: Text.PlainText
+              font.family: book.theme.mono
+              font.pixelSize: book.theme.small
+              color: book.theme.dim
+              width: parent.width
+              wrapMode: Text.Wrap
+              text: book.pc ? Object.keys(book.pc.info).map(k => book.pc.info[k]).join(" · ") : ""
+            }
+
+            Column {
+              id: vitals
+              objectName: "bookVitals"
+              spacing: sideColumn.spacing
+
+              Repeater {
+                model: book.pc ? Object.keys(book.pc.tracks).filter(k => book.pc.tracks[k].min === undefined) : []
+                delegate: Meter {
+                  required property string modelData
+                  theme: book.theme
+                  label: modelData
+                  value: book.pc.tracks[modelData].value
+                  maximum: book.pc.tracks[modelData].max
+                }
+              }
+
+              // Momentum runs below zero, so it has a bar of its own (Ironsworn).
+              Momentum {
+                visible: !!book.pc && !!book.pc.tracks.momentum && !!book.game.labels.momentum
                 theme: book.theme
-                label: modelData
-                value: book.pc.tracks[modelData].value
-                maximum: book.pc.tracks[modelData].max
+                track: book.pc && book.pc.tracks.momentum ? book.pc.tracks.momentum : ({ value: 0, max: 10 })
+                spec: book.game && book.game.labels.momentum ? book.game.labels.momentum : ({ min: -6, max: 10 })
               }
             }
 
-            // Momentum runs below zero, so it has a bar of its own (Ironsworn).
-            Momentum {
-              visible: !!book.pc && !!book.pc.tracks.momentum && !!book.game.labels.momentum
+            Text {
+              visible: text !== ""
+              textFormat: Text.PlainText
+              font.family: book.theme.mono
+              font.pixelSize: book.theme.small
+              color: book.theme.urgent
+              width: parent.width
+              wrapMode: Text.Wrap
+              text: book.pc ? (book.pc.dying ? "DYING · " + book.pc.dying.successes + " saved, " + book.pc.dying.failures + " lost\n" : "")
+                + book.pc.conditions.join(" · ") : ""
+            }
+
+            Torch {
               theme: book.theme
-              track: book.pc && book.pc.tracks.momentum ? book.pc.tracks.momentum : ({ value: 0, max: 10 })
-              spec: book.game && book.game.labels.momentum ? book.game.labels.momentum : ({ min: -6, max: 10 })
+              gpu: book.gpu
+              light: book.game && book.game.light ? book.game.light : null
+              dark: book.game ? book.game.dark === true : false
+            }
+
+            Link {
+              visible: !!book.game && !book.game.light && book.carriesLight && !book.dead
+              text: "→ light a torch"
+              onClicked: book.act(["light", "torch"])
+            }
+
+            Text {
+              visible: book.actionError !== ""
+              width: side.width
+              wrapMode: Text.Wrap
+              textFormat: Text.PlainText
+              font.family: book.theme.mono
+              font.pixelSize: book.theme.small
+              color: book.theme.urgent
+              text: book.actionError
+            }
+
+            Item { width: 1; height: book.theme.body * 0.4 }
+
+            Text {
+              visible: vows.visible
+              textFormat: Text.PlainText
+              font.family: book.theme.mono
+              font.pixelSize: book.theme.small
+              font.letterSpacing: 2
+              color: book.theme.dim
+              text: "VOWS AND ROADS"
+            }
+
+            Progress {
+              id: vows
+              width: side.width
+              theme: book.theme
+              progress: book.game && book.game.progress ? book.game.progress : ({})
+              spec: book.game && book.game.labels ? book.game.labels.progress : null
+            }
+
+            Item { visible: vows.visible; width: 1; height: book.theme.body * 0.4 }
+
+            Text {
+              textFormat: Text.PlainText
+              font.family: book.theme.mono
+              font.pixelSize: book.theme.small
+              font.letterSpacing: 2
+              color: book.theme.dim
+              text: "THE WAY HERE"
+            }
+
+            Route {
+              width: side.width
+              wrapMode: Text.Wrap
+              theme: book.theme
+              steps: book.game && book.game.route ? book.game.route : []
             }
           }
+        }
 
+        ColumnLayout {
+          id: scaleFooter
+          objectName: "bookScaleFooter"
+          Layout.fillWidth: true
+          spacing: book.theme.body * 0.3
+          ScaleSelector {
+            objectName: "bookScaleSelector"
+            Layout.fillWidth: true
+            theme: book.theme
+            compact: true
+            value: book.bookScale
+            busy: book.scaleBusy
+            onScaleRequested: value => book.scaleRequested(value)
+          }
           Text {
-            visible: text !== ""
+            Layout.fillWidth: true
+            visible: book.scaleError !== ""
             textFormat: Text.PlainText
-            font.family: book.theme.mono
-            font.pixelSize: book.theme.small
+            text: book.scaleError
+            wrapMode: Text.Wrap
             color: book.theme.urgent
-            width: parent.width
-            wrapMode: Text.Wrap
-            text: book.pc ? (book.pc.dying ? "DYING · " + book.pc.dying.successes + " saved, " + book.pc.dying.failures + " lost\n" : "")
-              + book.pc.conditions.join(" · ") : ""
-          }
-
-          Torch {
-            theme: book.theme
-            gpu: book.gpu
-            light: book.game && book.game.light ? book.game.light : null
-            dark: book.game ? book.game.dark === true : false
-          }
-
-          Link {
-            visible: !!book.game && !book.game.light && book.carriesLight && !book.dead
-            text: "→ light a torch"
-            onClicked: book.act(["light", "torch"])
-          }
-
-          Text {
-            visible: book.actionError !== ""
-            width: side.width
-            wrapMode: Text.Wrap
-            textFormat: Text.PlainText
             font.family: book.theme.mono
             font.pixelSize: book.theme.small
-            color: book.theme.urgent
-            text: book.actionError
-          }
-
-          Item { width: 1; height: book.theme.body * 0.4 }
-
-          Text {
-            visible: vows.visible
-            textFormat: Text.PlainText
-            font.family: book.theme.mono
-            font.pixelSize: book.theme.small
-            font.letterSpacing: 2
-            color: book.theme.dim
-            text: "VOWS AND ROADS"
-          }
-
-          Progress {
-            id: vows
-            width: side.width
-            theme: book.theme
-            progress: book.game && book.game.progress ? book.game.progress : ({})
-            spec: book.game && book.game.labels ? book.game.labels.progress : null
-          }
-
-          Item { visible: vows.visible; width: 1; height: book.theme.body * 0.4 }
-
-          Text {
-            textFormat: Text.PlainText
-            font.family: book.theme.mono
-            font.pixelSize: book.theme.small
-            font.letterSpacing: 2
-            color: book.theme.dim
-            text: "THE WAY HERE"
-          }
-
-          Route {
-            width: side.width
-            wrapMode: Text.Wrap
-            theme: book.theme
-            steps: book.game && book.game.route ? book.game.route : []
           }
         }
       }
@@ -343,17 +397,24 @@ Item {
       // The story ------------------------------------------------------------------------
 
       ColumnLayout {
+        id: storyColumn
         objectName: "bookStory"
         Layout.fillWidth: true
         Layout.fillHeight: true
+        Layout.minimumWidth: 0
+        Layout.minimumHeight: 0
         spacing: book.theme.body * 0.8
 
-        RowLayout {
+        GridLayout {
+          objectName: "bookHeader"
           Layout.fillWidth: true
-          spacing: book.theme.body
+          columns: storyColumn.width < book.theme.small * 50 ? 1 : 2
+          columnSpacing: book.theme.body
+          rowSpacing: book.theme.body * 0.5
 
           Column {
             Layout.fillWidth: true
+            Layout.minimumWidth: 0
             Text {
               width: parent.width
               elide: Text.ElideRight
@@ -365,6 +426,8 @@ Item {
               text: book.game ? book.game.scene_title || "" : "The Book"
             }
             Text {
+              width: parent.width
+              wrapMode: Text.Wrap
               textFormat: Text.PlainText
               font.family: book.theme.mono
               font.pixelSize: book.theme.small
@@ -372,27 +435,73 @@ Item {
               text: book.game ? book.game.title + " · " + book.elapsed(book.game.time) : ""
             }
           }
-
-          Link { text: "codex"; onClicked: book.codexOpen = !book.codexOpen }
-          Link { text: "table"; onClicked: book.openTable() }
-          Link { text: "terminal"; onClicked: book.openTerminal() }
+          Flow {
+            id: navigation
+            objectName: "bookNavigation"
+            Layout.alignment: Qt.AlignRight
+            Layout.maximumWidth: storyColumn.width
+            Layout.preferredWidth: codexLink.implicitWidth + tableLink.implicitWidth + terminalLink.implicitWidth + spacing * 2
+            spacing: book.theme.body
+            Link { id: codexLink; text: "codex"; onClicked: book.codexOpen = !book.codexOpen }
+            Link { id: tableLink; text: "table"; onClicked: book.openTable() }
+            Link { id: terminalLink; text: "terminal"; onClicked: book.openTerminal() }
+          }
         }
 
-        Tableau {
+        Controls.AbstractButton {
+          id: combatToggle
+          objectName: "bookCombatToggle"
+          visible: pageRow.stacked && !!book.game && !!book.game.combat
+          text: (book.combatExpanded ? "Hide fight" : "Show fight") + " · Round " + (book.game && book.game.combat ? book.game.combat.round : 1)
+          activeFocusOnTab: true
+          contentItem: Text {
+            textFormat: Text.PlainText
+            text: combatToggle.text
+            font.family: book.theme.mono
+            font.pixelSize: book.theme.small
+            color: combatToggle.activeFocus || combatToggle.hovered ? book.theme.accent : book.theme.dim
+          }
+          background: Rectangle {
+            color: "transparent"
+            border.width: combatToggle.activeFocus ? 1 : 0
+            border.color: book.theme.accent
+            radius: book.theme.radius
+          }
+          onClicked: book.combatExpanded = !book.combatExpanded
+        }
+
+        // A wrapped fight must not push writing or the scale control offscreen.
+        // In a narrow Book it is available on demand; a wide Book keeps it open.
+        Flickable {
+          objectName: "bookCombatView"
           Layout.fillWidth: true
-          visible: !!book.game && !!book.game.combat
-          theme: book.theme
-          fight: book.game && book.game.combat ? book.game.combat : null
-          figures: book.game && book.game.figures ? book.game.figures : ({ hero: [], foes: {} })
-          hero: book.pc
+          Layout.fillHeight: true
+          Layout.minimumHeight: 0
+          Layout.maximumHeight: Layout.preferredHeight
+          Layout.preferredHeight: Math.min(battle.implicitHeight, Math.max(0,
+            pageRow.height - (pageRow.stacked ? sideFrame.Layout.preferredHeight + pageRow.rowSpacing : 0)) * 0.4)
+          visible: !!book.game && !!book.game.combat && (!pageRow.stacked || book.combatExpanded)
+          contentHeight: battle.implicitHeight
+          boundsBehavior: Flickable.StopAtBounds
+          clip: true
+          Tableau {
+            id: battle
+            width: parent.width
+            theme: book.theme
+            fight: book.game && book.game.combat ? book.game.combat : null
+            figures: book.game && book.game.figures ? book.game.figures : ({ hero: [], foes: {} })
+            hero: book.pc
+          }
         }
 
         Item {
           Layout.fillWidth: true
           Layout.fillHeight: true
+          Layout.minimumHeight: Math.min(book.theme.body * 3, pageRow.height * 0.05)
 
           ListView {
             id: storyView
+            objectName: "bookStoryView"
             anchors.fill: parent
             clip: true
             spacing: 0
@@ -567,6 +676,7 @@ Item {
         // Writing to the GM ------------------------------------------------------------------
 
         Rectangle {
+          objectName: "composerSurface"
           Layout.fillWidth: true
           visible: book.agent.book !== false
           implicitHeight: Math.min(input.implicitHeight, book.theme.prose * 8) + book.theme.body * 1.6
@@ -590,6 +700,7 @@ Item {
 
               TextEdit {
                 id: input
+                objectName: "bookInput"
                 width: inputFlick.width
                 wrapMode: TextEdit.Wrap
                 textFormat: TextEdit.PlainText

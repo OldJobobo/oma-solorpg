@@ -159,6 +159,7 @@ test:
 	python3 -m unittest discover -s tests
 
 qml-check:
+	QT_QPA_PLATFORM=offscreen python3 tests/qml/scale_check.py $${TMPDIR:-/tmp}/oma-solorpg-scale
 	QT_QPA_PLATFORM=offscreen python3 tests/qml/workspace_check.py
 	QT_QPA_PLATFORM=offscreen python3 tests/qml/sidebar_check.py $${TMPDIR:-/tmp}/oma-solorpg-sidebar
 	QT_QPA_PLATFORM=offscreen python3 tests/qml/panel_check.py $${TMPDIR:-/tmp}/oma-solorpg-qml

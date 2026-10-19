@@ -5,6 +5,7 @@ import Quickshell.Io
 import Quickshell.Wayland
 import Quickshell.Hyprland
 import qs.Commons
+import qs.Commons as Shell
 import qs.Ui
 import "book"
 
@@ -70,6 +71,14 @@ Item {
   // The campaign whose card is asking "delete for good?", by folder.
   property string deleting: ""
   property string view: "home"
+  property bool settingsOpen: false
+  property bool reducedMotion: Quickshell.env("SOLO_REDUCED_MOTION") === "1"
+  property real bookScale: 1
+  property real tableScale: 1
+  readonly property bool scaleBusy: scaleAction.running
+  property string scaleTarget: ""
+  property string scaleError: ""
+  onSettingsOpenChanged: Qt.callLater(root.focusSettingsFace)
   property string error: ""
   property string errorAt: ""
 
@@ -161,8 +170,8 @@ Item {
     ? (library.adventures.filter(a => a.id === root.pickedAdventure)[0] || library.adventures[0]) : null
   readonly property var system: adventure ? library.systems.filter(s => s.id === adventure.system)[0] || null : null
 
-  readonly property color textColor: Color.popups.text
-  readonly property color dim: Qt.darker(Color.popups.text, 1.6)
+  readonly property color textColor: Shell.Color.popups.text
+  readonly property color dim: Qt.darker(Shell.Color.popups.text, 1.6)
   readonly property color faint: Qt.rgba(textColor.r, textColor.g, textColor.b, 0.15)
 
   function open(payloadJson) {
@@ -290,6 +299,7 @@ Item {
   // picked, or this one deleted, drops the game and lets a dying hero's red go (a deleted
   // campaign's state.json is no longer watched when it goes, so nothing else would).
   onCampaignChanged: {
+    root.settingsOpen = false
     if (root.fxDying) root.desk(["dying", "off"])
     root.game = null
     root.fxDying = false
@@ -318,10 +328,12 @@ Item {
   }
 
   function close() {
+    root.settingsOpen = false
     workspacePin.hide()
   }
 
   function show(view) {
+    root.settingsOpen = false
     root.view = view
     root.deleting = ""
     root.error = ""
@@ -330,12 +342,58 @@ Item {
     }
   }
 
+  function openSettings() {
+    if (tableFlip.flipping) return
+    root.settingsOpen = true
+    root.ask("effects", ["desk", "settings"])
+    root.ask("pace", ["gm", "pace"])
+    if (root.campaign !== "") root.ask("agent", ["-C", root.campaign, "gm", "agent"])
+  }
+
+  function focusSettingsFace() {
+    if (!root.opened || tableFlip.flipping || tableFlip.side !== (root.settingsOpen ? Flipable.Back : Flipable.Front)) return
+    if (root.settingsOpen) settingsView.focusReturn()
+    else settingsButton.forceActiveFocus()
+  }
+
+  function readScales(text) {
+    var data = {}
+    try { data = JSON.parse(text) || {} } catch (e) {}
+    var valid = value => typeof value === "number" && [1, 1.25, 1.5, 1.75, 2].indexOf(value) !== -1 ? value : 1
+    var legacy = valid(data.scale)
+    root.bookScale = valid(data.book_scale === undefined ? legacy : data.book_scale)
+    root.tableScale = valid(data.table_scale === undefined ? legacy : data.table_scale)
+  }
+
+  function setUiScale(target, value) {
+    if (root.scaleBusy || ["book", "table"].indexOf(target) === -1 || typeof value !== "number"
+        || [1, 1.25, 1.5, 1.75, 2].indexOf(value) === -1 || value === (target === "book" ? root.bookScale : root.tableScale)) return
+    root.scaleTarget = target
+    root.scaleError = ""
+    scaleAction.output = ""
+    scaleAction.command = [root.solo, "ui", "--" + target + "-scale=" + String(value)]
+    scaleAction.running = true
+  }
+
+  function setPace(value) {
+    if (!action.running && !query.running && root.agentInfo.book !== false) root.run(["gm", "pace", value], "pace")
+  }
+
+  function setEffect(name, on) {
+    if (action.running || query.running) return
+    root.run(["desk", "settings", name + "=" + (on ? "on" : "off")], "effects", () => {
+      if (on && root.bookOpen && (name === "candle" || name === "screensaver")) root.desk([name, "on"])
+    })
+  }
+
   // Commands that change something. `done` runs after a success.
   function run(args, place, done) {
     if (!action.running) {
       root.error = ""
       root.errorAt = place
       action.done = done || null
+      action.place = place
+      action.output = ""
       action.command = [root.solo].concat(args)
       action.running = true
     }
@@ -793,8 +851,8 @@ Item {
 
   function rollColor() {
     var outcome = root.lastCheck ? root.lastCheck.outcome : null
-    return outcome && outcome.dragon ? theme.gold : outcome && !outcome.success ? Color.urgent
-      : outcome && (outcome.successes > 1 || outcome.hit === "strong_hit") ? Color.accent : root.textColor
+    return outcome && outcome.dragon ? theme.gold : outcome && !outcome.success ? Shell.Color.urgent
+      : outcome && (outcome.successes > 1 || outcome.hit === "strong_hit") ? Shell.Color.accent : root.textColor
   }
 
   function visibleClocks() {
@@ -815,6 +873,19 @@ Item {
 
   function recent() {
     return root.game ? root.game.log.filter(e => !e.hidden).slice(-14).reverse() : []
+  }
+
+  // Scales belong to the player, not a campaign. CLI edits and restarts use
+  // the same saved state without recreating the Book or its draft message.
+  FileView {
+    id: uiFile
+    path: root.stateDir + "/ui.json"
+    blockLoading: true
+    watchChanges: true
+    printErrors: false
+    onFileChanged: reload()
+    onLoaded: root.readScales(text())
+    onLoadFailed: root.readScales("{}")
   }
 
   // Which campaign is current, as recorded by `solo new`, `solo use` and `solo play`.
@@ -865,13 +936,13 @@ Item {
   // Omarchy's theme, in the words the Book uses. The Book is plain QtQuick and reads only this.
   QtObject {
     id: theme
-    readonly property color text: Color.popups.text
+    readonly property color text: Shell.Color.popups.text
     readonly property color dim: root.dim
     readonly property color faint: Qt.rgba(text.r, text.g, text.b, 0.22)
-    readonly property color background: Color.popups.background
-    readonly property color surface: Qt.tint(Color.popups.background, Qt.rgba(text.r, text.g, text.b, 0.05))
-    readonly property color accent: Color.accent
-    readonly property color urgent: Color.urgent
+    readonly property color background: Shell.Color.popups.background
+    readonly property color surface: Qt.tint(Shell.Color.popups.background, Qt.rgba(text.r, text.g, text.b, 0.05))
+    readonly property color accent: Shell.Color.accent
+    readonly property color urgent: Shell.Color.urgent
     // Dragons and candlelight: one warm gold that reads on dark and light themes alike.
     readonly property color gold: "#d9a441"
     readonly property string mono: Style.font.family
@@ -896,10 +967,22 @@ Item {
     minimumSize: Qt.size(640, 480)
     onVisibleChanged: if (!visible) root.bookOpen = false
 
+    ScaledViewport {
+      id: bookViewport
+      objectName: "bookViewport"
+      anchors.fill: parent
+      factor: root.bookScale
+    }
+
     BookView {
       objectName: "book"
+      parent: bookViewport.canvas
       anchors.fill: parent
       theme: theme
+      bookScale: root.bookScale
+      scaleBusy: root.scaleBusy
+      scaleError: root.scaleTarget === "book" ? root.scaleError : ""
+      onScaleRequested: value => root.setUiScale("book", value)
       game: root.game
       turn: root.turn
       agent: root.agentInfo
@@ -925,9 +1008,39 @@ Item {
     id: speaker
   }
 
+  // Appearance writes must not borrow the campaign command slot or clear its
+  // errors. The selected value changes only after the save succeeds.
+  Process {
+    id: scaleAction
+    property string output: ""
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: scaleAction.output = text
+    }
+    stderr: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: if (text.trim() !== "") root.scaleError = text.trim().replace(/^solo: /, "")
+    }
+    onExited: (exitCode, exitStatus) => {
+      if (exitCode === 0) {
+        root.readScales(scaleAction.output)
+        root.scaleError = ""
+        uiFile.reload()
+      } else if (root.scaleError === "") {
+        root.scaleError = "Couldn't save " + (root.scaleTarget === "book" ? "Book" : "Table") + " scale. Try again."
+      }
+    }
+  }
+
   Process {
     id: action
     property var done: null
+    property string place: ""
+    property string output: ""
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: action.output = text
+    }
     stderr: StdioCollector {
       waitForEnd: true
       onStreamFinished: root.error = text.trim().replace(/^solo: /, "")
@@ -936,7 +1049,10 @@ Item {
       var done = action.done
       action.done = null
       currentFile.reload()
-      if (exitCode === 0 && done) done()
+      if (exitCode === 0) {
+        if (action.place === "effects" || action.place === "pace") root.received(action.place, action.output)
+        if (done) done()
+      } else root.errorAt = action.place
     }
   }
 
@@ -994,7 +1110,7 @@ Item {
   component ErrorLine: Line {
     property string place: ""
     visible: root.error !== "" && root.errorAt === place
-    color: Color.urgent
+    color: Shell.Color.urgent
     size: Style.font.bodySmall
     text: root.error
   }
@@ -1026,9 +1142,9 @@ Item {
     implicitWidth: tagText.implicitWidth + Style.space(12)
     implicitHeight: tagText.implicitHeight + Style.space(6)
     radius: Style.cornerRadius
-    color: lit ? Qt.rgba(Color.urgent.r, Color.urgent.g, Color.urgent.b, 0.25) : "transparent"
+    color: lit ? Qt.rgba(Shell.Color.urgent.r, Shell.Color.urgent.g, Shell.Color.urgent.b, 0.25) : "transparent"
     border.width: 1
-    border.color: lit ? Color.urgent : root.faint
+    border.color: lit ? Shell.Color.urgent : root.faint
 
     Text {
       id: tagText
@@ -1075,7 +1191,7 @@ Item {
     radius: Style.cornerRadius
     color: card.clickable && cardMouse.containsMouse ? root.faint : "transparent"
     border.width: selected ? 2 : 1
-    border.color: selected ? Color.accent : root.faint
+    border.color: selected ? Shell.Color.accent : root.faint
 
     // Under the content, so a button inside a card takes its own clicks.
     MouseArea {
@@ -1178,7 +1294,7 @@ Item {
         x: (Math.min(0, bar.track.value) - bar.range.min) * bar.unit
         width: Math.abs(bar.track.value) * bar.unit
         height: parent.height
-        color: bar.track.value < 0 ? Color.urgent : Color.accent
+        color: bar.track.value < 0 ? Shell.Color.urgent : Shell.Color.accent
         Behavior on x { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
         Behavior on width { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
       }
@@ -1219,7 +1335,7 @@ Item {
         Rectangle {
           anchors { left: parent.left; right: parent.right; bottom: parent.bottom; margins: 1 }
           height: (parent.height - 2) * root.boxTicks(boxes.track, index) / (root.progressSpec ? root.progressSpec.ticks : 4)
-          color: Color.accent
+          color: Shell.Color.accent
         }
       }
     }
@@ -1255,7 +1371,7 @@ Item {
         width: track.width * meter.share
         height: parent.height
         radius: parent.radius
-        color: Color.urgent
+        color: Shell.Color.urgent
         opacity: 0.5
         Behavior on width {
           SequentialAnimation {
@@ -1269,7 +1385,7 @@ Item {
         width: track.width * meter.share
         height: parent.height
         radius: parent.radius
-        color: meter.share <= 0.25 ? Color.urgent : meter.share <= 0.5 ? theme.gold : Color.accent
+        color: meter.share <= 0.25 ? Shell.Color.urgent : meter.share <= 0.5 ? theme.gold : Shell.Color.accent
         Behavior on width { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
         Behavior on color { ColorAnimation { duration: 400 } }
       }
@@ -1281,111 +1397,153 @@ Item {
     objectName: "tableWindow"
     visible: root.opened
     anchors { top: true; right: true; bottom: true }
-    implicitWidth: Style.space(340)
+    implicitWidth: Style.space(340) * root.tableScale
     color: "transparent"
     exclusionMode: ExclusionMode.Auto
     WlrLayershell.namespace: "solo-play"
-    WlrLayershell.layer: WlrLayer.Top
+    // Arrange the reservation after the Top-layer bar, including a live resize.
+    WlrLayershell.layer: WlrLayer.Overlay
     // Clicking the name or oracle field takes the keyboard; nothing else needs it.
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.OnDemand
 
-    Rectangle {
+    ScaledViewport {
+      id: tableViewport
+      objectName: "tableViewport"
+      anchors.fill: parent
+      factor: root.tableScale
+    }
+    // Both faces stay mounted in the Table's scaled canvas. Flipping does not
+    // change the native window, workspace pin, scroll position or game state.
+    Flipable {
+      id: tableFlip
+      objectName: "tableFlip"
+      parent: tableViewport.canvas
       anchors.fill: parent
       anchors.margins: Style.gapsOut
-      color: Color.popups.background
+      readonly property bool flipping: flipAnimation.running
+      onSideChanged: Qt.callLater(root.focusSettingsFace)
+      front: tableSurface
+      back: settingsSurface
+      transform: Rotation {
+        origin.x: tableFlip.width / 2
+        origin.y: tableFlip.height / 2
+        axis { x: 0; y: 1; z: 0 }
+        angle: root.settingsOpen ? 180 : 0
+        Behavior on angle {
+          NumberAnimation {
+            id: flipAnimation
+            duration: root.reducedMotion ? 0 : 350
+            easing.type: Easing.InOutCubic
+            onRunningChanged: if (!running) Qt.callLater(root.focusSettingsFace)
+          }
+        }
+      }
+    }
+    Rectangle {
+      id: tableSurface
+      objectName: "tableSurface"
+      anchors.fill: parent
+      color: Shell.Color.popups.background
       border.width: 1
-      border.color: Color.popups.border
+      border.color: Shell.Color.popups.border
       radius: Style.cornerRadius
+      visible: tableFlip.side === Flipable.Front
+      Keys.onEscapePressed: root.close()
 
+      ColumnLayout {
+        id: tableHeader
+        objectName: "tableHeader"
+        enabled: !root.settingsOpen && !tableFlip.flipping
+        anchors { left: parent.left; right: parent.right; top: parent.top; margins: Style.space(12) }
+        spacing: Style.space(8)
+        RowLayout {
+          id: headerControls
+          objectName: "tableHeaderControls"
+          readonly property real iconTarget: Math.max(Style.space(28), pinButton.implicitWidth, pinButton.implicitHeight,
+                                                      settingsButton.implicitWidth, settingsButton.implicitHeight,
+                                                      closeButton.implicitWidth, closeButton.implicitHeight)
+          Layout.fillWidth: true
+          spacing: Style.space(6)
+          HeaderChoice {
+            objectName: "tableCampaignsButton"
+            visible: root.view === "table"
+            text: "Campaigns"
+            onClicked: root.show("home")
+          }
+          HeaderChoice {
+            objectName: "tableBackButton"
+            visible: root.view === "new"
+            text: "Back"
+            onClicked: root.show("home")
+          }
+          Item { Layout.fillWidth: true }
+          HeaderChoice {
+            id: settingsButton
+            objectName: "tableSettingsButton"
+            Layout.minimumWidth: headerControls.iconTarget
+            Layout.minimumHeight: headerControls.iconTarget
+            Layout.preferredWidth: headerControls.iconTarget
+            text: String.fromCodePoint(0xF0493)
+            fontFamily: "Symbols Nerd Font"
+            fontSize: Style.font.title
+            horizontalPadding: Style.space(4)
+            Accessible.name: "Open Table settings"
+            tooltipText: "Settings"
+            onClicked: root.openSettings()
+          }
+          HeaderChoice {
+            id: pinButton
+            objectName: "workspacePinButton"
+            Layout.minimumWidth: headerControls.iconTarget
+            Layout.minimumHeight: headerControls.iconTarget
+            Layout.preferredWidth: headerControls.iconTarget
+            text: String.fromCodePoint(workspacePin.pinned ? 0xF0403 : 0xF0931)
+            fontFamily: "Symbols Nerd Font"
+            fontSize: Style.font.title
+            horizontalPadding: Style.space(4)
+            Accessible.name: workspacePin.pinned ? "Unpin Table from workspace" : "Pin Table to workspace"
+            selected: workspacePin.pinned
+            enabled: workspacePin.pinned || workspacePin.current !== null
+            tooltipText: workspacePin.pinned ? "Pinned to workspace " + workspacePin.workspaceId + ". Click to unpin."
+                                              : "Keep the Table on this workspace"
+            onClicked: workspacePin.togglePin()
+          }
+          HeaderChoice {
+            id: closeButton
+            objectName: "tableCloseButton"
+            Layout.minimumWidth: headerControls.iconTarget
+            Layout.minimumHeight: headerControls.iconTarget
+            Layout.preferredWidth: headerControls.iconTarget
+            text: "×"
+            fontSize: Style.font.title
+            horizontalPadding: Style.space(4)
+            Accessible.name: "Close Table"
+            tooltipText: "Close (Esc)"
+            onClicked: root.close()
+          }
+        }
+        Line {
+          objectName: "tableHeaderTitle"
+          Layout.minimumWidth: 0
+          Layout.preferredWidth: 0
+          text: root.view === "new" ? "New adventure" : root.view === "table" && root.game ? root.game.title : "oma-solorpg"
+          size: Style.font.heading
+          font.bold: true
+        }
+      }
       Flickable {
-        anchors.fill: parent
-        anchors.margins: Style.space(12)
+        id: tableScroll
+        objectName: "tableScroll"
+        enabled: !root.settingsOpen && !tableFlip.flipping
+        anchors { left: parent.left; right: parent.right; top: tableHeader.bottom; bottom: parent.bottom; margins: Style.space(12) }
         contentHeight: column.implicitHeight
         boundsBehavior: Flickable.StopAtBounds
         clip: true
         focus: true
-        Keys.onEscapePressed: root.close()
-
         ColumnLayout {
           id: column
           width: parent.width
           spacing: Style.space(6)
-
-          // Header ------------------------------------------------------------------
-
-          // Navigation and window controls never compete with the campaign's name.
-          ColumnLayout {
-            objectName: "tableHeader"
-            Layout.fillWidth: true
-            Layout.minimumWidth: 0
-            spacing: Style.space(8)
-
-            RowLayout {
-              id: headerControls
-              objectName: "tableHeaderControls"
-              readonly property real iconTarget: Math.max(Style.space(28), pinButton.implicitWidth, pinButton.implicitHeight,
-                                                          closeButton.implicitWidth, closeButton.implicitHeight)
-              Layout.fillWidth: true
-              spacing: Style.space(6)
-
-              HeaderChoice {
-                objectName: "tableCampaignsButton"
-                visible: root.view === "table"
-                text: "Campaigns"
-                onClicked: root.show("home")
-              }
-
-              HeaderChoice {
-                objectName: "tableBackButton"
-                visible: root.view === "new"
-                text: "Back"
-                onClicked: root.show("home")
-              }
-
-              Item { Layout.fillWidth: true }
-
-              HeaderChoice {
-                id: pinButton
-                objectName: "workspacePinButton"
-                Layout.minimumWidth: headerControls.iconTarget
-                Layout.minimumHeight: headerControls.iconTarget
-                Layout.preferredWidth: headerControls.iconTarget
-                text: String.fromCodePoint(workspacePin.pinned ? 0xF0403 : 0xF0931) // nf-md-pin / nf-md-pin_outline
-                fontFamily: "Symbols Nerd Font"
-                fontSize: Style.font.title
-                horizontalPadding: Style.space(4)
-                Accessible.name: workspacePin.pinned ? "Unpin Table from workspace" : "Pin Table to workspace"
-                selected: workspacePin.pinned
-                enabled: workspacePin.pinned || workspacePin.current !== null
-                tooltipText: workspacePin.pinned ? "Pinned to workspace " + workspacePin.workspaceId + ". Click to unpin."
-                                                  : "Keep the Table on this workspace"
-                onClicked: workspacePin.togglePin()
-              }
-
-              HeaderChoice {
-                id: closeButton
-                objectName: "tableCloseButton"
-                Layout.minimumWidth: headerControls.iconTarget
-                Layout.minimumHeight: headerControls.iconTarget
-                Layout.preferredWidth: headerControls.iconTarget
-                text: "×"
-                fontSize: Style.font.title
-                horizontalPadding: Style.space(4)
-                Accessible.name: "Close Table"
-                tooltipText: "Close (Esc)"
-                onClicked: root.close()
-              }
-            }
-
-            Line {
-              objectName: "tableHeaderTitle"
-              Layout.minimumWidth: 0
-              Layout.preferredWidth: 0
-              text: root.view === "new" ? "New adventure" : root.view === "table" && root.game ? root.game.title : "oma-solorpg"
-              size: Style.font.heading
-              font.bold: true
-            }
-          }
 
           // Home --------------------------------------------------------------------
 
@@ -1448,7 +1606,7 @@ Item {
                   visible: root.deleting === modelData.path
                   Layout.topMargin: Style.space(4)
                   size: Style.font.bodySmall
-                  color: Color.urgent
+                  color: Shell.Color.urgent
                   text: "Delete this campaign for good? The story, " + (modelData.hero || "the hero") + " and the whole log go with it"
                         + (modelData.dead ? ", and " + modelData.hero + " leaves the Hall of the Fallen." : ".")
                 }
@@ -1457,7 +1615,7 @@ Item {
                   spacing: Style.space(4)
                   Choice {
                     text: action.running && root.errorAt === "home" ? "Deleting…" : "Delete for good"
-                    foreground: Color.urgent
+                    foreground: Shell.Color.urgent
                     enabled: !action.running
                     onClicked: {
                       var wasCurrent = modelData.current
@@ -1567,7 +1725,7 @@ Item {
 
             Line {
               visible: root.adventure !== null && root.system === null
-              color: Color.urgent
+              color: Shell.Color.urgent
               size: Style.font.bodySmall
               text: "This adventure's system pack isn't installed, or its rules aren't built from your books yet (make dragonbane)."
             }
@@ -1865,7 +2023,7 @@ Item {
             // At 0 HP only the death roll is left to click (or, alone, rallying and saving yourself).
             Line {
               visible: root.atZero
-              color: Color.urgent
+              color: Shell.Color.urgent
               font.bold: true
               text: root.atZero && root.labels.dying ? root.pc.name + " is dying: " + root.pc.dying.successes + " of " + root.labels.dying.rally
                 + " successes, " + root.pc.dying.failures + " of " + root.labels.dying.die + " failures. Any hit is a failure." : ""
@@ -2557,7 +2715,7 @@ Item {
 
             Line {
               visible: root.fight !== null && !!root.fight.incoming
-              color: Color.urgent
+              color: Shell.Color.urgent
               font.bold: true
               text: root.fight && root.fight.incoming ? root.fight.incoming.name + " hits: " + root.fight.incoming.damage
                 + " damage" + (root.kit.armor ? ", armor " + root.kit.armor : "") : ""
@@ -2660,7 +2818,7 @@ Item {
 
               Line {
                 size: Style.font.bodySmall
-                color: root.game && root.game.dark && !root.game.light ? Color.urgent : root.textColor
+                color: root.game && root.game.dark && !root.game.light ? Shell.Color.urgent : root.textColor
                 text: root.game && root.game.light ? root.game.light.label + ": " + root.hours(root.game.light.left) + " left"
                   : root.game && root.game.dark ? "It is dark here." : "No light burning."
               }
@@ -2772,7 +2930,7 @@ Item {
                       width: Style.space(14)
                       height: Style.space(6)
                       radius: 2
-                      color: index < clockRow.modelData.value ? Color.urgent : root.faint
+                      color: index < clockRow.modelData.value ? Shell.Color.urgent : root.faint
                     }
                   }
                 }
@@ -2825,7 +2983,7 @@ Item {
             Line {
               visible: root.game !== null && !!root.game.load
               size: Style.font.bodySmall
-              color: root.game && root.game.load && root.game.load.over ? Color.urgent : root.dim
+              color: root.game && root.game.load && root.game.load.over ? Shell.Color.urgent : root.dim
               text: root.game && root.game.load ? "Carrying " + root.game.load.carried + " of " + root.game.load.capacity + (root.game.load.over ? ": over the load" : "") : ""
             }
 
@@ -2878,64 +3036,40 @@ Item {
               }
             }
 
-            // Settings, not play: last, and folded.
-
-            // Only the Book's GM runs at a pace; an agent in a terminal keeps its own settings.
-            Fold { id: paceFold; label: "GM pace"; visible: root.agentInfo.book !== false }
-
-            Flow {
-              Layout.fillWidth: true
-              spacing: Style.space(4)
-              visible: paceFold.visible && paceFold.open
-
-              Repeater {
-                model: [["quick", "Quick"], ["normal", "Normal"], ["careful", "Careful"]]
-                delegate: Choice {
-                  required property var modelData
-                  text: modelData[1]
-                  selected: root.pace === modelData[0]
-                  tooltipText: ({
-                    quick: "The GM answers sooner and spends fewer tokens",
-                    normal: "The GM thinks a little before it answers",
-                    careful: "The GM thinks longer about the rules: slower, and more tokens",
-                  })[modelData[0]]
-                  onClicked: root.run(["gm", "pace", modelData[0]], "pace", () => root.ask("pace", ["gm", "pace"]))
-                }
-              }
-            }
-
-            ErrorLine { place: "pace" }
-
-            Fold { id: effectsFold; label: "Desktop effects" }
-
-            Flow {
-              Layout.fillWidth: true
-              spacing: Style.space(4)
-              visible: effectsFold.open
-
-              Repeater {
-                model: [["borders", "Borders"], ["screen", "Screen"], ["sound", "Sound"], ["candle", "Candlelight"], ["omens", "Omens"], ["screensaver", "Screensaver"]]
-                delegate: Choice {
-                  required property var modelData
-                  text: modelData[1]
-                  selected: root.effects[modelData[0]] !== false
-                  tooltipText: ({
-                    borders: "Dragons flash the window borders gold, Demons red; dying holds them red",
-                    screen: "The whole screen answers: gold for a Dragon, red for a Demon or a blow, a red rim while dying, grey at death",
-                    sound: "Dice, bells, drums and heartbeats, in time with the Book",
-                    candle: "Warm the whole screen while the Book is open (off by default)",
-                    omens: "What the hidden clocks stir up arrives as a notification",
-                    screensaver: "The screensaver shows your hero while the Book is open",
-                  })[modelData[0]]
-                  onClicked: root.run(["desk", "settings", modelData[0] + "=" + (selected ? "off" : "on")], "effects",
-                                      () => root.ask("effects", ["desk", "settings"]))
-                }
-              }
-            }
-
-            ErrorLine { place: "effects" }
           }
         }
+      }
+    }
+    Rectangle {
+      id: settingsSurface
+      objectName: "settingsSurface"
+      anchors.fill: parent
+      color: Shell.Color.popups.background
+      border.width: 1
+      border.color: Shell.Color.popups.border
+      radius: Style.cornerRadius
+      visible: tableFlip.side === Flipable.Back
+      SettingsView {
+        id: settingsView
+        anchors.fill: parent
+        anchors.margins: Style.space(12)
+        enabled: root.settingsOpen && !tableFlip.flipping
+        theme: theme
+        bookScale: root.bookScale
+        tableScale: root.tableScale
+        scaleBusy: root.scaleBusy
+        scaleTarget: root.scaleTarget
+        scaleError: root.scaleError
+        onScaleRequested: (target, value) => root.setUiScale(target, value)
+        pace: root.pace
+        effects: root.effects
+        bookSupported: root.agentInfo.book !== false
+        busy: action.running || query.running
+        errorPlace: root.errorAt
+        errorText: root.error
+        onDismissed: root.settingsOpen = false
+        onPaceRequested: value => root.setPace(value)
+        onEffectRequested: (name, on) => root.setEffect(name, on)
       }
     }
   }

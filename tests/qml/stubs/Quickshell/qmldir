@@ -1,0 +1,2 @@
+module Quickshell
+# Types are registered by panel_check.py, never loaded from a desktop plugin.

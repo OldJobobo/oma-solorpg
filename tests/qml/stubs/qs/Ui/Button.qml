@@ -1,5 +1,6 @@
 import QtQuick
 import qs.Commons
+import qs.Commons as Shell
 
 // Stand-in for omarchy-shell's Button: the properties the plugin sets, drawn simply.
 Rectangle {
@@ -9,7 +10,7 @@ Rectangle {
   property bool selected: false
   property bool bordered: false
   property bool focusable: false
-  property color foreground: Color.foreground
+  property color foreground: Shell.Color.foreground
   property string fontFamily: Style.font.family
   property real fontSize: Style.font.body
   property real horizontalPadding: 8
@@ -24,7 +25,7 @@ Rectangle {
   radius: 3
   color: selected ? Qt.rgba(foreground.r, foreground.g, foreground.b, 0.15) : "transparent"
   border.width: bordered ? 1 : 0
-  border.color: selected ? Color.accent : Qt.rgba(foreground.r, foreground.g, foreground.b, 0.3)
+  border.color: selected ? Shell.Color.accent : Qt.rgba(foreground.r, foreground.g, foreground.b, 0.3)
   Text {
     id: label
     anchors.centerIn: parent
