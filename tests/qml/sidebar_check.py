@@ -34,6 +34,7 @@ def main(out):
     app = QGuiApplication(sys.argv)
     view = QQuickView()
     view.setResizeMode(QQuickView.ResizeMode.SizeRootObjectToView)
+    view.engine().addImportPath(str(HERE / "stubs"))
     problems = []
     view.engine().warnings.connect(lambda warnings: problems.extend(w.toString() for w in warnings))
     view.setSource(QUrl.fromLocalFile(str(HERE / "Harness.qml")))
@@ -43,7 +44,7 @@ def main(out):
     view.show()
     root = view.rootObject()
     assert root is not None
-    theme = root.findChild(QObject, "theme")
+    theme = root.findChild(QObject, "soloTheme")
     side = root.findChild(QObject, "bookSidebar")
     story = root.findChild(QObject, "bookStory")
     vitals = root.findChild(QObject, "bookVitals")

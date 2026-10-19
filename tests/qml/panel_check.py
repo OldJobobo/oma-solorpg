@@ -220,7 +220,7 @@ def main(out):
     # The campaign (its hero died) is the current one, so Home lists it and the Hall remembers the hero.
     plugin = work / "plugin"
     plugin.mkdir()
-    for name in ("book", "bin", "solo", "packs", "examples", "skills", "templates", "WorkspacePin.qml"):
+    for name in ("book", "bin", "solo", "packs", "examples", "skills", "templates", "Theme.qml", "WorkspacePin.qml"):
         (plugin / name).symlink_to(REPO / name)
     (plugin / "Panel.qml").write_text(LAYER_SHELL.sub("", (REPO / "Panel.qml").read_text()).replace(EDGES, f"width: 360; height: {HEIGHT}"))
     shutil.copy(REPO / "BarWidget.qml", plugin / "BarWidget.qml")
