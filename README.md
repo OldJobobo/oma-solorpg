@@ -154,6 +154,10 @@ The GM runs headless: `solo gm turn` drives Claude Code or Codex one turn at a t
 
 A GM turn is held in code, not only by the GM's instructions. Claude Code gets two tools, Bash and Read, and Bash may run only the GM's own `solo` commands; a recent Claude Code also runs with `--restricted` and `--permission-mode dontAsk`, so none of your own Claude Code settings or allow rules reach the GM. Codex's sandbox keeps the GM inside the campaign folder, but Codex has no list of allowed commands, so untrusted adventure text is held back less under Codex than under Claude Code. Every turn has a time limit, and every GM session a spending limit (`solo gm budget`), counted in `~/.local/state/solo`, outside the campaign folder the GM can write. The commands that are yours alone (`solo strike`, `solo prefs`, and setting the budget or the pace) refuse to run inside a GM turn.
 
+### Following your Omarchy theme
+
+The Table follows the shell's complete popup border treatment, including gradients and per-side widths. The Book's links and writing fields follow the shell's normal, hover, focus, pressed, selected and text-selection styles; links are keyboard accessible too. Muted labels and placeholders use the theme's muted color, with a contrast guard for readable text on dark and light surfaces. Error text has its own readable ink without changing the underlying effect colors. The Book keeps its serif prose, and the RPG's fixed gold, border flashes and screen effects stay unchanged.
+
 ## The desktop joins in
 
 While a game is on, Omarchy plays along:

@@ -135,8 +135,8 @@ Item {
     ? (library.adventures.filter(a => a.id === root.pickedAdventure)[0] || library.adventures[0]) : null
   readonly property var system: adventure ? library.systems.filter(s => s.id === adventure.system)[0] || null : null
 
-  readonly property color textColor: Color.popups.text
-  readonly property color dim: Qt.darker(Color.popups.text, 1.6)
+  readonly property color textColor: theme.text
+  readonly property color dim: theme.dim
   readonly property color faint: Qt.rgba(textColor.r, textColor.g, textColor.b, 0.15)
 
   function open(payloadJson) {
@@ -766,8 +766,8 @@ Item {
 
   function rollColor() {
     var outcome = root.lastCheck ? root.lastCheck.outcome : null
-    return outcome && outcome.dragon ? theme.gold : outcome && !outcome.success ? Color.urgent
-      : outcome && (outcome.successes > 1 || outcome.hit === "strong_hit") ? Color.accent : root.textColor
+    return outcome && outcome.dragon ? theme.gold : outcome && !outcome.success ? theme.urgentText
+      : outcome && (outcome.successes > 1 || outcome.hit === "strong_hit") ? theme.accentText : root.textColor
   }
 
   function visibleClocks() {
@@ -835,28 +835,7 @@ Item {
     }
   }
 
-  // Omarchy's theme, in the words the Book uses. The Book is plain QtQuick and reads only this.
-  QtObject {
-    id: theme
-    readonly property color text: Color.popups.text
-    readonly property color dim: root.dim
-    readonly property color faint: Qt.rgba(text.r, text.g, text.b, 0.22)
-    readonly property color background: Color.popups.background
-    readonly property color surface: Qt.tint(Color.popups.background, Qt.rgba(text.r, text.g, text.b, 0.05))
-    readonly property color accent: Color.accent
-    readonly property color urgent: Color.urgent
-    // Dragons and candlelight: one warm gold that reads on dark and light themes alike.
-    readonly property color gold: "#d9a441"
-    readonly property string mono: Style.font.family
-    readonly property string serif: "serif"
-    readonly property real small: Style.font.bodySmall
-    readonly property real body: Style.font.body
-    readonly property real prose: Math.round(Style.font.body * 1.5)
-    readonly property real title: Style.font.title
-    readonly property real heading: Math.round(Style.font.heading * 1.2)
-    readonly property real display: Style.font.display
-    readonly property real radius: Style.cornerRadius
-  }
+  Theme { id: theme }
 
   // The Book: a normal window, so Hyprland tiles it beside the Table.
   FloatingWindow {
@@ -967,7 +946,7 @@ Item {
   component ErrorLine: Line {
     property string place: ""
     visible: root.error !== "" && root.errorAt === place
-    color: Color.urgent
+    color: theme.urgentText
     size: Style.font.bodySmall
     text: root.error
   }
@@ -1254,12 +1233,12 @@ Item {
     // Clicking the name or oracle field takes the keyboard; nothing else needs it.
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.OnDemand
 
-    Rectangle {
+    BorderSurface {
+      objectName: "tableSurface"
       anchors.fill: parent
       anchors.margins: Style.gapsOut
       color: Color.popups.background
-      border.width: 1
-      border.color: Color.popups.border
+      borderSpec: Border.surfaceSpec("popups", "border", Color.popups.border, Math.max(1, Style.space(2)))
       radius: Style.cornerRadius
 
       Flickable {
@@ -1370,7 +1349,7 @@ Item {
                   visible: root.deleting === modelData.path
                   Layout.topMargin: Style.space(4)
                   size: Style.font.bodySmall
-                  color: Color.urgent
+                  color: theme.urgentText
                   text: "Delete this campaign for good? The story, " + (modelData.hero || "the hero") + " and the whole log go with it"
                         + (modelData.dead ? ", and " + modelData.hero + " leaves the Hall of the Fallen." : ".")
                 }
@@ -1379,7 +1358,7 @@ Item {
                   spacing: Style.space(4)
                   Choice {
                     text: action.running && root.errorAt === "home" ? "Deleting…" : "Delete for good"
-                    foreground: Color.urgent
+                    foreground: theme.urgentText
                     enabled: !action.running
                     onClicked: {
                       var wasCurrent = modelData.current
@@ -1489,7 +1468,7 @@ Item {
 
             Line {
               visible: root.adventure !== null && root.system === null
-              color: Color.urgent
+              color: theme.urgentText
               size: Style.font.bodySmall
               text: "This adventure's system pack isn't installed, or its rules aren't built from your books yet (make dragonbane)."
             }
@@ -1787,7 +1766,7 @@ Item {
             // At 0 HP only the death roll is left to click (or, alone, rallying and saving yourself).
             Line {
               visible: root.atZero
-              color: Color.urgent
+              color: theme.urgentText
               font.bold: true
               text: root.atZero && root.labels.dying ? root.pc.name + " is dying: " + root.pc.dying.successes + " of " + root.labels.dying.rally
                 + " successes, " + root.pc.dying.failures + " of " + root.labels.dying.die + " failures. Any hit is a failure." : ""
@@ -2479,7 +2458,7 @@ Item {
 
             Line {
               visible: root.fight !== null && !!root.fight.incoming
-              color: Color.urgent
+              color: theme.urgentText
               font.bold: true
               text: root.fight && root.fight.incoming ? root.fight.incoming.name + " hits: " + root.fight.incoming.damage
                 + " damage" + (root.kit.armor ? ", armor " + root.kit.armor : "") : ""
@@ -2582,7 +2561,7 @@ Item {
 
               Line {
                 size: Style.font.bodySmall
-                color: root.game && root.game.dark && !root.game.light ? Color.urgent : root.textColor
+                color: root.game && root.game.dark && !root.game.light ? theme.urgentText : root.textColor
                 text: root.game && root.game.light ? root.game.light.label + ": " + root.hours(root.game.light.left) + " left"
                   : root.game && root.game.dark ? "It is dark here." : "No light burning."
               }
@@ -2747,7 +2726,7 @@ Item {
             Line {
               visible: root.game !== null && !!root.game.load
               size: Style.font.bodySmall
-              color: root.game && root.game.load && root.game.load.over ? Color.urgent : root.dim
+              color: root.game && root.game.load && root.game.load.over ? theme.urgentText : root.dim
               text: root.game && root.game.load ? "Carrying " + root.game.load.carried + " of " + root.game.load.capacity + (root.game.load.over ? ": over the load" : "") : ""
             }
 

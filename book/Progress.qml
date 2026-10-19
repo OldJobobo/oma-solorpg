@@ -39,7 +39,7 @@ Column {
         textFormat: Text.PlainText
         font.family: tracks.theme.mono
         font.pixelSize: tracks.theme.small
-        color: tracks.theme.accent
+        color: tracks.theme.accentText
         text: tracks.boxes(track.ticks) + "  " + Math.floor(track.ticks / tracks.spec.ticks) + " of " + tracks.spec.boxes
       }
     }

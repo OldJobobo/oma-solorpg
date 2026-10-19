@@ -40,8 +40,8 @@ Item {
   function verdictColor(outcome) {
     if (!outcome) return theme.text
     if (outcome.dragon) return theme.gold
-    if (outcome.demon || !outcome.success) return theme.urgent
-    return theme.accent
+    if (outcome.demon || !outcome.success) return theme.urgentText
+    return theme.accentText
   }
 
   Component {
@@ -143,7 +143,7 @@ Item {
           font.family: entry.theme.mono
           font.pixelSize: entry.theme.small
           font.letterSpacing: 1.5
-          color: entry.theme.accent
+          color: entry.theme.accentText
           text: (entry.beat.label || "").toUpperCase() + "  [" + (entry.beat.outcome ? entry.beat.outcome.target : "") + "]  "
             + (entry.beat.outcome && entry.beat.outcome.dragon ? "DRAGON" : "SUCCESS")
             + (entry.seeded() ? "  " + entry.seeded().toUpperCase() : "")
@@ -244,7 +244,7 @@ Item {
       wrapMode: Text.Wrap
       font.family: entry.theme.mono
       font.pixelSize: entry.theme.small
-      color: entry.kind === "hurt" ? entry.theme.urgent : entry.kind === "hit" ? entry.theme.accent : entry.theme.dim
+      color: entry.kind === "hurt" ? entry.theme.urgentText : entry.kind === "hit" ? entry.theme.accentText : entry.theme.dim
       text: (entry.kind === "hurt" ? "→ " : entry.kind === "hit" ? "⚔ " : "← ") + (entry.beat.text || "") + (entry.seeded() ? " · " + entry.seeded() : "")
     }
   }
