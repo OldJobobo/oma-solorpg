@@ -6,6 +6,7 @@ import "Md.js" as Md
 Item {
   id: entry
   property var theme
+  property BookTextSelection selectionController: null
   property var beat: ({})
   property bool opensScene: false   // the GM's first words in a scene get an illuminated initial
 
@@ -44,9 +45,15 @@ Item {
     return theme.accent
   }
 
+  component Passage: SelectableText {
+    objectName: "storyPassage"
+    theme: entry.theme
+    selectionController: entry.selectionController
+  }
+
   Component {
     id: narration
-    Text {
+    Passage {
       textFormat: Text.RichText
       wrapMode: Text.Wrap
       color: entry.theme.text
@@ -66,7 +73,7 @@ Item {
         height: said.height
         color: entry.theme.faint
       }
-      Text {
+      Passage {
         id: said
         x: entry.theme.body
         width: parent.width - x
@@ -86,7 +93,7 @@ Item {
     id: roll
     Row {
       spacing: entry.theme.body * 0.6
-      Text {
+      Passage {
         textFormat: Text.PlainText
         font.family: entry.theme.mono
         font.pixelSize: entry.theme.body * 1.4
@@ -95,7 +102,7 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
       }
       Column {
-        Text {
+        Passage {
           textFormat: Text.StyledText
           font.family: entry.theme.mono
           font.pixelSize: entry.theme.body
@@ -105,7 +112,7 @@ Item {
             + (entry.beat.outcome && entry.beat.outcome.hit !== undefined ? "  " + entry.beat.outcome.score + " vs " + entry.beat.outcome.challenge.join(" · ") : "")
             + "  <span style=\"color:" + entry.verdictColor(entry.beat.outcome) + "\">" + entry.verdict(entry.beat.outcome) + "</span>"
         }
-        Text {
+        Passage {
           visible: text !== ""
           textFormat: Text.PlainText
           font.family: entry.theme.mono
@@ -138,7 +145,7 @@ Item {
         x: entry.theme.body
         width: parent.width - x
         spacing: 2
-        Text {
+        Passage {
           textFormat: Text.PlainText
           font.family: entry.theme.mono
           font.pixelSize: entry.theme.small
@@ -148,7 +155,7 @@ Item {
             + (entry.beat.outcome && entry.beat.outcome.dragon ? "DRAGON" : "SUCCESS")
             + (entry.seeded() ? "  " + entry.seeded().toUpperCase() : "")
         }
-        Text {
+        Passage {
           width: parent.width
           textFormat: Text.PlainText
           wrapMode: Text.Wrap
@@ -165,7 +172,7 @@ Item {
 
   Component {
     id: omen
-    Text {
+    Passage {
       horizontalAlignment: Text.AlignHCenter
       textFormat: Text.PlainText
       wrapMode: Text.Wrap
@@ -185,7 +192,7 @@ Item {
     Column {
       spacing: 4
       topPadding: entry.theme.body
-      Text {
+      Passage {
         width: parent.width
         horizontalAlignment: Text.AlignHCenter
         textFormat: Text.PlainText
@@ -194,7 +201,7 @@ Item {
         color: entry.theme.faint
         text: "─".repeat(8) + "  ✦  " + "─".repeat(8)
       }
-      Text {
+      Passage {
         width: parent.width
         horizontalAlignment: Text.AlignHCenter
         textFormat: Text.PlainText
@@ -213,7 +220,7 @@ Item {
     Column {
       spacing: 6
       topPadding: entry.theme.body
-      Text {
+      Passage {
         width: parent.width
         horizontalAlignment: Text.AlignHCenter
         textFormat: Text.PlainText
@@ -223,7 +230,7 @@ Item {
         color: entry.theme.gold
         text: "The End"
       }
-      Text {
+      Passage {
         width: parent.width
         horizontalAlignment: Text.AlignHCenter
         textFormat: Text.PlainText
@@ -239,7 +246,7 @@ Item {
 
   Component {
     id: blow
-    Text {
+    Passage {
       textFormat: Text.PlainText
       wrapMode: Text.Wrap
       font.family: entry.theme.mono
@@ -251,7 +258,7 @@ Item {
 
   Component {
     id: oracle
-    Text {
+    Passage {
       textFormat: Text.PlainText
       wrapMode: Text.Wrap
       font.family: entry.theme.mono
@@ -263,7 +270,7 @@ Item {
 
   Component {
     id: note
-    Text {
+    Passage {
       textFormat: Text.PlainText
       wrapMode: Text.Wrap
       font.family: entry.theme.mono

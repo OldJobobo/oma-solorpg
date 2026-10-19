@@ -32,6 +32,14 @@ Item {
   signal openTable()
   signal openTerminal()
 
+  BookTextSelection { id: textSelection; objectName: "bookTextSelection" }
+
+  component Passage: SelectableText {
+    objectName: "bookPassage"
+    theme: book.theme
+    selectionController: textSelection
+  }
+
   // Blur, glow and particles need the GPU. Qt Quick's software renderer can't draw them,
   // and would draw nothing where they are: without it every effect steps aside.
   readonly property bool gpu: GraphicsInfo.api !== GraphicsInfo.Software
@@ -50,6 +58,7 @@ Item {
   // Another campaign's story is numbered from its own start: what this one had seen means
   // nothing there, and would hold back its dice and scene cards until it caught up.
   onCampaignChanged: {
+    textSelection.clear()
     seen = -1
     epitaphDismissed = false
     codexOpen = false
@@ -393,6 +402,7 @@ Item {
 
           ListView {
             id: storyView
+            objectName: "bookStoryView"
             anchors.fill: parent
             clip: true
             spacing: 0
@@ -407,6 +417,7 @@ Item {
               required property bool opens
               width: storyView.width - book.theme.body
               theme: book.theme
+              selectionController: textSelection
               beat: JSON.parse(json)
               opensScene: opens
             }
@@ -417,7 +428,7 @@ Item {
               topPadding: book.theme.body * 0.5
 
               // The player's words, while the GM is answering them.
-              Text {
+              Passage {
                 visible: book.busy && (book.turn.player || "") !== "" && !book.story.some(b => b.kind === "player" && b.text === book.turn.player)
                 width: parent.width
                 wrapMode: Text.Wrap
@@ -430,8 +441,9 @@ Item {
               }
 
               // The GM writing: its words appear as they come, at a pace that reads like writing.
-              Text {
+              Passage {
                 id: live
+                objectName: "livePassage"
                 property int shown: 0
                 readonly property string full: book.busy ? (book.turn.text || "") : ""
                 visible: full !== ""
@@ -442,7 +454,17 @@ Item {
                 font.family: book.theme.serif
                 font.pixelSize: book.theme.prose
                 lineHeight: 1.3
-                text: Md.render(full.slice(0, shown), book.theme.mono, "") + (shown < full.length ? "<span style=\"color:" + book.theme.accent + "\">▌</span>" : "")
+                text: Md.render(full.slice(0, shown), book.theme.mono, "")
+                // The cursor is decoration, never part of the copied passage.
+                Text {
+                  visible: live.shown < live.full.length
+                  x: live.endRectangle.x
+                  y: live.endRectangle.y
+                  textFormat: Text.PlainText
+                  font: live.font
+                  color: book.theme.accent
+                  text: "▌"
+                }
                 onFullChanged: if (full.length < shown) shown = 0
                 Timer {
                   interval: 16
@@ -467,7 +489,7 @@ Item {
               Row {
                 visible: book.turn.status === "error" || book.turn.status === "stopped"
                 spacing: book.theme.body
-                Text {
+                Passage {
                   textFormat: Text.PlainText
                   font.family: book.theme.mono
                   font.pixelSize: book.theme.small
@@ -480,7 +502,13 @@ Item {
 
             // A new beat brings the page back down to it, unless the player has scrolled far up to reread.
             function follow() {
-              if (atYEnd || Math.abs(contentY - originY - contentHeight + height) < book.theme.body * 30) Qt.callLater(positionViewAtBeginning)
+              if (textSelection.engaged) return
+              if (atYEnd || Math.abs(contentY - originY - contentHeight + height) < book.theme.body * 30) followStory.restart()
+            }
+            Timer {
+              id: followStory
+              interval: 0
+              onTriggered: if (!textSelection.engaged) storyView.positionViewAtBeginning()
             }
           }
 
@@ -541,6 +569,7 @@ Item {
               font.pixelSize: book.theme.prose
               color: book.theme.text
               selectionColor: book.theme.accent
+              onActiveFocusChanged: if (activeFocus) textSelection.clear()
               clip: true
               Keys.onEscapePressed: book.cutting = false
               Keys.onReturnPressed: book.cutIt("")
@@ -590,6 +619,7 @@ Item {
 
               TextEdit {
                 id: input
+                objectName: "bookInput"
                 width: inputFlick.width
                 wrapMode: TextEdit.Wrap
                 textFormat: TextEdit.PlainText
@@ -597,6 +627,7 @@ Item {
                 font.pixelSize: book.theme.prose
                 color: book.theme.text
                 selectionColor: book.theme.accent
+                onActiveFocusChanged: if (activeFocus) textSelection.clear()
                 focus: true
                 Keys.onReturnPressed: event => {
                   if (event.modifiers & Qt.ShiftModifier) event.accepted = false
@@ -668,10 +699,12 @@ Item {
   // Overlays ------------------------------------------------------------------------------
 
   Codex {
+    objectName: "bookCodex"
     anchors { top: parent.top; right: parent.right; bottom: parent.bottom; margins: book.theme.body }
     width: Math.min(parent.width * 0.55, book.theme.body * 46)
     visible: book.codexOpen
     theme: book.theme
+    selectionController: textSelection
     game: book.game
     onClosed: book.codexOpen = false
   }

@@ -6,6 +6,7 @@ import QtQuick
 Rectangle {
   id: codex
   property var theme
+  property BookTextSelection selectionController: null
   property var game: null
   signal closed()
 
@@ -16,6 +17,12 @@ Rectangle {
   border.width: 1
   border.color: theme.faint
   radius: theme.radius
+
+  component Passage: SelectableText {
+    objectName: "codexPassage"
+    theme: codex.theme
+    selectionController: codex.selectionController
+  }
 
   MouseArea { anchors.fill: parent }  // clicks stay in the codex
 
@@ -34,7 +41,7 @@ Rectangle {
 
       Row {
         width: parent.width
-        Text {
+        Passage {
           width: parent.width - close.width
           textFormat: Text.PlainText
           font.family: codex.theme.serif
@@ -54,7 +61,7 @@ Rectangle {
         }
       }
 
-      Text {
+      Passage {
         visible: codex.people.length === 0
         width: parent.width
         wrapMode: Text.Wrap
@@ -74,7 +81,7 @@ Rectangle {
           width: column.width
           spacing: codex.theme.body
 
-          Text {
+          Passage {
             id: face
             textFormat: Text.PlainText
             font.family: codex.theme.mono
@@ -87,7 +94,7 @@ Rectangle {
             width: person.width - face.width - person.spacing
             spacing: 3
 
-            Text {
+            Passage {
               width: parent.width
               wrapMode: Text.Wrap
               textFormat: Text.PlainText
@@ -97,7 +104,7 @@ Rectangle {
               color: codex.theme.text
               text: modelData.name + (modelData.fate !== "alive" ? " (" + modelData.fate + ")" : "")
             }
-            Text {
+            Passage {
               width: parent.width
               wrapMode: Text.Wrap
               textFormat: Text.PlainText
@@ -108,7 +115,7 @@ Rectangle {
             }
             Repeater {
               model: ["wants", "fears"].filter(k => person.modelData.known[k])
-              delegate: Text {
+              delegate: Passage {
                 required property string modelData
                 width: parent.width
                 wrapMode: Text.Wrap
@@ -121,7 +128,7 @@ Rectangle {
             }
             Repeater {
               model: person.modelData.secrets
-              delegate: Text {
+              delegate: Passage {
                 required property string modelData
                 width: parent.width
                 wrapMode: Text.Wrap
@@ -135,7 +142,7 @@ Rectangle {
             }
             Repeater {
               model: person.modelData.memories
-              delegate: Text {
+              delegate: Passage {
                 required property string modelData
                 width: parent.width
                 wrapMode: Text.Wrap
@@ -147,7 +154,7 @@ Rectangle {
               }
             }
             // What the hero doesn't know yet: blanked, so the page shows there is more.
-            Text {
+            Passage {
               visible: modelData.unknown > 0
               width: parent.width
               wrapMode: Text.Wrap
@@ -157,7 +164,7 @@ Rectangle {
               color: codex.theme.faint
               text: Array(modelData.unknown).fill("▒▒▒▒▒ ▒▒▒ ▒▒▒▒▒▒").join("\n")
             }
-            Text {
+            Passage {
               visible: modelData.stats !== null
               textFormat: Text.PlainText
               font.family: codex.theme.mono
@@ -169,7 +176,7 @@ Rectangle {
         }
       }
 
-      Text {
+      Passage {
         visible: codex.promiseLines().length > 0
         textFormat: Text.PlainText
         font.family: codex.theme.serif
@@ -180,7 +187,7 @@ Rectangle {
       }
       Repeater {
         model: codex.promiseLines()
-        delegate: Text {
+        delegate: Passage {
           required property string modelData
           width: column.width
           wrapMode: Text.Wrap
@@ -192,7 +199,7 @@ Rectangle {
         }
       }
 
-      Text {
+      Passage {
         visible: codex.game !== null && codex.game.clues.length > 0
         textFormat: Text.PlainText
         font.family: codex.theme.serif
@@ -201,7 +208,7 @@ Rectangle {
         color: codex.theme.text
         text: "Clues"
       }
-      Text {
+      Passage {
         visible: codex.game !== null && codex.game.clues.length > 0
         width: column.width
         wrapMode: Text.Wrap
