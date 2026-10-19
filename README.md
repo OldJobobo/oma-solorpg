@@ -170,6 +170,12 @@ While a game is on, Omarchy plays along:
 
 Each of these puts back exactly what it changed (your border colours, your own screen shader, your screen temperature, your screensaver text), and each can be switched off under Desktop effects on the table.
 
+### Pin the Table to a workspace
+
+The Table normally stays visible across workspaces. Click **Pin** in its header to keep it on its current workspace instead: it hides when you leave and returns when you come back. The Book and a GM turn keep running independently, and focusing another monitor does not hide the Table.
+
+Clicking the bar's d20 from elsewhere brings you back to the pinned workspace. Closing the Table keeps its pin; click **Pinned** to unpin it and restore the normal behavior. Pins last until the shell/plugin reloads. If Hyprland forgets an empty workspace, the pin is remembered and a bar click brings that workspace back instead of moving the Table elsewhere.
+
 ## How a turn works
 
 ```

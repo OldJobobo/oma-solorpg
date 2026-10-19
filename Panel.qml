@@ -3,6 +3,7 @@ import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
+import Quickshell.Hyprland
 import qs.Commons
 import qs.Ui
 import "book"
@@ -34,7 +35,32 @@ Item {
 
   property var shell: null
   property var manifest: null
-  property bool opened: false
+  readonly property bool opened: workspacePin.shown
+
+  WorkspacePin {
+    id: workspacePin
+    objectName: "workspacePin"
+    hyprland: Hyprland
+    screens: Quickshell.screens
+    screen: tableWindow.screen
+  }
+
+  // Keep the pinned workspace's monitor, even when focus moves to another display.
+  Binding {
+    target: tableWindow
+    property: "screen"
+    value: workspacePin.pinnedScreen
+    when: workspacePin.pinnedScreen !== null
+    restoreMode: Binding.RestoreNone
+  }
+
+  Connections {
+    target: Hyprland
+    function onRawEvent(event) {
+      // The regular workspace can remain active underneath a special-workspace overlay.
+      if (event.name === "activespecial" || event.name === "activespecialv2") Hyprland.refreshMonitors()
+    }
+  }
 
   readonly property string solo: decodeURIComponent(Qt.resolvedUrl("bin/solo").toString().replace(/^file:\/\//, ""))
   readonly property string stateDir: (Quickshell.env("XDG_STATE_HOME") || Quickshell.env("HOME") + "/.local/state") + "/solo"
@@ -147,7 +173,8 @@ Item {
       payload = {}
     }
     currentFile.reload()
-    root.opened = true
+    if (payload.book) workspacePin.requested = true  // the Book never pulls the player to the Table's workspace
+    else workspacePin.show()
     root.show(payload.view || (root.campaign !== "" ? "table" : "home"))
     if (payload.book) root.openBook()
   }
@@ -291,7 +318,7 @@ Item {
   }
 
   function close() {
-    root.opened = false
+    workspacePin.hide()
   }
 
   function show(view) {
@@ -887,7 +914,7 @@ Item {
                                               .concat(veil !== "" ? ["--veil", veil] : []), "book", () => root.speak(""))
       onAct: args => root.act(args, "book")
       onOpenTable: {
-        root.opened = true
+        workspacePin.show()
         root.show("table")
       }
       onOpenTerminal: root.run(["play", root.campaign, "--terminal"], "gm")
@@ -1244,6 +1271,8 @@ Item {
   }
 
   PanelWindow {
+    id: tableWindow
+    objectName: "tableWindow"
     visible: root.opened
     anchors { top: true; right: true; bottom: true }
     implicitWidth: Style.space(340)
@@ -1300,6 +1329,16 @@ Item {
               visible: root.view === "new"
               text: "Back"
               onClicked: root.show("home")
+            }
+
+            Choice {
+              objectName: "workspacePinButton"
+              text: workspacePin.pinned ? "Pinned" : "Pin"
+              selected: workspacePin.pinned
+              enabled: workspacePin.pinned || workspacePin.current !== null
+              tooltipText: workspacePin.pinned ? "Pinned to workspace " + workspacePin.workspaceId + ". Click to unpin."
+                                                : "Keep the Table on this workspace"
+              onClicked: workspacePin.togglePin()
             }
 
             Choice {
