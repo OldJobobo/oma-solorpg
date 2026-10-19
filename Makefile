@@ -159,6 +159,7 @@ test:
 	python3 -m unittest discover -s tests
 
 qml-check:
+	QT_QPA_PLATFORM=offscreen python3 tests/qml/sidebar_check.py $${TMPDIR:-/tmp}/oma-solorpg-sidebar
 	QT_QPA_PLATFORM=offscreen python3 tests/qml/panel_check.py $${TMPDIR:-/tmp}/oma-solorpg-qml
 
 # The website, as GitHub Pages serves it (.github/workflows/pages.yml publishes site/).
