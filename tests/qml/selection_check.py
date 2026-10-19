@@ -167,8 +167,17 @@ def main(out):
     QTest.mouseClick(view, Qt.RightButton, Qt.NoModifier, position(gm, 6))
     QTest.qWait(30)
     assert controller.property("engaged"), "An open passage menu also pauses following"
+    original_prose = root.property("prose")
+    menu_source = gm.property("renderedSource")
+    root.setProperty("prose", original_prose + "\n\nMore words arrive while the menu is open.")
+    QTest.qWait(30)
+    assert gm.property("renderedSource") == menu_source and gm.property("selectedText") == ""
     click_action(action)
     assert clipboard.text() == expected and gm.property("selectedText") == ""
+    QTest.qWait(100)
+    assert "More words arrive" in gm.property("renderedSource"), "Closing the menu must show buffered text"
+    root.setProperty("prose", original_prose)
+    QTest.qWait(30)
     QTest.mouseClick(view, Qt.RightButton, Qt.NoModifier, position(gm, 6))
     QTest.qWait(30)
     input_.forceActiveFocus()
