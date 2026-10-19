@@ -1049,6 +1049,12 @@ Item {
     verticalPadding: Style.space(3)
   }
 
+  component HeaderChoice: Choice {
+    Layout.minimumWidth: implicitWidth
+    Layout.minimumHeight: Math.max(implicitHeight, Style.space(28))
+    focusable: true
+  }
+
   component Primary: Button {
     Layout.fillWidth: true
     Layout.topMargin: Style.space(8)
@@ -1307,46 +1313,77 @@ Item {
 
           // Header ------------------------------------------------------------------
 
-          RowLayout {
+          // Navigation and window controls never compete with the campaign's name.
+          ColumnLayout {
+            objectName: "tableHeader"
             Layout.fillWidth: true
-            spacing: Style.space(4)
+            Layout.minimumWidth: 0
+            spacing: Style.space(8)
+
+            RowLayout {
+              id: headerControls
+              objectName: "tableHeaderControls"
+              readonly property real iconTarget: Math.max(Style.space(28), pinButton.implicitWidth, pinButton.implicitHeight,
+                                                          closeButton.implicitWidth, closeButton.implicitHeight)
+              Layout.fillWidth: true
+              spacing: Style.space(6)
+
+              HeaderChoice {
+                objectName: "tableCampaignsButton"
+                visible: root.view === "table"
+                text: "Campaigns"
+                onClicked: root.show("home")
+              }
+
+              HeaderChoice {
+                objectName: "tableBackButton"
+                visible: root.view === "new"
+                text: "Back"
+                onClicked: root.show("home")
+              }
+
+              Item { Layout.fillWidth: true }
+
+              HeaderChoice {
+                id: pinButton
+                objectName: "workspacePinButton"
+                Layout.minimumWidth: headerControls.iconTarget
+                Layout.minimumHeight: headerControls.iconTarget
+                Layout.preferredWidth: headerControls.iconTarget
+                text: String.fromCodePoint(workspacePin.pinned ? 0xF0403 : 0xF0931) // nf-md-pin / nf-md-pin_outline
+                fontFamily: "Symbols Nerd Font"
+                fontSize: Style.font.title
+                horizontalPadding: Style.space(4)
+                Accessible.name: workspacePin.pinned ? "Unpin Table from workspace" : "Pin Table to workspace"
+                selected: workspacePin.pinned
+                enabled: workspacePin.pinned || workspacePin.current !== null
+                tooltipText: workspacePin.pinned ? "Pinned to workspace " + workspacePin.workspaceId + ". Click to unpin."
+                                                  : "Keep the Table on this workspace"
+                onClicked: workspacePin.togglePin()
+              }
+
+              HeaderChoice {
+                id: closeButton
+                objectName: "tableCloseButton"
+                Layout.minimumWidth: headerControls.iconTarget
+                Layout.minimumHeight: headerControls.iconTarget
+                Layout.preferredWidth: headerControls.iconTarget
+                text: "×"
+                fontSize: Style.font.title
+                horizontalPadding: Style.space(4)
+                Accessible.name: "Close Table"
+                tooltipText: "Close (Esc)"
+                onClicked: root.close()
+              }
+            }
 
             Line {
+              objectName: "tableHeaderTitle"
+              Layout.minimumWidth: 0
+              Layout.preferredWidth: 0
               text: root.view === "new" ? "New adventure" : root.view === "table" && root.game ? root.game.title : "oma-solorpg"
               size: Style.font.heading
               font.bold: true
-              elide: Text.ElideRight
-              wrapMode: Text.NoWrap
-            }
-
-            Choice {
-              visible: root.view === "table"
-              text: "Campaigns"
-              onClicked: root.show("home")
-            }
-
-            Choice {
-              visible: root.view === "new"
-              text: "Back"
-              onClicked: root.show("home")
-            }
-
-            Choice {
-              objectName: "workspacePinButton"
-              text: String.fromCodePoint(workspacePin.pinned ? 0xF0403 : 0xF0931) // nf-md-pin / nf-md-pin_outline
-              fontFamily: "Symbols Nerd Font"
-              Accessible.name: workspacePin.pinned ? "Unpin Table from workspace" : "Pin Table to workspace"
-              selected: workspacePin.pinned
-              enabled: workspacePin.pinned || workspacePin.current !== null
-              tooltipText: workspacePin.pinned ? "Pinned to workspace " + workspacePin.workspaceId + ". Click to unpin."
-                                                : "Keep the Table on this workspace"
-              onClicked: workspacePin.togglePin()
-            }
-
-            Choice {
-              text: "×"
-              tooltipText: "Close (Esc)"
-              onClicked: root.close()
             }
           }
 

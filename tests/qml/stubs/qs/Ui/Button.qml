@@ -8,12 +8,17 @@ Rectangle {
   property string tooltipText: ""
   property bool selected: false
   property bool bordered: false
+  property bool focusable: false
   property color foreground: Color.foreground
   property string fontFamily: Style.font.family
   property real fontSize: Style.font.body
   property real horizontalPadding: 8
   property real verticalPadding: 4
   signal clicked()
+  activeFocusOnTab: focusable
+  Keys.onReturnPressed: if (focusable) button.clicked()
+  Keys.onEnterPressed: if (focusable) button.clicked()
+  Keys.onSpacePressed: if (focusable) button.clicked()
   implicitWidth: label.implicitWidth + horizontalPadding * 2
   implicitHeight: label.implicitHeight + verticalPadding * 2
   radius: 3

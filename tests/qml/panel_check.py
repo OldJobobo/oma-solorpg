@@ -273,6 +273,8 @@ def main(out):
     wait(1500)
     panel.grabWindow().save(str(out / "table.png"))
     errors += workspace_pinning(item, panel, out, engine, wait)
+    import header_check
+    errors += header_check.check(item, panel, out, engine, wait)
     item.show("home")
     wait(2500)
     panel.grabWindow().save(str(out / "home.png"))
@@ -309,9 +311,9 @@ def workspace_pinning(item, panel, out, engine, wait):
     screen = Screen(window)  # held by the window for the rest of the check
     second_screen = Screen(window)
     second_screen.setProperty("name", "DP-2")
+    pin.setProperty("hyprland", workspace_check.snapshot(engine))
     window.setProperty("screen", screen)
     pin.setProperty("screens", [screen, second_screen])
-    pin.setProperty("hyprland", workspace_check.snapshot(engine))
     item.open('{"view":"table"}')
     wait(100)
     if not item.property("opened") or button.property("text") != chr(0xF0931):
