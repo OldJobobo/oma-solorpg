@@ -204,6 +204,7 @@ def main(out):
     work = Path(tempfile.mkdtemp())
     os.environ["XDG_STATE_HOME"] = str(work / "state")
     os.environ["SOLO_HOME"] = str(work / "games")
+    os.environ["SOLO_SEED"] = "5"  # UI rolls must not randomly leave a Dragon's choice waiting.
     os.environ["XDG_RUNTIME_DIR"] = str(work / "run")
     # Begin runs `solo new --play`, which links solo and the skills into the home folder.
     os.environ["HOME"] = str(work / "home")
