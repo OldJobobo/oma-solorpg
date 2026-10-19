@@ -3,6 +3,7 @@ import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
+import Quickshell.Hyprland
 import qs.Commons
 import qs.Ui
 import "book"
@@ -34,7 +35,32 @@ Item {
 
   property var shell: null
   property var manifest: null
-  property bool opened: false
+  readonly property bool opened: workspacePin.shown
+
+  WorkspacePin {
+    id: workspacePin
+    objectName: "workspacePin"
+    hyprland: Hyprland
+    screens: Quickshell.screens
+    screen: tableWindow.screen
+  }
+
+  // Keep the pinned workspace's monitor, even when focus moves to another display.
+  Binding {
+    target: tableWindow
+    property: "screen"
+    value: workspacePin.pinnedScreen
+    when: workspacePin.pinnedScreen !== null
+    restoreMode: Binding.RestoreNone
+  }
+
+  Connections {
+    target: Hyprland
+    function onRawEvent(event) {
+      // The regular workspace can remain active underneath a special-workspace overlay.
+      if (event.name === "activespecial" || event.name === "activespecialv2") Hyprland.refreshMonitors()
+    }
+  }
 
   readonly property string solo: decodeURIComponent(Qt.resolvedUrl("bin/solo").toString().replace(/^file:\/\//, ""))
   readonly property string stateDir: (Quickshell.env("XDG_STATE_HOME") || Quickshell.env("HOME") + "/.local/state") + "/solo"
@@ -63,7 +89,7 @@ Item {
   property bool bookOpen: false
   property var turn: ({ status: "idle" })
   property var agentInfo: ({ agent: "", book: true })
-  property var effects: ({ borders: true, screen: true, sound: true, candle: true, omens: true, screensaver: true })
+  property var effects: ({ borders: true, screen: true, sound: true, candle: false, omens: true, screensaver: true })
   property string pace: "normal"  // how long the GM thinks before it answers (solo gm pace)
   // The table's sounds and what plays them ({play, sounds}, from solo desk sound).
   property var sounds: ({})
@@ -147,7 +173,8 @@ Item {
       payload = {}
     }
     currentFile.reload()
-    root.opened = true
+    if (payload.book) workspacePin.requested = true  // the Book never pulls the player to the Table's workspace
+    else workspacePin.show()
     root.show(payload.view || (root.campaign !== "" ? "table" : "home"))
     if (payload.book) root.openBook()
   }
@@ -291,7 +318,7 @@ Item {
   }
 
   function close() {
-    root.opened = false
+    workspacePin.hide()
   }
 
   function show(view) {
@@ -866,7 +893,7 @@ Item {
                                               .concat(veil !== "" ? ["--veil", veil] : []), "book", () => root.speak(""))
       onAct: args => root.act(args, "book")
       onOpenTable: {
-        root.opened = true
+        workspacePin.show()
         root.show("table")
       }
       onOpenTerminal: root.run(["play", root.campaign, "--terminal"], "gm")
@@ -999,6 +1026,12 @@ Item {
     fontSize: Style.font.bodySmall
     horizontalPadding: Style.space(8)
     verticalPadding: Style.space(3)
+  }
+
+  component HeaderChoice: Choice {
+    Layout.minimumWidth: implicitWidth
+    Layout.minimumHeight: Math.max(implicitHeight, Style.space(28))
+    focusable: true
   }
 
   component Primary: Button {
@@ -1223,6 +1256,8 @@ Item {
   }
 
   PanelWindow {
+    id: tableWindow
+    objectName: "tableWindow"
     visible: root.opened
     anchors { top: true; right: true; bottom: true }
     implicitWidth: Style.space(340)
@@ -1257,34 +1292,77 @@ Item {
 
           // Header ------------------------------------------------------------------
 
-          RowLayout {
+          // Navigation and window controls never compete with the campaign's name.
+          ColumnLayout {
+            objectName: "tableHeader"
             Layout.fillWidth: true
-            spacing: Style.space(4)
+            Layout.minimumWidth: 0
+            spacing: Style.space(8)
+
+            RowLayout {
+              id: headerControls
+              objectName: "tableHeaderControls"
+              readonly property real iconTarget: Math.max(Style.space(28), pinButton.implicitWidth, pinButton.implicitHeight,
+                                                          closeButton.implicitWidth, closeButton.implicitHeight)
+              Layout.fillWidth: true
+              spacing: Style.space(6)
+
+              HeaderChoice {
+                objectName: "tableCampaignsButton"
+                visible: root.view === "table"
+                text: "Campaigns"
+                onClicked: root.show("home")
+              }
+
+              HeaderChoice {
+                objectName: "tableBackButton"
+                visible: root.view === "new"
+                text: "Back"
+                onClicked: root.show("home")
+              }
+
+              Item { Layout.fillWidth: true }
+
+              HeaderChoice {
+                id: pinButton
+                objectName: "workspacePinButton"
+                Layout.minimumWidth: headerControls.iconTarget
+                Layout.minimumHeight: headerControls.iconTarget
+                Layout.preferredWidth: headerControls.iconTarget
+                text: String.fromCodePoint(workspacePin.pinned ? 0xF0403 : 0xF0931) // nf-md-pin / nf-md-pin_outline
+                fontFamily: "Symbols Nerd Font"
+                fontSize: Style.font.title
+                horizontalPadding: Style.space(4)
+                Accessible.name: workspacePin.pinned ? "Unpin Table from workspace" : "Pin Table to workspace"
+                selected: workspacePin.pinned
+                enabled: workspacePin.pinned || workspacePin.current !== null
+                tooltipText: workspacePin.pinned ? "Pinned to workspace " + workspacePin.workspaceId + ". Click to unpin."
+                                                  : "Keep the Table on this workspace"
+                onClicked: workspacePin.togglePin()
+              }
+
+              HeaderChoice {
+                id: closeButton
+                objectName: "tableCloseButton"
+                Layout.minimumWidth: headerControls.iconTarget
+                Layout.minimumHeight: headerControls.iconTarget
+                Layout.preferredWidth: headerControls.iconTarget
+                text: "×"
+                fontSize: Style.font.title
+                horizontalPadding: Style.space(4)
+                Accessible.name: "Close Table"
+                tooltipText: "Close (Esc)"
+                onClicked: root.close()
+              }
+            }
 
             Line {
+              objectName: "tableHeaderTitle"
+              Layout.minimumWidth: 0
+              Layout.preferredWidth: 0
               text: root.view === "new" ? "New adventure" : root.view === "table" && root.game ? root.game.title : "oma-solorpg"
               size: Style.font.heading
               font.bold: true
-              elide: Text.ElideRight
-              wrapMode: Text.NoWrap
-            }
-
-            Choice {
-              visible: root.view === "table"
-              text: "Campaigns"
-              onClicked: root.show("home")
-            }
-
-            Choice {
-              visible: root.view === "new"
-              text: "Back"
-              onClicked: root.show("home")
-            }
-
-            Choice {
-              text: "×"
-              tooltipText: "Close (Esc)"
-              onClicked: root.close()
             }
           }
 
@@ -2824,7 +2902,7 @@ Item {
                     borders: "Dragons flash the window borders gold, Demons red; dying holds them red",
                     screen: "The whole screen answers: gold for a Dragon, red for a Demon or a blow, a red rim while dying, grey at death",
                     sound: "Dice, bells, drums and heartbeats, in time with the Book",
-                    candle: "The screen warms while the Book is open",
+                    candle: "Warm the whole screen while the Book is open (off by default)",
                     omens: "What the hidden clocks stir up arrives as a notification",
                     screensaver: "The screensaver shows your hero while the Book is open",
                   })[modelData[0]]

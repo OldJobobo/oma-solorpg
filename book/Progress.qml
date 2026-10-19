@@ -28,7 +28,11 @@ Column {
     delegate: Column {
       required property string modelData
       readonly property var track: tracks.progress[modelData]
+      width: tracks.width
       Text {
+        objectName: "progressTitle"
+        width: parent.width
+        wrapMode: Text.Wrap
         textFormat: Text.PlainText
         font.family: tracks.theme.mono
         font.pixelSize: tracks.theme.small

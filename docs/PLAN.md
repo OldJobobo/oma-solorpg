@@ -8,7 +8,7 @@ Contents: [Goal](#goal) · [Product](#product) · [The Book](#the-book) · [Prin
 
 An AI game master for solo tabletop play that runs natively on Omarchy.
 
-- The player writes to the GM in the Book, a story window the plugin owns. Omarchy's default coding agent (Claude Code or Codex) runs headless behind it as the GM, one turn at a time; another agent opens in a terminal instead.
+- The player writes to the GM in the Book, a story window the plugin owns. Omarchy's default coding agent (Claude Code, Codex or Pi) runs headless behind it as the GM, one turn at a time; another agent opens in a terminal instead.
 - A local engine, `solo`, owns dice, rules resolution, character creation and campaign state.
 - An omarchy-shell plugin is the table: a bar button and a docked panel where the player starts games, makes characters, rolls, rests and watches the state.
 - Content comes from material the player owns (PDFs read by the importers or by an agent, Foundry module exports), compiled once into local packs, or from free rules that ship in the repository.
@@ -57,7 +57,7 @@ Built, a game with no book: the `action-roll` family and Ironsworn with its star
 
 Next: choosing trained skills by hand in the builder, a character roster, a settings entry for SOLO_HOME.
 
-Later: adapters for more agents in the Book (only Claude Code and Codex stream and resume today), the importer from the panel, other families' builders, publishing.
+Later: adapters for more agents in the Book (Claude Code, Codex and Pi stream and resume today), the importer from the panel, other families' builders, publishing.
 
 ### UX rules
 
@@ -82,7 +82,7 @@ A coding agent in a terminal shows its tool calls, permission prompts and JSON b
 ```
 
 - `solo gm turn [text]`: one exchange. It takes `.solo/turn.lock` (one turn at a time), records the player's words (`said`), runs the agent with the campaign as its working folder, and rewrites `.solo/turn.json` as the agent works: `status` (thinking, writing, done, error, stopped), `text` (the narration so far; text before a tool call is dropped as thinking aloud), `doing` (reading the table, rolling the dice, writing it down), `player`, `error`. The final message is recorded as the GM's `said`. The agent's session id is kept in `.solo/agent.json`; a new or lost session's first prompt carries what `solo resume --book` and `solo scene` print, so the campaign stays the memory and the GM spends no model call reading it.
-- `solo gm pace [quick|normal|careful]`: the player's, kept in `$XDG_STATE_HOME/solo/gm.json` for every campaign (the default is normal). Each turn passes it to the agent as an effort level: `--effort low|medium|high` for Claude Code, `-c model_reasoning_effort=...` for Codex. Without it, Claude Code would use the effort the player set for coding.
+- `solo gm pace [quick|normal|careful]`: the player's, kept in `$XDG_STATE_HOME/solo/gm.json` for every campaign (the default is normal). Each turn passes it to the agent as an effort level: `--effort low|medium|high` for Claude Code, `-c model_reasoning_effort=...` for Codex, `--thinking low|medium|high` for Pi. Without it, Claude Code would use the effort the player set for coding.
 - Claude Code ignores a project's permissions until its folder is trusted interactively, so the adapter passes the GM's allowlist with `--allowedTools`. Hooks still record the transcript; recording twice is harmless (`say` drops a repeat).
 - The GM starts bare: `--strict-mcp-config` and `--no-chrome` leave out the player's own MCP servers and claude.ai connectors (they took two of the three seconds a turn spent starting, and have no place beside adventure text), and `--tools Bash,Read` keeps two of Claude Code's tools, with the skill's folder readable (`--add-dir`), which cut a turn's input by more than half.
 - Other agents keep the terminal (`solo play --terminal`); the Book shows their story as it is recorded, if they record it (`solo say`).
@@ -92,9 +92,11 @@ What the Book shows comes from state.json, derived by the engine: `story` (the l
 
 Voices are scene data (`[[scenes.<id>.voices]]`: `skill`, `text`, optional `when`, `clue`, `boons`, `banes`), rolled quietly on entering; `solo voice` lets the GM raise one. Light sources are system data (`[light.torch]`: `item`, `lasts`). A clock with `omen = true` stays hidden but its tick results reach the player. Portraits are art data (`art.toml`): a head per kin with slots (`L R` eyes, `l r` brows, `mmmm` mouth, `w` wounds, `a` age), headgear per profession, a mood per condition.
 
-The desktop effects (`solo desk`) are the plugin's, not the engine's: they never touch a campaign. Each keeps what it replaced in `$XDG_RUNTIME_DIR/solo-play` (or the screensaver text beside itself) and puts it back; `solo desk restore` undoes everything, and the plugin runs it when it loads. Hyprland borders go through `hyprctl eval 'hl.config(...)'` (with `hyprctl keyword` for older Hyprland), read back with `getoption` first; when the original can't be read the effect is skipped. Candlelight uses hyprsunset the way Omarchy's night light does. The screen effects are Hyprland screen shaders (`solo/shaders/*.frag`, GLSL ES 3.0): each step of a flash bakes its level into a file of its own in the runtime folder and puts it up with `decoration:screen_shader`, the dying rim is held still, baked with how weak the hero is (none use Hyprland's `time` uniform: it only moves when something else redraws, and Hyprland warns that it needs damage tracking off), and the player's own shader (or none) goes back afterwards. A newer moment takes the screen over from an older one by a token, so two never fight over it. Sounds are synthesised with the standard library into `$XDG_CACHE_HOME/solo-play/sounds` (`solo/sounds.py`); `solo desk sound` bakes them and says what plays them, and the plugin plays them itself so the dice land with the Book's to the millisecond. Switches live in `$XDG_STATE_HOME/solo/fx.json`.
+The desktop effects (`solo desk`) are the plugin's, not the engine's: they never touch a campaign. Each keeps what it replaced in `$XDG_RUNTIME_DIR/solo-play` (or the screensaver text beside itself) and puts it back; `solo desk restore` undoes everything, and the plugin runs it when it loads. Hyprland borders go through `hyprctl eval 'hl.config(...)'` (with `hyprctl keyword` for older Hyprland), read back with `getoption` first; when the original can't be read the effect is skipped. Candlelight uses hyprsunset the way Omarchy's night light does, is off until the player opts in, and restores the saved temperature only if the effect's temperature is still in place (a newer choice is left alone). A failed temperature read or restore keeps the saved temperature for a retry. The screen effects are Hyprland screen shaders (`solo/shaders/*.frag`, GLSL ES 3.0): each step of a flash bakes its level into a file of its own in the runtime folder and puts it up with `decoration:screen_shader`, the dying rim is held still, baked with how weak the hero is (none use Hyprland's `time` uniform: it only moves when something else redraws, and Hyprland warns that it needs damage tracking off), and the player's own shader (or none) goes back afterwards. A newer moment takes the screen over from an older one by a token, so two never fight over it. Sounds are synthesised with the standard library into `$XDG_CACHE_HOME/solo-play/sounds` (`solo/sounds.py`); `solo desk sound` bakes them and says what plays them, and the plugin plays them itself so the dice land with the Book's to the millisecond. Switches live in `$XDG_STATE_HOME/solo/fx.json`.
 
 The manifest sets `keepLoaded`, so the panel entry (the Table, the Book and the watcher) stays alive between summons and reacts to the game with both windows closed.
+
+The Table's optional workspace pin is shell-local state (`WorkspacePin.qml`), never campaign data. It keeps the requested-open state separate from `opened`, which reports actual visibility so the shell can summon a hidden Table. A summon explicitly activates the pinned workspace; opening the Book never does. The layer surface follows the pinned workspace's monitor, and regular/special workspace changes only affect visibility, not the Book, GM or watcher. Closing keeps the pin and unpinning restores global visibility. Empty workspaces can disappear from Hyprland's model, so their ID, name and monitor are remembered; only an explicit summon recreates them (workspace names are encoded as Lua string literals for Lua Hyprland). Named workspaces can return with a different ID. Pins reset when the plugin reloads.
 
 ## Principles
 
@@ -111,7 +113,7 @@ The manifest sets `keepLoaded`, so the panel entry (the Table, the Book and the 
 +-----------------------------+        +-------------------------------------+
 | the Book: the story         |        | bar: d20 button (left: table,       |
 | solo gm turn runs the agent |        |      right: the Book)               |
-| headless: claude or codex,  |        | panel: Home | New adventure | Table |
+| headless: claude/codex/pi,  |        | panel: Home | New adventure | Table |
 | skill solo-gm, cwd campaign |        | sheet, rolls, rests, oracle, clocks |
 +--------------+--------------+        +------+---------------+--------------+
                |                              ^               |
