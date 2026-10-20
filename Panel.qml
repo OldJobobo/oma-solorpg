@@ -74,6 +74,9 @@ Item {
   property bool settingsOpen: false
   property bool reducedMotion: Quickshell.env("SOLO_REDUCED_MOTION") === "1"
   property real bookScale: 1
+  property string bookSerifFont: ""
+  property var serifFonts: []
+  property string serifFontsError: ""
   property real tableScale: 1
   readonly property bool scaleBusy: scaleAction.running
   property string scaleTarget: ""
@@ -357,6 +360,10 @@ Item {
   function openSettings() {
     if (tableFlip.flipping) return
     root.settingsOpen = true
+    if (!fontScan.running) {
+      root.serifFontsError = ""
+      fontScan.running = true
+    }
     root.ask("effects", ["desk", "settings"])
     root.ask("pace", ["gm", "pace"])
     if (root.campaign !== "") root.ask("agent", ["-C", root.campaign, "gm", "agent"])
@@ -375,6 +382,16 @@ Item {
     var legacy = valid(data.scale)
     root.bookScale = valid(data.book_scale === undefined ? legacy : data.book_scale)
     root.tableScale = valid(data.table_scale === undefined ? legacy : data.table_scale)
+    root.bookSerifFont = typeof data.book_serif_font === "string" ? data.book_serif_font : ""
+  }
+
+  function setBookSerifFont(family) {
+    if (root.scaleBusy || family === root.bookSerifFont) return
+    root.scaleTarget = "font"
+    root.scaleError = ""
+    scaleAction.output = ""
+    scaleAction.command = [root.solo, "ui", "--book-serif-font=" + family]
+    scaleAction.running = true
   }
 
   function setUiScale(target, value) {
@@ -945,7 +962,10 @@ Item {
     }
   }
 
-  Theme { id: theme }
+  Theme {
+    id: theme
+    serif: root.bookSerifFont !== "" && Qt.fontFamilies().indexOf(root.bookSerifFont) !== -1 ? root.bookSerifFont : "serif"
+  }
 
   // The Book: a normal window, so Hyprland tiles it beside the Table.
   FloatingWindow {
@@ -1000,6 +1020,28 @@ Item {
     id: speaker
   }
 
+  Process {
+    id: fontScan
+    command: [root.solo, "ui", "--serif-fonts"]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        try {
+          var fonts = JSON.parse(text)
+          if (!Array.isArray(fonts)) throw new Error("Invalid font list")
+          root.serifFonts = fonts
+        } catch (e) { root.serifFontsError = "Couldn't read installed serif fonts. Reopen Settings to retry." }
+      }
+    }
+    stderr: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: if (text.trim() !== "") root.serifFontsError = text.trim().replace(/^solo: /, "")
+    }
+    onExited: (exitCode, exitStatus) => {
+      if (exitCode !== 0 && root.serifFontsError === "") root.serifFontsError = "Couldn't list installed serif fonts. Reopen Settings to retry."
+    }
+  }
+
   // Appearance writes must not borrow the campaign command slot or clear its
   // errors. The selected value changes only after the save succeeds.
   Process {
@@ -1019,7 +1061,8 @@ Item {
         root.scaleError = ""
         uiFile.reload()
       } else if (root.scaleError === "") {
-        root.scaleError = "Couldn't save " + (root.scaleTarget === "book" ? "Book" : "Table") + " scale. Try again."
+        root.scaleError = root.scaleTarget === "font" ? "Couldn't save Book serif font. Try again."
+          : "Couldn't save " + (root.scaleTarget === "book" ? "Book" : "Table") + " scale. Try again."
       }
     }
   }
@@ -3052,6 +3095,11 @@ Item {
         enabled: root.settingsOpen && !tableFlip.flipping
         theme: theme
         bookScale: root.bookScale
+        bookSerifFont: root.bookSerifFont
+        serifFonts: root.serifFonts
+        serifFontsBusy: fontScan.running
+        serifFontsError: root.serifFontsError
+        onBookSerifFontRequested: family => root.setBookSerifFont(family)
         tableScale: root.tableScale
         scaleBusy: root.scaleBusy
         scaleTarget: root.scaleTarget

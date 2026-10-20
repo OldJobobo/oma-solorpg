@@ -1004,15 +1004,22 @@ def _budget(args):
 def cmd_ui(args):
     """Player-owned app appearance, independent of campaigns and desktop effects."""
     from . import ui
-    changes = args.scale is not None or args.book_scale is not None or args.table_scale is not None
+    changes = any(value is not None for value in (args.scale, args.book_scale, args.table_scale, args.book_serif_font))
+    if args.serif_fonts:
+        if changes:
+            raise SoloError("use --serif-fonts on its own")
+        from .fonts import serif_fonts
+        _json(serif_fonts())
+        return
     if changes and os.environ.get("SOLO_BOOK"):
-        raise SoloError("interface scales are the player's to set: the GM can read them, never change them")
+        raise SoloError("interface settings are the player's to set: the GM can read them, never change them")
     if args.scale is not None:
-        if args.book_scale is not None or args.table_scale is not None:
+        if args.book_scale is not None or args.table_scale is not None or args.book_serif_font is not None:
             raise SoloError("use --scale on its own, or set --book-scale and --table-scale")
         _json(ui.set_scale(args.scale))
     else:
-        _json(ui.set_scales(book_scale=args.book_scale, table_scale=args.table_scale))
+        _json(ui.set_scales(book_scale=args.book_scale, table_scale=args.table_scale,
+                            book_serif_font=args.book_serif_font))
 
 
 def cmd_desk(args):
@@ -2061,10 +2068,12 @@ def _parser(only=None):
     sub.add_argument("--turns", type=int, help="budget: GM turns a session may run (for an agent that doesn't say what a turn costs)")
     sub.add_argument("--reset", action="store_true", help="budget: start counting this campaign's session again")
 
-    sub = command("ui", cmd_ui, "player-owned interface scales (JSON): Book independently of Table and settings")
+    sub = command("ui", cmd_ui, "player-owned interface appearance (JSON): Book font and independent scales")
     sub.add_argument("--book-scale", type=float, help="Book scale: 1, 1.25, 1.5, 1.75 or 2")
     sub.add_argument("--table-scale", type=float, help="Table and settings scale: 1, 1.25, 1.5, 1.75 or 2")
     sub.add_argument("--scale", type=float, help="set both scales explicitly (compatibility)")
+    sub.add_argument("--book-serif-font", help="installed serif family for the Book; empty restores system default")
+    sub.add_argument("--serif-fonts", action="store_true", help="list installed serif reading fonts with Latin coverage")
 
     sub = command("desk", cmd_desk, "desktop effects: flash dragon|demon|hit, dying on [failures]|off, death, candle on|off, omen <text>, screensaver on|off, sound [name], restore, settings [name=on|off]")
     sub.add_argument("--after", type=float, default=0, metavar="SECONDS", help="wait first (to land with the Book's dice)")

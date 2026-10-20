@@ -73,6 +73,20 @@ solo ui --table-scale=1.25
 
 `solo ui --scale=1.5` explicitly sets both scales for compatibility with the original shared-scale format. Existing `{"scale": N}` preferences initialize both surfaces at N until a scoped choice is saved. To disable the settings flip animation, set `SOLO_REDUCED_MOTION=1` in the shell's environment.
 
+### Book serif font
+
+Under **Settings → Appearance → Book serif font**, choose an installed serif reading face. Every dropdown entry previews its own typeface; keyboard arrows and Enter select it, and Esc closes only the dropdown. **System default** follows the system serif selected by Omarchy. The override changes the Book's prose and serif headings, not monospace UI text or desktop fonts.
+
+The choice applies immediately, saves across campaigns and restarts in the same `ui.json`, and is player-owned—the GM cannot change it. If a saved font is removed, the Book falls back to system serif. Reopen Settings after installing fonts to refresh the list; applications may also need restarting to see newly installed font files.
+
+Discovery uses `fontconfig` (`fc-list`, included with Omarchy) and OpenType serif metadata, with exact-name fallbacks for verified reading families whose metadata is missing. Only proportional serif faces with Latin coverage are listed. No font files are bundled, downloaded or installed by this feature.
+
+```bash
+solo ui --serif-fonts
+solo ui --book-serif-font "Literata"
+solo ui --book-serif-font ""  # restore system default
+```
+
 ## Update
 
 ```bash
@@ -386,6 +400,8 @@ Don't publish packs built from books you bought. They stay in `~/Games/solo`, wh
 | `solo report [-n N] [--no-messages] [--out F]` | a bug report safe to post: ids, numbers and dice, the GM's commands and the engine and pack versions, with the books' words left out |
 | `solo review [--trace F]` | the campaign checked as a play test would: refused commands, bookkeeping in the story, foes that never struck back, consequences never paid, a person with two names |
 | `solo ui [--book-scale N] [--table-scale N]` | persistent player-owned scales; Book independently of Table and settings (1×–2×); `--scale N` explicitly sets both |
+| `solo ui --serif-fonts` | list installed serif reading font families as JSON |
+| `solo ui --book-serif-font "Literata"` | save the Book's serif override; an empty string restores system default |
 | `solo desk flash\|dying\|death\|candle\|omen\|screensaver\|sound\|restore\|settings` | desktop effects, always restored |
 | `solo recall <words>` / `history` | the GM's long memory: search everything said and written down, or the whole story in order |
 | `solo state` / `log` / `rebuild` / `validate` / `outline` | inspection, repair and review |
