@@ -131,7 +131,30 @@ Item {
   // groups that are open, and the track being started.
   property int adds: 0
   property string pickedMove: ""
-  property var openGroups: ({ "Adventure Moves": true })
+  // The move group shown (one at a time), the reference tab shown, and whether
+  // the GM's last words are shown in full. Empty picks a sensible first one.
+  property string moveGroup: ""
+  property string sheetTab: ""
+  property bool leftOffOpen: false
+  readonly property string shownMoveGroup: {
+    var names = root.moves ? root.moveGroups().map(g => g.name) : []
+    if (names.indexOf(root.moveGroup) !== -1) return root.moveGroup
+    return names.indexOf("Adventure Moves") !== -1 ? "Adventure Moves" : names.length > 0 ? names[0] : ""
+  }
+  // The long tail of the sheet, one tab at a time, with what each holds counted.
+  readonly property var sheetTabs: {
+    var tabs = []
+    if (root.moves !== null && root.pc !== null && !root.dead) tabs.push({ id: "vows", label: "vows " + root.openTracks().length })
+    var world = root.worldCount()
+    tabs.push({ id: "world", label: world > 0 ? "world " + world : "world" })
+    if (root.pc !== null && !root.dead) tabs.push({ id: "pack", label: "pack" })
+    if (!root.dead && (root.magic !== null || root.ridersFor("alone").length > 0)) tabs.push({ id: "magic", label: "magic" })
+    tabs.push({ id: "log", label: "log" })
+    return tabs
+  }
+  // Until one is picked: magic for a caster (spells are actions), else the first.
+  readonly property string shownTab: sheetTabs.some(t => t.id === root.sheetTab) ? root.sheetTab
+    : sheetTabs.some(t => t.id === "magic") && root.magic !== null ? "magic" : sheetTabs[0].id
   property string trackKind: "vow"
   property string trackRank: "dangerous"
   // Magic and abilities: the power level of the next spell, the die the body gives for it, the spell waiting to
@@ -545,10 +568,17 @@ Item {
     return Object.keys(groups).map(name => ({ name: name, moves: groups[name] }))
   }
 
-  function toggleGroup(name) {
-    var next = Object.assign({}, root.openGroups)
-    next[name] = !next[name]
-    root.openGroups = next
+  function groupMoves(name) {
+    var group = root.moveGroups().find(g => g.name === name)
+    return group ? group.moves : []
+  }
+
+  function heldConditions() {
+    return root.pc ? root.labels.conditions.filter(c => root.pc.conditions.indexOf(c) !== -1) : []
+  }
+
+  function worldCount() {
+    return root.visibleClocks().length + root.people().length + root.promises().length + (root.game ? root.game.clues.length : 0)
   }
 
   function openTracks() {
@@ -1158,6 +1188,7 @@ Item {
   }
 
   component HeaderChoice: Choice {
+    bordered: false
     Layout.minimumWidth: implicitWidth
     Layout.minimumHeight: Math.max(implicitHeight, Style.space(28))
     focusable: true
@@ -1217,6 +1248,149 @@ Item {
     Choice { text: "+"; onClicked: stepper.stepped(Math.min(stepper.to, stepper.value + 1)) }
   }
 
+  // A thin rule between the sheet's zones.
+  component Rule: Rectangle {
+    Layout.fillWidth: true
+    implicitHeight: 1
+    color: Qt.rgba(root.textColor.r, root.textColor.g, root.textColor.b, 0.1)
+  }
+
+  // A quiet text control, as the Book's own links: book, terminal, meaning, more.
+  component Link: Button {
+    foreground: root.dim
+    bordered: false
+    focusable: true
+    fontSize: Style.font.bodySmall
+    horizontalPadding: Style.space(3)
+    verticalPadding: Style.space(2)
+    Accessible.role: Accessible.Button
+    Accessible.name: text
+    Accessible.onPressAction: if (enabled) clicked()
+  }
+
+  // A tab: plain text, the one shown underlined in the accent.
+  component Tab: Button {
+    id: tab
+    property bool current: false
+    foreground: current ? theme.controlText("selected") : root.dim
+    bordered: false
+    focusable: true
+    fontSize: Style.font.caption
+    horizontalPadding: 0
+    verticalPadding: Style.space(3)
+    Accessible.role: Accessible.PageTab
+    Accessible.name: text
+    Accessible.onPressAction: if (enabled) clicked()
+
+    Rectangle {
+      anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
+      height: 1
+      color: Shell.Color.accent
+      visible: tab.current
+    }
+  }
+
+  // A stat to roll: its number large and its name under it, the whole cell the button.
+  component StatCell: Button {
+    id: cell
+    property string name: ""
+    property string value: ""
+    Layout.fillWidth: true
+    Layout.preferredWidth: 1
+    Layout.preferredHeight: Style.space(40)
+    implicitHeight: Style.space(40)
+    foreground: root.textColor
+    bordered: true
+    focusable: true
+    text: ""
+    Accessible.role: Accessible.Button
+    Accessible.name: cell.name + " " + cell.value
+    Accessible.onPressAction: if (enabled) clicked()
+
+    Column {
+      anchors.centerIn: parent
+      spacing: 0
+
+      Text {
+        anchors.horizontalCenter: parent.horizontalCenter
+        textFormat: Text.PlainText
+        text: cell.value
+        font.family: Style.font.family
+        font.pixelSize: Style.font.title
+        font.bold: true
+        color: cell.selected ? theme.controlText("selected") : root.textColor
+      }
+
+      Text {
+        anchors.horizontalCenter: parent.horizontalCenter
+        textFormat: Text.PlainText
+        text: cell.name
+        font.family: Style.font.family
+        font.pixelSize: Style.font.caption
+        color: cell.selected ? theme.controlText("selected") : root.dim
+      }
+    }
+  }
+
+  // A small − n + for the roll heading: boons, banes, adds.
+  component MiniStepper: RowLayout {
+    id: mini
+    property string label: ""
+    property int value: 0
+    property int from: 0
+    property int to: 5
+    signal stepped(int value)
+    spacing: Style.space(1)
+
+    Line { Layout.fillWidth: false; Layout.rightMargin: Style.space(3); text: mini.label; size: Style.font.caption; color: root.dim }
+    Link {
+      text: "−"
+      Accessible.name: "Fewer " + mini.label
+      onClicked: mini.stepped(Math.max(mini.from, mini.value - 1))
+    }
+    Line {
+      Layout.fillWidth: false
+      text: String(mini.value)
+      size: Style.font.bodySmall
+      font.bold: mini.value > mini.from
+      color: mini.value > mini.from ? theme.accentText : root.textColor
+    }
+    Link {
+      text: "+"
+      Accessible.name: "More " + mini.label
+      onClicked: mini.stepped(Math.min(mini.to, mini.value + 1))
+    }
+  }
+
+  // Death roll marks: so many boxes, the ones earned filled.
+  component Pips: ColumnLayout {
+    id: pips
+    property string label: ""
+    property int count: 3
+    property int filled: 0
+    property color ink: root.textColor
+    spacing: Style.space(4)
+
+    Line { Layout.fillWidth: false; text: pips.label; size: Style.font.caption; color: root.dim }
+
+    Row {
+      spacing: Style.space(4)
+
+      Repeater {
+        model: pips.count
+        delegate: Rectangle {
+          required property int index
+          width: Style.space(12)
+          height: width
+          radius: Math.min(2, Style.cornerRadius)
+          color: index < pips.filled ? pips.ink : "transparent"
+          border.width: 1
+          border.color: pips.ink
+        }
+      }
+    }
+  }
+
   // The abilities that go with a roll: tap one to switch it on, and it is paid for with the roll.
   component Riders: Flow {
     id: riders
@@ -1260,18 +1434,21 @@ Item {
 
     RowLayout {
       Layout.fillWidth: true
-      Line { text: "Momentum" }
+      Line { text: "Momentum"; size: Style.font.caption; color: root.dim }
       Line {
         Layout.fillWidth: false
-        text: root.signed(bar.track.value) + "  (resets to " + root.signed(bar.track.reset) + ")"
+        size: Style.font.caption
+        textFormat: Text.StyledText
+        text: "<b>" + root.signed(bar.track.value) + "</b> · resets " + root.signed(bar.track.reset)
       }
     }
 
     Rectangle {
       id: rail
       Layout.fillWidth: true
-      implicitHeight: Style.space(8)
-      radius: height / 2
+      Layout.topMargin: Style.space(2)
+      implicitHeight: Style.space(6)
+      radius: Math.min(height / 2, Style.cornerRadius)
       color: root.faint
 
       // Above the ceiling the hero's impacts leave: out of reach.
@@ -1338,16 +1515,30 @@ Item {
     property string label: ""
     property int value: 0
     property int maximum: 1
+    // Compact: a small label and reading over the bar, for tracks set side by side.
+    property bool compact: false
+    // Strong: the label in the text colour (a foe's name) rather than dimmed.
+    property bool strong: false
     readonly property real share: Math.max(0, Math.min(1, value / Math.max(1, maximum)))
     Layout.fillWidth: true
-    spacing: Style.space(2)
+    spacing: Style.space(compact ? 3 : 2)
 
     RowLayout {
       Layout.fillWidth: true
-      Line { text: meter.label }
+      Line {
+        text: meter.label
+        size: !meter.compact ? Style.font.body : meter.strong ? Style.font.bodySmall : Style.font.caption
+        color: meter.compact && !meter.strong ? root.dim : root.textColor
+        font.bold: meter.compact && meter.strong
+        wrapMode: Text.NoWrap
+        maximumLineCount: 1
+        elide: Text.ElideRight
+      }
       Line {
         Layout.fillWidth: false
-        text: meter.value + " / " + meter.maximum
+        size: meter.compact ? Style.font.caption : Style.font.body
+        color: meter.share <= 0.25 ? theme.urgentText : root.textColor
+        text: meter.compact ? meter.value + "/" + meter.maximum : meter.value + " / " + meter.maximum
       }
     }
 
@@ -1355,7 +1546,7 @@ Item {
       id: track
       Layout.fillWidth: true
       implicitHeight: Style.space(6)
-      radius: height / 2
+      radius: Math.min(height / 2, Style.cornerRadius)
       color: root.faint
 
       // What was just lost lingers a moment in red, then drains away.
@@ -1380,6 +1571,18 @@ Item {
         color: meter.share <= 0.25 ? Shell.Color.urgent : meter.share <= 0.5 ? theme.gold : Shell.Color.accent
         Behavior on width { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
         Behavior on color { ColorAnimation { duration: 400 } }
+      }
+
+      // Gaps between the points of a small track, so it reads as countable boxes.
+      Repeater {
+        model: meter.maximum > 1 && meter.maximum <= 20 ? meter.maximum - 1 : 0
+        delegate: Rectangle {
+          required property int index
+          x: track.width * (index + 1) / meter.maximum - width / 2
+          width: Math.max(1, Style.space(2))
+          height: track.height
+          color: Shell.Color.popups.background
+        }
       }
     }
   }
@@ -1458,13 +1661,15 @@ Item {
           HeaderChoice {
             objectName: "tableCampaignsButton"
             visible: root.view === "table"
-            text: "Campaigns"
+            text: "‹ Campaigns"
+            foreground: root.dim
             onClicked: root.show("home")
           }
           HeaderChoice {
             objectName: "tableBackButton"
             visible: root.view === "new"
-            text: "Back"
+            text: "‹ Back"
+            foreground: root.dim
             onClicked: root.show("home")
           }
           Item { Layout.fillWidth: true }
@@ -1888,6 +2093,9 @@ Item {
           }
 
           // Table -------------------------------------------------------------------
+          // One screen for the play loop: where you are, the hero, what you can roll,
+          // a fight or the death roll while they last, the oracle. The long tail
+          // (vows, the world, the pack, magic, the log) sits behind tabs below it.
 
           ColumnLayout {
             visible: root.view === "table"
@@ -1900,32 +2108,49 @@ Item {
               text: root.campaign === "" ? "No campaign is open." : "Loading the table…"
             }
 
-            Line {
-              visible: root.game !== null
-              color: root.dim
-              size: Style.font.bodySmall
-              text: root.game ? (root.game.scene_title || "") + " · " + root.elapsed(root.game.time) + " in" : ""
-            }
-
+            // Where you are, and the two ways to the GM: quiet icons, named in their tooltips.
             RowLayout {
               Layout.fillWidth: true
               visible: root.game !== null
+              spacing: Style.space(6)
 
-              Choice {
-                Layout.fillWidth: true
-                text: "Open the Book"
-                tooltipText: "The story window, with your default agent as GM"
+              Line {
+                objectName: "tableScene"
+                color: root.dim
+                size: Style.font.bodySmall
+                wrapMode: Text.NoWrap
+                maximumLineCount: 1
+                elide: Text.ElideRight
+                text: root.game ? (root.game.scene_title || "") + " · " + root.elapsed(root.game.time) : ""
+              }
+
+              Link {
+                objectName: "tableOpenBook"
+                text: String.fromCodePoint(0xF05DA) // nf-md-book_open_page_variant
+                fontFamily: "Symbols Nerd Font"
+                fontSize: Style.font.title
+                Accessible.name: "Open the Book"
+                tooltipText: "Open the Book: the story window, with your default agent as GM"
                 onClicked: root.openBook()
               }
 
-              Choice {
-                text: "Terminal"
-                tooltipText: "Open the GM in a terminal instead, or bring its window forward"
+              Link {
+                objectName: "tableOpenTerminal"
+                text: String.fromCodePoint(0xF018D) // nf-md-console
+                fontFamily: "Symbols Nerd Font"
+                fontSize: Style.font.title
+                Accessible.name: "Open the GM in a terminal"
+                tooltipText: "Terminal: open the GM in a terminal instead, or bring its window forward"
                 onClicked: root.run(["play", root.campaign, "--terminal"], "gm")
               }
             }
 
             ErrorLine { place: "gm" }
+
+            // The story strip: an ending when there is one, and the GM's last words as
+            // recorded, two lines until asked for, so nothing has to be unfolded to read.
+
+            Rule { visible: root.game !== null && (!!root.game.ended || !!root.game.last_said); Layout.topMargin: Style.space(4) }
 
             Card {
               visible: root.game !== null && !!root.game.ended
@@ -1936,56 +2161,95 @@ Item {
               Line { size: Style.font.bodySmall; text: root.game && root.game.ended ? root.game.ended.text : "" }
             }
 
-            // Where you left off: the GM's last words exactly as recorded, so the table
-            // reads the same before and after the GM window is reopened. Folded until asked for.
+            ColumnLayout {
+              objectName: "lastWords"
+              Layout.fillWidth: true
+              visible: root.game !== null && !!root.game.last_said && !root.game.ended
+              spacing: Style.space(2)
 
-            Fold { id: leftOff; label: "Where you left off"; visible: root.game !== null && !!root.game.last_said }
+              RowLayout {
+                Layout.fillWidth: true
+                spacing: Style.space(6)
 
-            Card {
-              visible: leftOff.open && root.game !== null && !!root.game.last_said
-              clickable: false
+                Line {
+                  size: Style.font.caption
+                  color: root.game && root.game.awaiting_player === true ? theme.accentText : root.dim
+                  font.bold: root.game !== null && root.game.awaiting_player === true
+                  text: root.turn.status === "thinking" || root.turn.status === "writing" ? "The GM is writing…"
+                    : root.game && root.game.awaiting_player === true ? "● Your turn" : "Where you left off"
+                }
+
+                Link {
+                  visible: lastSaid.truncated || root.leftOffOpen
+                  fontSize: Style.font.caption
+                  text: root.leftOffOpen ? "less" : "more"
+                  Accessible.name: root.leftOffOpen ? "Show less of the GM's last words" : "Show all of the GM's last words"
+                  onClicked: root.leftOffOpen = !root.leftOffOpen
+                }
+              }
 
               Line {
+                id: lastSaid
+                objectName: "lastSaid"
                 size: Style.font.bodySmall
+                color: Qt.tint(root.dim, Qt.rgba(root.textColor.r, root.textColor.g, root.textColor.b, 0.45))
+                font.italic: true
+                maximumLineCount: root.leftOffOpen ? 1000 : 2
+                elide: Text.ElideRight
                 text: root.game && root.game.last_said ? root.game.last_said.text : ""
               }
+            }
+
+            // The hero: name and kind, the tracks side by side, only the conditions held.
+
+            Rule { visible: root.pc !== null; Layout.topMargin: Style.space(4) }
+
+            RowLayout {
+              Layout.fillWidth: true
+              visible: root.pc !== null
+              spacing: Style.space(8)
+
               Line {
-                visible: root.game !== null && root.game.awaiting_player === true
+                objectName: "heroName"
+                Layout.fillWidth: false
+                Layout.maximumWidth: implicitWidth
+                size: Style.font.title
+                font.bold: true
+                text: root.pc ? root.pc.name : ""
+              }
+
+              Line {
+                visible: root.pc !== null && Object.keys(root.pc.info).length > 0
                 size: Style.font.caption
                 color: root.dim
-                text: "Waiting for your answer"
+                horizontalAlignment: Text.AlignRight
+                text: root.pc ? root.values(root.pc.info).join(" · ") : ""
               }
             }
 
-            // Character
-
-            Heading { text: "Character"; visible: root.pc !== null }
-
-            Line {
+            GridLayout {
+              id: trackGrid
+              readonly property var shown: root.trackIds.filter(t => !(root.pc && root.pc.tracks[t] && root.pc.tracks[t].min !== undefined))
+              Layout.fillWidth: true
               visible: root.pc !== null
-              size: Style.font.title
-              font.bold: true
-              text: root.pc ? root.pc.name : ""
-            }
+              columns: Math.max(1, Math.min(3, shown.length))
+              columnSpacing: Style.space(12)
+              rowSpacing: Style.space(6)
 
-            Line {
-              visible: root.pc !== null && Object.keys(root.pc.info).length > 0
-              size: Style.font.bodySmall
-              color: root.dim
-              text: root.pc ? root.values(root.pc.info).join(" · ") : ""
-            }
-
-            // By count, so a reload keeps the meters and they can show what changed.
-            Repeater {
-              model: root.trackIds.length
-              delegate: Meter {
-                required property int index
-                readonly property string track: root.trackIds[index] || ""
-                // Momentum, which runs below zero, has its own bar (below).
-                visible: !(root.pc && root.pc.tracks[track] && root.pc.tracks[track].min !== undefined)
-                label: root.labels.tracks[track] || track
-                value: root.pc && root.pc.tracks[track] ? root.pc.tracks[track].value : 0
-                maximum: root.pc && root.pc.tracks[track] ? root.pc.tracks[track].max : 1
+              // By count, so a reload keeps the meters and they can show what changed.
+              Repeater {
+                model: root.trackIds.length
+                delegate: Meter {
+                  required property int index
+                  readonly property string track: root.trackIds[index] || ""
+                  // Momentum, which runs below zero, has its own bar (below).
+                  visible: !(root.pc && root.pc.tracks[track] && root.pc.tracks[track].min !== undefined)
+                  compact: true
+                  Layout.preferredWidth: 1
+                  label: root.labels.tracks[track] || track
+                  value: root.pc && root.pc.tracks[track] ? root.pc.tracks[track].value : 0
+                  maximum: root.pc && root.pc.tracks[track] ? root.pc.tracks[track].max : 1
+                }
               }
             }
 
@@ -1995,97 +2259,185 @@ Item {
               range: root.momentum || ({ min: -6, max: 10 })
             }
 
+            // Only the conditions held; the full list is the rules' business, not the sheet's.
             Flow {
               Layout.fillWidth: true
               spacing: Style.space(4)
               visible: root.pc !== null && root.labels.conditions.length > 0
 
               Repeater {
-                model: root.pc ? root.labels.conditions : []
+                model: root.heldConditions()
                 delegate: Tag {
                   required property string modelData
                   label: modelData
-                  quiet: true
-                  lit: root.pc !== null && root.pc.conditions.indexOf(modelData) !== -1
+                  lit: true
                 }
               }
+
+              Line {
+                visible: root.heldConditions().length === 0
+                width: implicitWidth
+                size: Style.font.caption
+                color: root.dim
+                text: "no conditions"
+              }
             }
 
-            // At 0 HP only the death roll is left to click (or, alone, rallying and saving yourself).
             Line {
-              visible: root.atZero
-              color: theme.urgentText
-              font.bold: true
-              text: root.atZero && root.labels.dying ? root.pc.name + " is dying: " + root.pc.dying.successes + " of " + root.labels.dying.rally
-                + " successes, " + root.pc.dying.failures + " of " + root.labels.dying.die + " failures. Any hit is a failure." : ""
+              visible: root.pc !== null && ((root.pc.abilities || []).length > 0 || Object.keys(root.pc.ratings || {}).length > 0)
+              size: Style.font.caption
+              color: root.dim
+              text: root.pc ? (root.pc.abilities || []).concat(Object.keys(root.pc.ratings || {}).map(k => k + " " + root.pc.ratings[k])).join(" · ") : ""
             }
 
-            Flow {
-              Layout.fillWidth: true
-              spacing: Style.space(4)
+            // At 0 HP the action zone is one decision: the death roll (or, alone,
+            // rallying and saving yourself).
+            Rectangle {
+              objectName: "dyingPanel"
               visible: root.atZero
+              Layout.fillWidth: true
+              Layout.topMargin: Style.space(6)
+              implicitHeight: dyingColumn.implicitHeight + Style.space(20)
+              radius: Style.cornerRadius
+              color: Qt.rgba(Shell.Color.urgent.r, Shell.Color.urgent.g, Shell.Color.urgent.b, 0.08)
+              border.width: 1
+              border.color: Shell.Color.urgent
 
-              Primary {
-                text: "Death roll"
-                enabled: !action.running
-                onClicked: root.act(["death-roll"], "dying")
-              }
+              ColumnLayout {
+                id: dyingColumn
+                anchors { left: parent.left; right: parent.right; top: parent.top; margins: Style.space(10) }
+                spacing: Style.space(6)
 
-              Choice {
-                visible: !!(root.labels.dying && root.labels.dying.self_save)
-                text: "Save yourself"
-                tooltipText: "A HEALING roll instead of the death roll: stop dying on a success"
-                onClicked: root.act(["death-roll", "--heal"], "dying")
-              }
+                Line {
+                  color: theme.urgentText
+                  font.bold: true
+                  size: Style.font.title
+                  text: root.pc ? root.pc.name + " is dying" : ""
+                }
 
-              Choice {
-                visible: !!(root.labels.dying && root.labels.dying.self_rally) && root.dying
-                text: "Rally"
-                tooltipText: "Rally yourself, with no bane: act again, still making death rolls"
-                onClicked: root.act(["rally"], "dying")
+                Line {
+                  size: Style.font.caption
+                  color: root.dim
+                  text: root.atZero && root.labels.dying ? root.pc.dying.successes + " of " + root.labels.dying.rally + " successes, "
+                    + root.pc.dying.failures + " of " + root.labels.dying.die + " failures. Any hit is a failure." : ""
+                }
+
+                RowLayout {
+                  Layout.fillWidth: true
+                  spacing: Style.space(16)
+                  visible: root.atZero && !!root.labels.dying
+
+                  Pips {
+                    label: "successes"
+                    count: root.labels.dying ? root.labels.dying.rally : 0
+                    filled: root.atZero ? root.pc.dying.successes : 0
+                    ink: theme.accentText
+                  }
+
+                  Pips {
+                    label: "failures"
+                    count: root.labels.dying ? root.labels.dying.die : 0
+                    filled: root.atZero ? root.pc.dying.failures : 0
+                    ink: theme.urgentText
+                  }
+
+                  Item { Layout.fillWidth: true }
+                }
+
+                Primary {
+                  text: "Death roll"
+                  enabled: !action.running
+                  onClicked: root.act(["death-roll"], "dying")
+                }
+
+                Flow {
+                  Layout.fillWidth: true
+                  spacing: Style.space(4)
+
+                  Choice {
+                    visible: !!(root.labels.dying && root.labels.dying.self_save)
+                    text: "Save yourself"
+                    tooltipText: "A HEALING roll instead of the death roll: stop dying on a success"
+                    onClicked: root.act(["death-roll", "--heal"], "dying")
+                  }
+
+                  Choice {
+                    visible: !!(root.labels.dying && root.labels.dying.self_rally) && root.dying
+                    text: "Rally"
+                    tooltipText: "Rally yourself, with no bane: act again, still making death rolls"
+                    onClicked: root.act(["rally"], "dying")
+                  }
+                }
               }
             }
 
             ErrorLine { place: "dying" }
 
-            Line {
-              visible: root.pc !== null && ((root.pc.abilities || []).length > 0 || Object.keys(root.pc.ratings || {}).length > 0)
-              size: Style.font.bodySmall
-              color: root.dim
-              text: root.pc ? (root.pc.abilities || []).concat(Object.keys(root.pc.ratings || {}).map(k => k + " " + root.pc.ratings[k])).join(" · ") : ""
-            }
-
-            // Rolling
-
-            Heading { text: "Roll"; visible: root.pc !== null && !root.dying && !root.dead }
+            // Rolling: the stats are the roll buttons. In a game of moves a move picks
+            // the stat, so the cells light up for the move that waits on one.
 
             RowLayout {
-              visible: root.pc !== null && !root.dying && !root.dead && root.moves === null
               Layout.fillWidth: true
-              spacing: Style.space(12)
+              Layout.topMargin: Style.space(10)
+              visible: root.pc !== null && !root.dead && (!root.dying || root.moves !== null)
+              spacing: Style.space(10)
 
-              Stepper { label: "Boons"; value: root.boons; onStepped: function(value) { root.boons = value } }
-              Stepper { label: "Banes"; value: root.banes; onStepped: function(value) { root.banes = value } }
+              Heading { text: "Roll"; Layout.topMargin: 0 }
+
+              MiniStepper {
+                visible: root.moves === null
+                label: "boons"
+                value: root.boons
+                onStepped: function(value) { root.boons = value }
+              }
+
+              MiniStepper {
+                visible: root.moves === null
+                label: "banes"
+                value: root.banes
+                onStepped: function(value) { root.banes = value }
+              }
+
+              MiniStepper {
+                visible: root.moves !== null
+                label: "adds"
+                value: root.adds
+                onStepped: function(value) { root.adds = value }
+              }
             }
 
-            // Attributes in even columns: six make two rows of three, four fit on one.
             GridLayout {
               id: attributes
               readonly property var names: root.pc ? Object.keys(root.pc.attributes) : []
+              readonly property var ready: root.pickOptions().filter(o => o.stat !== "").map(o => o.stat)
               Layout.fillWidth: true
-              columns: names.length > 4 ? Math.ceil(names.length / 2) : Math.max(1, names.length)
+              columns: Math.max(1, names.length)
               columnSpacing: Style.space(4)
               rowSpacing: Style.space(4)
-              visible: root.pc !== null && !root.dying && !root.dead && root.moves === null
+              visible: root.pc !== null && !root.dead && (root.moves !== null || !root.dying)
 
               Repeater {
                 model: attributes.names
-                delegate: Choice {
+                delegate: StatCell {
                   required property string modelData
-                  Layout.fillWidth: true
-                  text: modelData.toUpperCase() + " " + (root.pc && root.pc.attributes ? root.pc.attributes[modelData] : "")
-                  tooltipText: "Roll " + ((root.labels.attributes || {})[modelData] || modelData)
-                  onClicked: root.roll(modelData)
+                  readonly property string longName: (root.labels.attributes || {})[modelData] || modelData
+                  name: root.moves === null ? modelData.toUpperCase() : modelData
+                  value: String(root.pc && root.pc.attributes ? root.pc.attributes[modelData] : "")
+                  selected: root.moves !== null && root.pickedMove !== "" && attributes.ready.indexOf(modelData) !== -1
+                  tooltipText: root.moves === null ? "Roll " + longName
+                    : selected ? "Roll " + root.moves[root.pickedMove].name + " +" + modelData
+                    : "Pick a move, then the stat to roll it with"
+                  onClicked: {
+                    if (root.moves === null) {
+                      root.roll(modelData)
+                    } else if (selected) {
+                      root.rollMove(root.pickedMove, modelData, "")
+                    } else {
+                      root.error = root.pickedMove === "" ? "Pick a move first, then the stat to roll it with."
+                        : root.moves[root.pickedMove].name + " doesn't roll with " + modelData + "."
+                      root.errorAt = "roll"
+                    }
+                  }
                 }
               }
             }
@@ -2106,70 +2458,66 @@ Item {
                 }
               }
 
-              Choice {
-                text: root.allSkills ? "Fewer skills" : "Other skills…"
-                bordered: false
+              Link {
+                text: root.allSkills ? "fewer skills" : "all skills…"
                 onClicked: root.allSkills = !root.allSkills
               }
             }
 
-            // A game of moves (Ironsworn): the stats are what a move adds, and the hero makes moves.
+            // Advancement: marks come from Dragons and Demons and the GM's end-of-session
+            // questions; rolling them is the last thing in a session.
+
+            RowLayout {
+              Layout.fillWidth: true
+              visible: root.pc !== null && (root.pc.marks || []).length > 0 && !root.dead
+
+              Line {
+                size: Style.font.caption
+                color: root.dim
+                text: root.pc ? "Marked: " + (root.pc.marks || []).map(k => root.pc.skills[k] ? root.pc.skills[k].name : k).join(", ") : ""
+              }
+
+              Choice {
+                text: "Roll advancement"
+                tooltipText: "At the end of a session: each marked skill may go up one"
+                onClicked: root.act(["advance"], "roll")
+              }
+            }
+
+            // A game of moves (Ironsworn): one group of moves at a time, picked from tabs.
+
+            Flow {
+              Layout.fillWidth: true
+              Layout.topMargin: Style.space(4)
+              spacing: Style.space(12)
+              visible: root.moves !== null && root.pc !== null && !root.dead
+
+              Repeater {
+                model: root.moves !== null && root.pc !== null && !root.dead ? root.moveGroups() : []
+                delegate: Tab {
+                  required property var modelData
+                  text: modelData.name.replace(/ [Mm]oves$/, "")
+                  current: root.shownMoveGroup === modelData.name
+                  onClicked: {
+                    root.moveGroup = modelData.name
+                    root.pickedMove = ""
+                  }
+                }
+              }
+            }
+
             Flow {
               Layout.fillWidth: true
               spacing: Style.space(4)
               visible: root.moves !== null && root.pc !== null && !root.dead
 
               Repeater {
-                model: root.pc && root.moves ? Object.keys(root.pc.attributes) : []
-                delegate: Tag {
-                  required property string modelData
-                  label: modelData + " " + (root.pc ? root.pc.attributes[modelData] : "")
-                }
-              }
-            }
-
-            Stepper {
-              visible: root.moves !== null && root.pc !== null && !root.dead
-              label: "Adds"
-              value: root.adds
-              onStepped: function(value) { root.adds = value }
-            }
-
-            Repeater {
-              model: root.moves !== null && root.pc !== null && !root.dead ? root.moveGroups() : []
-              delegate: ColumnLayout {
-                id: group
-                required property var modelData
-                Layout.fillWidth: true
-                spacing: Style.space(2)
-
-                Heading {
-                  text: (root.openGroups[group.modelData.name] ? "▾ " : "▸ ") + group.modelData.name
-                  color: groupMouse.containsMouse ? root.textColor : root.dim
-
-                  MouseArea {
-                    id: groupMouse
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: root.toggleGroup(group.modelData.name)
-                  }
-                }
-
-                Flow {
-                  Layout.fillWidth: true
-                  spacing: Style.space(4)
-                  visible: !!root.openGroups[group.modelData.name]
-
-                  Repeater {
-                    model: group.modelData.moves
-                    delegate: Choice {
-                      required property var modelData
-                      text: modelData.name
-                      selected: root.pickedMove === modelData.id
-                      onClicked: root.pickMove(modelData.id)
-                    }
-                  }
+                model: root.moves !== null && root.pc !== null && !root.dead ? root.groupMoves(root.shownMoveGroup) : []
+                delegate: Choice {
+                  required property var modelData
+                  text: modelData.name
+                  selected: root.pickedMove === modelData.id
+                  onClicked: root.pickMove(modelData.id)
                 }
               }
             }
@@ -2177,32 +2525,192 @@ Item {
             Line {
               visible: root.pickedMove !== ""
               size: Style.font.caption
-              color: root.dim
+              color: theme.accentText
               text: root.pickedMove !== "" && root.moves && root.moves[root.pickedMove]
                 ? root.moves[root.pickedMove].name + ": " + (root.moves[root.pickedMove].kind === "progress" ? "which one?" : "roll with which stat?") : ""
             }
 
+            // What a waiting move offers beyond the stat cells: a track, or a meter like health.
             Flow {
               Layout.fillWidth: true
               spacing: Style.space(4)
               visible: root.pickedMove !== ""
 
               Repeater {
-                model: root.pickOptions()
+                model: root.pickOptions().filter(o => o.stat === "" || attributes.names.indexOf(o.stat) === -1)
                 delegate: Choice {
                   required property var modelData
                   text: modelData.label
+                  selected: true
                   onClicked: root.rollMove(root.pickedMove, modelData.stat, modelData.track)
                 }
               }
             }
 
+            // Fight: the GM starts and ends it; the clicks here are the pure mechanics.
+            // While it lasts it is the action zone.
+
+            Heading {
+              visible: root.fight !== null
+              color: root.textColor
+              text: root.fight ? "Fight · round " + root.fight.round : ""
+            }
+
+            Line {
+              visible: root.fight !== null
+              size: Style.font.caption
+              color: root.dim
+              text: root.fight ? "Initiative: " + root.orderText() : ""
+            }
+
+            Repeater {
+              model: root.foeIds.length
+              delegate: Card {
+                id: foeCard
+                required property int index
+                readonly property string modelData: root.foeIds[index] || ""
+                readonly property var foe: root.fight && root.fight.foes[modelData] ? root.fight.foes[modelData] : ({ name: "", hp: 0, max: 1, armor: 0, down: true })
+                clickable: !foe.down
+                selected: !foe.down && root.aimedAt() === modelData
+                opacity: foe.down ? 0.5 : 1
+                onClicked: root.target = modelData
+
+                Meter {
+                  compact: true
+                  strong: true
+                  label: foeCard.foe.name + (foeCard.foe.down ? " (down)" : foeCard.foe.armor ? " · armor " + foeCard.foe.armor : "")
+                  value: foeCard.foe.hp
+                  maximum: foeCard.foe.max
+                }
+
+                Choice {
+                  visible: !foeCard.foe.down && !root.dead && !(root.fight && root.fight.incoming)
+                  text: "Attacks you"
+                  tooltipText: "Roll this foe's attack"
+                  onClicked: root.act(["enemy", foeCard.modelData], "fight")
+                }
+              }
+            }
+
+            Line {
+              visible: root.fight !== null && !root.dying && !root.dead && root.standing().length > 0 && !root.fight.incoming
+              size: Style.font.caption
+              color: root.dim
+              text: "Attack the selected foe (boons and banes above apply):"
+            }
+
+            Flow {
+              Layout.fillWidth: true
+              spacing: Style.space(4)
+              visible: root.fight !== null && !root.dying && !root.dead && root.standing().length > 0 && !root.fight.incoming
+
+              Repeater {
+                model: root.kit.weapons.filter(w => w.attack)
+                delegate: Choice {
+                  required property var modelData
+                  text: modelData.label + " " + modelData.damage + root.weaponNote(modelData)
+                  tooltipText: modelData.condition === "broken" ? "Broken: mend it first" : modelData.condition === "damaged" ? "Damaged: a bane on every use until it is mended" : ""
+                  enabled: modelData.condition !== "broken" && root.waiting === null
+                  opacity: enabled ? 1 : 0.4
+                  onClicked: root.attack(modelData.id)
+                }
+              }
+            }
+
+            Riders {
+              visible: root.fight !== null && !root.dying && !root.dead && root.standing().length > 0 && !root.fight.incoming && choices.length > 0
+              scope: "attack"
+            }
+
+            // A blow on its way: nothing else is rolled until it is answered.
+            Rectangle {
+              objectName: "incomingHit"
+              visible: root.fight !== null && !!root.fight.incoming
+              Layout.fillWidth: true
+              implicitHeight: incomingColumn.implicitHeight + Style.space(16)
+              radius: Style.cornerRadius
+              color: Qt.rgba(Shell.Color.urgent.r, Shell.Color.urgent.g, Shell.Color.urgent.b, 0.08)
+              border.width: 1
+              border.color: Shell.Color.urgent
+
+              ColumnLayout {
+                id: incomingColumn
+                anchors { left: parent.left; right: parent.right; top: parent.top; margins: Style.space(8) }
+                spacing: Style.space(6)
+
+                Line {
+                  color: theme.urgentText
+                  font.bold: true
+                  text: root.fight && root.fight.incoming ? root.fight.incoming.name + " hits: " + root.fight.incoming.damage
+                    + " damage" + (root.kit.armor ? ", armor " + root.kit.armor : "") : ""
+                }
+
+                Flow {
+                  Layout.fillWidth: true
+                  spacing: Style.space(4)
+
+                  Choice {
+                    visible: !root.dying && root.fight !== null && !!root.fight.incoming && root.fight.incoming.can_defend !== false
+                    text: "Evade"
+                    selected: true
+                    onClicked: root.act(["defend", "evade"].concat(root.useArgs("defend", "dodge")), "fight", () => root.spent("defend", "dodge"))
+                  }
+
+                  Repeater {
+                    model: !root.dying && root.fight && root.fight.incoming && root.fight.incoming.can_defend !== false
+                      && root.fight.incoming.can_parry !== false ? root.kit.weapons.filter(w => w.parry) : []
+                    delegate: Choice {
+                      required property var modelData
+                      text: "Parry: " + modelData.label + root.weaponNote(modelData)
+                      tooltipText: modelData.condition === "broken" ? "Broken: mend it first" : ""
+                      selected: enabled
+                      enabled: modelData.condition !== "broken"
+                      opacity: enabled ? 1 : 0.4
+                      onClicked: root.act(["defend", "parry", "--with", modelData.id].concat(root.useArgs("defend", "parry")), "fight", () => root.spent("defend", "parry"))
+                    }
+                  }
+
+                  Choice {
+                    text: "Take it"
+                    onClicked: root.act(["defend", "take"], "fight")
+                  }
+                }
+              }
+            }
+
+            Riders {
+              visible: root.fight !== null && !root.dying && !root.dead && choices.length > 0
+              scope: "defend"
+            }
+
+            Riders {
+              visible: root.fight !== null && !root.dying && !root.dead && choices.length > 0
+              scope: "round"
+            }
+
+            RowLayout {
+              Layout.fillWidth: true
+              visible: root.fight !== null && !root.dead
+
+              Item { Layout.fillWidth: true }
+
+              Link {
+                text: "Next round ›"
+                tooltipText: "Deal new initiative cards"
+                onClicked: root.act(["fight", "--round"].concat(root.useArgs("round", "")), "fight", () => root.spent("round", ""))
+              }
+            }
+
+            ErrorLine { place: "fight" }
+
             // The last roll: its number large, tumbling for a moment when a new one comes in
             // and landing with a jolt; gold for a Dragon, red for a Demon or a failure.
+            // What the roll lets you do (burn, push, a Dragon's choice) sits right under it.
+
             RowLayout {
               id: rollCard
               visible: root.lastCheck !== null && !root.dead
-              Layout.topMargin: Style.space(4)
+              Layout.topMargin: Style.space(6)
               Layout.fillWidth: true
               spacing: Style.space(10)
               property string face: root.rollFace()
@@ -2252,10 +2760,12 @@ Item {
                 color: tumble.running ? root.dim : root.rollColor()
                 text: rollCard.face
                 Behavior on color { ColorAnimation { duration: 250 } }
+
                 SequentialAnimation {
                   id: land
                   NumberAnimation { target: rollNumber; property: "scale"; from: 1.45; to: 1; duration: 380; easing.type: Easing.OutBack }
                 }
+
                 // Room for the widest number, so the row doesn't jump while it tumbles.
                 TextMetrics { id: rollSizer; font: rollNumber.font; text: "20" }
               }
@@ -2263,11 +2773,13 @@ Item {
               ColumnLayout {
                 Layout.fillWidth: true
                 spacing: Style.space(1)
+
                 Line {
                   size: Style.font.body
                   font.bold: true
                   text: root.rollHead()
                 }
+
                 Line {
                   size: Style.font.body
                   font.bold: true
@@ -2276,6 +2788,7 @@ Item {
                   text: root.rollVerdict()
                   Behavior on opacity { NumberAnimation { duration: 200 } }
                 }
+
                 Line {
                   size: Style.font.caption
                   color: root.dim
@@ -2325,7 +2838,7 @@ Item {
               visible: !!(root.game && root.game.burn) && !root.dead
               Layout.fillWidth: true
               selected: true
-              text: root.game && root.game.burn ? "Burn momentum " + root.signed(root.game.burn.momentum) : ""
+              text: root.game && root.game.burn ? "Burn momentum " + root.signed(root.game.burn.momentum) + " → " + root.game.burn.hit.replace("_", " ") : ""
               tooltipText: root.game && root.game.burn ? "Cancels the challenge dice under it: a " + root.game.burn.hit.replace("_", " ")
                 + ". Momentum goes back to " + root.signed(root.game.burn.reset) : ""
               onClicked: root.act(["burn"], "roll")
@@ -2368,477 +2881,42 @@ Item {
 
             ErrorLine { place: "roll" }
 
-            // Magic: what the hero can cast, with the power, boons and banes above, and what is ready to cast.
-
-            Heading { text: "Magic"; visible: root.magic !== null && !root.dying && !root.dead }
+            // Oracle: always open. The question and Ask on one line, the odds on another.
 
             RowLayout {
               Layout.fillWidth: true
-              spacing: Style.space(12)
-              visible: root.magic !== null && !root.dying && !root.dead
+              Layout.topMargin: Style.space(10)
+              visible: root.pc !== null && !root.dead
 
-              Stepper {
-                label: "Power"
-                from: 1
-                to: root.magic ? root.magic.max_power : 1
-                value: root.power
-                onStepped: function(value) { root.power = value }
-              }
+              Heading { text: "Oracle"; Layout.topMargin: 0 }
 
-              Line {
-                size: Style.font.caption
-                color: root.dim
-                text: root.magic ? "Ready " + root.magic.ready + " of " + root.magic.limit : ""
+              Link {
+                text: "meaning"
+                fontSize: Style.font.caption
+                tooltipText: "Words to read for a question a yes or no can't answer"
+                onClicked: root.askMeaning()
               }
             }
 
-            Flow {
+            RowLayout {
               Layout.fillWidth: true
-              spacing: Style.space(4)
-              visible: root.magic !== null && root.magic.body.length > 0 && !root.dying && !root.dead
-
-              Line { Layout.fillWidth: false; size: Style.font.caption; color: root.dim; text: "Power from the body:" }
-
-              Repeater {
-                model: root.magic ? root.magic.body : []
-                delegate: Choice {
-                  required property string modelData
-                  text: modelData
-                  tooltipText: "Draw that many WP from your body, and take as much harm"
-                  selected: root.body === modelData
-                  onClicked: root.body = root.body === modelData ? "" : modelData
-                }
-              }
-            }
-
-            Flow {
-              Layout.fillWidth: true
-              spacing: Style.space(4)
-              visible: root.magic !== null && !root.dying && !root.dead
-
-              Repeater {
-                model: root.ready()
-                delegate: Choice {
-                  required property var modelData
-                  text: modelData.name + (modelData.cost !== null ? " · " + modelData.cost + " " + root.magic.track.toUpperCase() : "")
-                  tooltipText: (modelData.trick ? "A magic trick: always ready, and it works" : "Rank " + modelData.rank + (modelData.school ? ", " + modelData.school : ""))
-                    + (modelData.damage && root.fight ? ". Hits the foe you aimed at" : "") + (modelData.heal ? ". Heals you" : "")
-                  selected: !modelData.trick
-                  enabled: root.waiting === null && !action.running
-                  opacity: enabled ? 1 : 0.5
-                  onClicked: root.cast(modelData, false)
-                }
-              }
-            }
-
-            Fold { id: grimoireFold; label: "Grimoire"; visible: root.grimoire().length > 0 && !root.dying && !root.dead }
-
-            Repeater {
-              model: grimoireFold.open && !root.dying && !root.dead ? root.grimoire() : []
-              delegate: RowLayout {
-                id: spellRow
-                required property var modelData
-                Layout.fillWidth: true
-                spacing: Style.space(4)
-
-                Line { text: spellRow.modelData.name + (spellRow.modelData.cost !== null ? " · " + spellRow.modelData.cost + " " + root.magic.track.toUpperCase() : "") }
-
-                Choice {
-                  text: "Prepare"
-                  tooltipText: "Hold it ready (it takes a stretch of study, the GM's to give)"
-                  selected: root.preparing === spellRow.modelData.name
-                  onClicked: root.prepare(spellRow.modelData)
-                }
-
-                Choice {
-                  text: "From the grimoire"
-                  tooltipText: spellRow.modelData.reaction ? "A reaction spell can't be cast from the grimoire" : "Cast it unprepared: it takes twice as long"
-                  enabled: root.waiting === null && !action.running && !spellRow.modelData.reaction
-                  opacity: enabled ? 1 : 0.4
-                  onClicked: root.cast(spellRow.modelData, true)
-                }
-              }
-            }
-
-            Line {
-              visible: root.preparing !== ""
-              size: Style.font.caption
-              color: root.dim
-              text: "You hold as many as you can: put which aside for " + root.preparing + "?"
-            }
-
-            Flow {
-              Layout.fillWidth: true
-              spacing: Style.space(4)
-              visible: root.preparing !== ""
-
-              Repeater {
-                model: root.preparing !== "" ? root.ready().filter(s => !s.trick) : []
-                delegate: Choice {
-                  required property var modelData
-                  text: modelData.name
-                  onClicked: root.putAside(modelData)
-                }
-              }
-            }
-
-            ErrorLine { place: "magic" }
-
-            // Abilities that stand alone: paid for and written down, and the GM says what they do.
-
-            Heading { text: "Abilities"; visible: root.ridersFor("alone").length > 0 && !root.dying && !root.dead }
-
-            Stepper {
-              visible: root.ridersFor("alone").some(a => a.cost === "varies") && !root.dying && !root.dead
-              label: "Spend"
-              from: 1
-              to: root.spendMost()
-              value: root.spend
-              onStepped: function(value) { root.spend = value }
-            }
-
-            Flow {
-              Layout.fillWidth: true
-              spacing: Style.space(4)
-              visible: !root.dying && !root.dead
-
-              Repeater {
-                model: root.ridersFor("alone")
-                delegate: Choice {
-                  required property var modelData
-                  text: modelData.name + " (" + root.abilityCost(modelData) + ")"
-                  tooltipText: modelData.afford ? "Pay for it; the GM reads its page" : "Not enough to pay for it"
-                  enabled: modelData.afford && !action.running
-                  opacity: enabled ? 1 : 0.4
-                  onClicked: root.useAbility(modelData)
-                }
-              }
-            }
-
-            ErrorLine { place: "ability" }
-
-            // Vows, journeys and fights (Ironsworn): ten boxes each, marked as the story earns it.
-
-            Heading { text: "Vows and roads"; visible: root.moves !== null && root.openTracks().length > 0 && !root.dead }
-
-            Repeater {
-              model: root.moves !== null && !root.dead ? root.openTracks() : []
-              delegate: Card {
-                id: trackCard
-                required property var modelData
-                readonly property bool ranked: !!root.progressSpec && !!root.progressSpec.kinds[modelData.kind]
-                clickable: false
-
-                Line {
-                  font.bold: true
-                  text: trackCard.modelData.name
-                }
-
-                Line {
-                  size: Style.font.caption
-                  color: root.dim
-                  text: (trackCard.modelData.rank ? trackCard.modelData.rank + " " : "")
-                    + (root.progressSpec ? (root.progressSpec.kinds[trackCard.modelData.kind] || root.progressSpec.unranked[trackCard.modelData.kind] || "").toLowerCase() : "")
-                    + " · " + Math.floor(trackCard.modelData.ticks / (root.progressSpec ? root.progressSpec.ticks : 4)) + " of " + (root.progressSpec ? root.progressSpec.boxes : 10)
-                }
-
-                Boxes { track: trackCard.modelData }
-
-                RowLayout {
-                  spacing: Style.space(4)
-
-                  Choice {
-                    text: "Mark progress"
-                    tooltipText: trackCard.ranked ? "What a step of this rank is worth" : "One tick"
-                    onClicked: root.act(["track", "mark", trackCard.modelData.id], "track")
-                  }
-
-                  Choice {
-                    visible: trackCard.ranked
-                    text: "Progress roll"
-                    tooltipText: "Compare the filled boxes to the challenge dice"
-                    onClicked: root.rollTrack(trackCard.modelData)
-                  }
-                }
-              }
-            }
-
-            Fold {
-              id: trackFold
-              label: "Start a track"
-              visible: root.moves !== null && root.pc !== null && !root.dead
-            }
-
-            ColumnLayout {
-              visible: trackFold.open && root.moves !== null && root.pc !== null && !root.dead
-              Layout.fillWidth: true
+              visible: root.pc !== null && !root.dead
               spacing: Style.space(4)
 
               TextField {
-                id: trackName
-                objectName: "trackName"
+                id: question
+                objectName: "question"
                 Layout.fillWidth: true
-                placeholderText: "A vow, a road or a foe"
-                onAccepted: root.startTrack()
-              }
-
-              Flow {
-                Layout.fillWidth: true
-                spacing: Style.space(4)
-
-                Repeater {
-                  model: root.progressSpec ? Object.keys(root.progressSpec.kinds) : []
-                  delegate: Choice {
-                    required property string modelData
-                    text: root.progressSpec.kinds[modelData]
-                    selected: root.trackKind === modelData
-                    onClicked: root.trackKind = modelData
-                  }
-                }
-              }
-
-              Flow {
-                Layout.fillWidth: true
-                spacing: Style.space(4)
-
-                Repeater {
-                  model: root.progressSpec ? Object.keys(root.progressSpec.ranks) : []
-                  delegate: Choice {
-                    required property string modelData
-                    text: modelData
-                    selected: root.trackRank === modelData
-                    onClicked: root.trackRank = modelData
-                  }
-                }
+                placeholderText: "Ask a question"
+                onAccepted: root.askOracle()
               }
 
               Choice {
-                text: "Start"
+                text: "Ask"
+                tooltipText: "Or press Enter in the question"
                 selected: true
-                onClicked: root.startTrack()
+                onClicked: root.askOracle()
               }
-            }
-
-            ErrorLine { place: "track" }
-
-            // Advancement: marks come from Dragons and Demons and the GM's end-of-session
-            // questions; rolling them is the last thing in a session.
-
-            RowLayout {
-              Layout.fillWidth: true
-              visible: root.pc !== null && (root.pc.marks || []).length > 0 && !root.dead
-
-              Line {
-                size: Style.font.bodySmall
-                color: root.dim
-                text: root.pc ? "Marked: " + (root.pc.marks || []).map(k => root.pc.skills[k] ? root.pc.skills[k].name : k).join(", ") : ""
-              }
-
-              Choice {
-                text: "Roll advancement"
-                tooltipText: "At the end of a session: each marked skill may go up one"
-                onClicked: root.act(["advance"], "roll")
-              }
-            }
-
-            // Fight: the GM starts and ends it; the clicks here are the pure mechanics.
-
-            Heading { text: root.fight ? "Fight · round " + root.fight.round : ""; visible: root.fight !== null }
-
-            Line {
-              visible: root.fight !== null
-              size: Style.font.caption
-              color: root.dim
-              text: "Initiative: " + root.orderText()
-            }
-
-            Repeater {
-              model: root.foeIds.length
-              delegate: Card {
-                id: foeCard
-                required property int index
-                readonly property string modelData: root.foeIds[index] || ""
-                readonly property var foe: root.fight && root.fight.foes[modelData] ? root.fight.foes[modelData] : ({ name: "", hp: 0, max: 1, armor: 0, down: true })
-                clickable: !foe.down
-                selected: !foe.down && root.aimedAt() === modelData
-                opacity: foe.down ? 0.5 : 1
-                onClicked: root.target = modelData
-
-                Meter {
-                  label: foeCard.foe.name + (foeCard.foe.down ? " (down)" : foeCard.foe.armor ? " · armor " + foeCard.foe.armor : "")
-                  value: foeCard.foe.hp
-                  maximum: foeCard.foe.max
-                }
-
-                Choice {
-                  visible: !foeCard.foe.down && !root.dead && !(root.fight && root.fight.incoming)
-                  text: "Attacks you"
-                  tooltipText: "Roll this foe's attack"
-                  onClicked: root.act(["enemy", foeCard.modelData], "fight")
-                }
-              }
-            }
-
-            Line {
-              visible: root.fight !== null && !root.dying && !root.dead && root.standing().length > 0 && !root.fight.incoming
-              size: Style.font.caption
-              color: root.dim
-              text: "Attack the selected foe (boons and banes above apply):"
-            }
-
-            Flow {
-              Layout.fillWidth: true
-              spacing: Style.space(4)
-              visible: root.fight !== null && !root.dying && !root.dead && root.standing().length > 0 && !root.fight.incoming
-
-              Repeater {
-                model: root.kit.weapons.filter(w => w.attack)
-                delegate: Choice {
-                  required property var modelData
-                  text: modelData.label + " " + modelData.damage + root.weaponNote(modelData)
-                  tooltipText: modelData.condition === "broken" ? "Broken: mend it first" : modelData.condition === "damaged" ? "Damaged: a bane on every use until it is mended" : ""
-                  enabled: modelData.condition !== "broken" && root.waiting === null
-                  opacity: enabled ? 1 : 0.4
-                  onClicked: root.attack(modelData.id)
-                }
-              }
-            }
-
-            Riders {
-              visible: root.fight !== null && !root.dying && !root.dead && root.standing().length > 0 && !root.fight.incoming && choices.length > 0
-              scope: "attack"
-            }
-
-            Line {
-              visible: root.fight !== null && !!root.fight.incoming
-              color: theme.urgentText
-              font.bold: true
-              text: root.fight && root.fight.incoming ? root.fight.incoming.name + " hits: " + root.fight.incoming.damage
-                + " damage" + (root.kit.armor ? ", armor " + root.kit.armor : "") : ""
-            }
-
-            Flow {
-              Layout.fillWidth: true
-              spacing: Style.space(4)
-              visible: root.fight !== null && !!root.fight.incoming
-
-              Choice {
-                visible: !root.dying && root.fight !== null && !!root.fight.incoming && root.fight.incoming.can_defend !== false
-                text: "Evade"
-                onClicked: root.act(["defend", "evade"].concat(root.useArgs("defend", "dodge")), "fight", () => root.spent("defend", "dodge"))
-              }
-
-              Repeater {
-                model: !root.dying && root.fight && root.fight.incoming && root.fight.incoming.can_defend !== false
-                  && root.fight.incoming.can_parry !== false ? root.kit.weapons.filter(w => w.parry) : []
-                delegate: Choice {
-                  required property var modelData
-                  text: "Parry: " + modelData.label + root.weaponNote(modelData)
-                  tooltipText: modelData.condition === "broken" ? "Broken: mend it first" : ""
-                  enabled: modelData.condition !== "broken"
-                  opacity: enabled ? 1 : 0.4
-                  onClicked: root.act(["defend", "parry", "--with", modelData.id].concat(root.useArgs("defend", "parry")), "fight", () => root.spent("defend", "parry"))
-                }
-              }
-
-              Choice {
-                text: "Take it"
-                onClicked: root.act(["defend", "take"], "fight")
-              }
-            }
-
-            Riders {
-              visible: root.fight !== null && !root.dying && !root.dead && choices.length > 0
-              scope: "defend"
-            }
-
-            Riders {
-              visible: root.fight !== null && !root.dying && !root.dead && choices.length > 0
-              scope: "round"
-            }
-
-            Choice {
-              visible: root.fight !== null && !root.dead
-              text: "Next round"
-              tooltipText: "Deal new initiative cards"
-              onClicked: root.act(["fight", "--round"].concat(root.useArgs("round", "")), "fight", () => root.spent("round", ""))
-            }
-
-            ErrorLine { place: "fight" }
-
-            // Rest
-
-            Heading { text: "Rest"; visible: root.pc !== null && !root.dead && Object.keys(root.labels.rests).length > 0 }
-
-            Flow {
-              Layout.fillWidth: true
-              spacing: Style.space(4)
-              visible: root.pc !== null && !root.dead
-
-              Repeater {
-                model: root.pc ? Object.keys(root.labels.rests) : []
-                delegate: Choice {
-                  required property string modelData
-                  readonly property bool used: root.restUsed(modelData)
-                  readonly property bool blocked: used || root.fight !== null || root.dying || root.dead
-                  text: root.labels.rests[modelData].label
-                  tooltipText: used ? "Already taken this shift" : root.fight ? "Not during a fight" : "Recover and let time pass"
-                  enabled: !blocked
-                  opacity: blocked ? 0.4 : 1
-                  onClicked: root.act(["rest", modelData].concat(root.tend && root.labels.rests[modelData].tend ? ["--tend"] : []).concat(root.useArgs("rest", modelData)),
-                                      "rest", () => root.spent("rest", modelData))
-                }
-              }
-
-              Choice {
-                visible: !root.dead && Object.keys(root.labels.rests).some(k => root.labels.rests[k].tend)
-                text: "Tend my wounds"
-                tooltipText: "At a stretch rest: a HEALING roll for more HP"
-                selected: root.tend
-                onClicked: root.tend = !root.tend
-              }
-            }
-
-            Riders {
-              visible: root.fight === null && !root.dying && !root.dead && choices.length > 0
-              scope: "rest"
-            }
-
-            ErrorLine { place: "rest" }
-
-            // Light: a torch burns down as game time passes.
-
-            RowLayout {
-              Layout.fillWidth: true
-              visible: root.pc !== null && !root.dead && (!!(root.game && root.game.light) || root.carriesTorch())
-
-              Line {
-                size: Style.font.bodySmall
-                color: root.game && root.game.dark && !root.game.light ? theme.urgentText : root.textColor
-                text: root.game && root.game.light ? root.game.light.label + ": " + root.hours(root.game.light.left) + " left"
-                  : root.game && root.game.dark ? "It is dark here." : "No light burning."
-              }
-
-              Choice {
-                text: root.game && root.game.light ? "Put it out" : "Light a torch"
-                onClicked: root.act(root.game && root.game.light ? ["light", "--out"] : ["light", "torch"], "light")
-              }
-            }
-
-            ErrorLine { place: "light" }
-            ErrorLine { place: "book" }
-
-            // Oracle
-
-            Heading { text: "Oracle"; visible: root.pc !== null && !root.dead }
-
-            TextField {
-              id: question
-              objectName: "question"
-              visible: root.pc !== null && !root.dead
-              Layout.fillWidth: true
-              placeholderText: "Ask a question"
-              onAccepted: root.askOracle()
             }
 
             Flow {
@@ -2850,6 +2928,7 @@ Item {
                 model: root.labels.fortune || []
                 delegate: Choice {
                   required property string modelData
+                  fontSize: Style.font.caption
                   text: modelData.replace("_", "/")
                   tooltipText: ({ yes_no: "Yes or no?", number: "How many?", scale: "How big?", power: "How strong?",
                                   quality: "How fine?", reaction: "How do they react?" })[modelData] || ""
@@ -2859,38 +2938,25 @@ Item {
               }
             }
 
-            Flow {
+            GridLayout {
               Layout.fillWidth: true
-              spacing: Style.space(4)
-              visible: root.pc !== null && !root.dead
+              visible: root.pc !== null && !root.dead && root.labels.likelihood.length > 0
+              columns: Math.max(1, root.labels.likelihood.length)
+              columnSpacing: Style.space(2)
 
               Repeater {
                 model: root.labels.likelihood
                 delegate: Choice {
                   required property string modelData
-                  text: modelData
+                  Layout.fillWidth: true
+                  Layout.preferredWidth: 1
+                  fontSize: Style.font.caption
+                  horizontalPadding: Style.space(2)
+                  text: ({ "small chance": "small", "almost certain": "certain" })[modelData] || modelData
+                  tooltipText: text !== modelData ? modelData : ""
                   selected: root.odds === modelData || (root.odds === "even" && modelData === "50/50")
                   onClicked: root.odds = modelData
                 }
-              }
-            }
-
-            RowLayout {
-              Layout.fillWidth: true
-              visible: root.pc !== null && !root.dead
-
-              Choice {
-                Layout.fillWidth: true
-                text: "Ask"
-                tooltipText: "Or press Enter in the question"
-                selected: true
-                onClicked: root.askOracle()
-              }
-
-              Choice {
-                text: "Meaning"
-                tooltipText: "Words to read for a question a yes or no can't answer"
-                onClicked: root.askMeaning()
               }
             }
 
@@ -2901,137 +2967,542 @@ Item {
             }
 
             ErrorLine { place: "oracle" }
+            ErrorLine { place: "book" }
 
-            // The world
+            // The long tail, one tab at a time: what you track, the world, the pack, magic, the log.
 
-            Heading { text: "Clocks"; visible: root.visibleClocks().length > 0 }
+            Rule { visible: root.game !== null; Layout.topMargin: Style.space(8) }
 
-            Repeater {
-              model: root.visibleClocks()
-              delegate: ColumnLayout {
-                id: clockRow
-                required property var modelData
-                Layout.fillWidth: true
-                spacing: Style.space(2)
+            Flow {
+              objectName: "sheetTabs"
+              Layout.fillWidth: true
+              spacing: Style.space(14)
+              visible: root.game !== null
 
-                Line { text: clockRow.modelData.label + "  " + clockRow.modelData.value + "/" + clockRow.modelData.segments }
+              Repeater {
+                model: root.sheetTabs
+                delegate: Tab {
+                  required property var modelData
+                  objectName: "sheetTab_" + modelData.id
+                  text: modelData.label
+                  current: root.shownTab === modelData.id
+                  onClicked: root.sheetTab = modelData.id
+                }
+              }
+            }
 
-                Row {
-                  spacing: Style.space(3)
+            // Vows, journeys and fights (Ironsworn): ten boxes each, marked as the story earns it.
 
-                  Repeater {
-                    model: clockRow.modelData.segments
-                    delegate: Rectangle {
-                      required property int index
-                      width: Style.space(14)
-                      height: Style.space(6)
-                      radius: 2
-                      color: index < clockRow.modelData.value ? Shell.Color.urgent : root.faint
+            ColumnLayout {
+              objectName: "sheetVows"
+              Layout.fillWidth: true
+              spacing: Style.space(6)
+              visible: root.game !== null && root.shownTab === "vows"
+
+              Line {
+                visible: root.openTracks().length === 0
+                size: Style.font.bodySmall
+                color: root.dim
+                text: "No vows or roads yet."
+              }
+
+              Repeater {
+                model: root.moves !== null && !root.dead ? root.openTracks() : []
+                delegate: ColumnLayout {
+                  id: trackCard
+                  required property var modelData
+                  readonly property bool ranked: !!root.progressSpec && !!root.progressSpec.kinds[modelData.kind]
+                  Layout.fillWidth: true
+                  Layout.bottomMargin: Style.space(4)
+                  spacing: Style.space(4)
+
+                  RowLayout {
+                    Layout.fillWidth: true
+
+                    Line {
+                      font.bold: true
+                      text: trackCard.modelData.name
+                    }
+
+                    Line {
+                      Layout.fillWidth: false
+                      size: Style.font.caption
+                      color: root.dim
+                      text: (trackCard.modelData.rank ? trackCard.modelData.rank + " " : "")
+                        + (root.progressSpec ? (root.progressSpec.kinds[trackCard.modelData.kind] || root.progressSpec.unranked[trackCard.modelData.kind] || "").toLowerCase() : "")
+                        + " · " + Math.floor(trackCard.modelData.ticks / (root.progressSpec ? root.progressSpec.ticks : 4)) + "/" + (root.progressSpec ? root.progressSpec.boxes : 10)
+                    }
+                  }
+
+                  Boxes { track: trackCard.modelData }
+
+                  RowLayout {
+                    spacing: Style.space(4)
+
+                    Choice {
+                      text: "+ mark"
+                      tooltipText: trackCard.ranked ? "Mark progress: what a step of this rank is worth" : "Mark progress: one tick"
+                      onClicked: root.act(["track", "mark", trackCard.modelData.id], "track")
+                    }
+
+                    Choice {
+                      visible: trackCard.ranked
+                      text: "Progress roll"
+                      tooltipText: "Compare the filled boxes to the challenge dice"
+                      onClicked: root.rollTrack(trackCard.modelData)
                     }
                   }
                 }
               }
-            }
 
-            Heading { text: "People"; visible: root.people().length > 0 }
-
-            Repeater {
-              model: root.people()
-              delegate: Line {
-                required property var modelData
-                text: modelData.name + ": " + root.attitude(modelData.attitude) + (modelData.fate !== "alive" ? ", " + modelData.fate : "")
+              Fold {
+                id: trackFold
+                label: "Start a track"
+                visible: root.moves !== null && root.pc !== null && !root.dead
               }
-            }
 
-            Heading { text: "Promises"; visible: root.promises().length > 0 }
-
-            Repeater {
-              model: root.promises()
-              delegate: Line {
-                required property string modelData
-                text: modelData
-              }
-            }
-
-            Heading { text: "Clues"; visible: root.game !== null && root.game.clues.length > 0 }
-
-            Flow {
-              Layout.fillWidth: true
-              spacing: Style.space(4)
-
-              Repeater {
-                model: root.game ? root.game.clues : []
-                delegate: Tag {
-                  required property string modelData
-                  label: modelData.replace(/_/g, " ")
-                }
-              }
-            }
-
-            Heading { text: "Gear"; visible: root.pc !== null && (root.pc.items.length > 0 || root.worn().length > 0) }
-
-            Line {
-              visible: root.pc !== null && root.pc.items.length > 0
-              size: Style.font.bodySmall
-              text: root.pc ? root.pc.items.join(", ") : ""
-            }
-
-            Line {
-              visible: root.game !== null && !!root.game.load
-              size: Style.font.bodySmall
-              color: root.game && root.game.load && root.game.load.over ? theme.urgentText : root.dim
-              text: root.game && root.game.load ? "Carrying " + root.game.load.carried + " of " + root.game.load.capacity + (root.game.load.over ? ": over the load" : "") : ""
-            }
-
-            Repeater {
-              model: root.pc && !root.dead ? root.worn() : []
-              delegate: RowLayout {
-                id: mending
-                required property var modelData
+              ColumnLayout {
+                visible: trackFold.open && root.moves !== null && root.pc !== null && !root.dead
                 Layout.fillWidth: true
                 spacing: Style.space(4)
 
-                Line { text: "The " + mending.modelData.label.toLowerCase() + " is " + mending.modelData.condition; size: Style.font.bodySmall }
+                TextField {
+                  id: trackName
+                  objectName: "trackName"
+                  Layout.fillWidth: true
+                  placeholderText: "A vow, a road or a foe"
+                  onAccepted: root.startTrack()
+                }
 
-                Choice {
-                  text: "Mend"
-                  tooltipText: "A roll to mend it"
-                  enabled: !action.running
-                  onClicked: root.act(["repair", mending.modelData.id], "gear")
+                Flow {
+                  Layout.fillWidth: true
+                  spacing: Style.space(4)
+
+                  Repeater {
+                    model: root.progressSpec ? Object.keys(root.progressSpec.kinds) : []
+                    delegate: Choice {
+                      required property string modelData
+                      text: root.progressSpec.kinds[modelData]
+                      selected: root.trackKind === modelData
+                      onClicked: root.trackKind = modelData
+                    }
+                  }
+                }
+
+                Flow {
+                  Layout.fillWidth: true
+                  spacing: Style.space(4)
+
+                  Repeater {
+                    model: root.progressSpec ? Object.keys(root.progressSpec.ranks) : []
+                    delegate: Choice {
+                      required property string modelData
+                      text: modelData
+                      selected: root.trackRank === modelData
+                      onClicked: root.trackRank = modelData
+                    }
+                  }
                 }
 
                 Choice {
-                  text: "Artisan"
-                  tooltipText: "An artisan mends it, with no roll"
-                  enabled: !action.running
-                  onClicked: root.act(["repair", mending.modelData.id, "--artisan"], "gear")
+                  text: "Start"
+                  selected: true
+                  onClicked: root.startTrack()
                 }
               }
+
+              ErrorLine { place: "track" }
             }
 
-            ErrorLine { place: "gear" }
+            // The world: clocks, the people met, promises, clues.
 
-            Heading { text: "Table settings"; visible: root.prefsText() !== "" }
+            ColumnLayout {
+              objectName: "sheetWorld"
+              Layout.fillWidth: true
+              spacing: Style.space(4)
+              visible: root.game !== null && root.shownTab === "world"
 
-            Line {
-              visible: root.prefsText() !== ""
-              size: Style.font.bodySmall
-              color: root.dim
-              text: root.prefsText()
-            }
-
-            Heading { text: "Log"; visible: root.game !== null }
-
-            Repeater {
-              model: root.recent()
-              delegate: Line {
-                required property var modelData
+              Line {
+                visible: root.worldCount() === 0
                 size: Style.font.bodySmall
-                color: modelData.type === "check" || modelData.type === "push" ? root.textColor : root.dim
-                text: modelData.text
+                color: root.dim
+                text: "Nothing tracked yet: clocks, people, promises and clues appear here."
+              }
+
+              Repeater {
+                model: root.visibleClocks()
+                delegate: ColumnLayout {
+                  id: clockRow
+                  required property var modelData
+                  Layout.fillWidth: true
+                  Layout.bottomMargin: Style.space(4)
+                  spacing: Style.space(3)
+
+                  RowLayout {
+                    Layout.fillWidth: true
+                    Line { size: Style.font.bodySmall; text: clockRow.modelData.label }
+                    Line { Layout.fillWidth: false; size: Style.font.caption; color: root.dim; text: clockRow.modelData.value + "/" + clockRow.modelData.segments }
+                  }
+
+                  RowLayout {
+                    Layout.fillWidth: true
+                    spacing: Style.space(2)
+
+                    Repeater {
+                      model: clockRow.modelData.segments
+                      delegate: Rectangle {
+                        required property int index
+                        Layout.fillWidth: true
+                        Layout.preferredWidth: 1
+                        implicitHeight: Style.space(6)
+                        radius: Math.min(2, Style.cornerRadius)
+                        color: index < clockRow.modelData.value ? Shell.Color.urgent : root.faint
+                      }
+                    }
+                  }
+                }
+              }
+
+              Heading { text: "People"; visible: root.people().length > 0 }
+
+              Repeater {
+                model: root.people()
+                delegate: Line {
+                  required property var modelData
+                  size: Style.font.bodySmall
+                  text: modelData.name + ": " + root.attitude(modelData.attitude) + (modelData.fate !== "alive" ? ", " + modelData.fate : "")
+                }
+              }
+
+              Heading { text: "Promises"; visible: root.promises().length > 0 }
+
+              Repeater {
+                model: root.promises()
+                delegate: Line {
+                  required property string modelData
+                  size: Style.font.bodySmall
+                  text: modelData
+                }
+              }
+
+              Heading { text: "Clues"; visible: root.game !== null && root.game.clues.length > 0 }
+
+              Flow {
+                Layout.fillWidth: true
+                spacing: Style.space(4)
+
+                Repeater {
+                  model: root.game ? root.game.clues : []
+                  delegate: Tag {
+                    required property string modelData
+                    label: modelData.replace(/_/g, " ")
+                  }
+                }
+              }
+
+              Heading { text: "Table settings"; visible: root.prefsText() !== "" }
+
+              Line {
+                visible: root.prefsText() !== ""
+                size: Style.font.bodySmall
+                color: root.dim
+                text: root.prefsText()
               }
             }
 
+            // The pack: rest, light, gear and its mending.
+
+            ColumnLayout {
+              objectName: "sheetPack"
+              Layout.fillWidth: true
+              spacing: Style.space(6)
+              visible: root.game !== null && root.shownTab === "pack"
+
+              Flow {
+                Layout.fillWidth: true
+                spacing: Style.space(4)
+                visible: root.pc !== null && !root.dead && Object.keys(root.labels.rests).length > 0
+
+                Repeater {
+                  model: root.pc ? Object.keys(root.labels.rests) : []
+                  delegate: Choice {
+                    required property string modelData
+                    readonly property bool used: root.restUsed(modelData)
+                    readonly property bool blocked: used || root.fight !== null || root.dying || root.dead
+                    text: root.labels.rests[modelData].label
+                    tooltipText: used ? "Already taken this shift" : root.fight ? "Not during a fight" : "Recover and let time pass"
+                    enabled: !blocked
+                    opacity: blocked ? 0.4 : 1
+                    onClicked: root.act(["rest", modelData].concat(root.tend && root.labels.rests[modelData].tend ? ["--tend"] : []).concat(root.useArgs("rest", modelData)),
+                                        "rest", () => root.spent("rest", modelData))
+                  }
+                }
+
+                Choice {
+                  visible: !root.dead && Object.keys(root.labels.rests).some(k => root.labels.rests[k].tend)
+                  text: "Tend my wounds"
+                  tooltipText: "At a stretch rest: a HEALING roll for more HP"
+                  selected: root.tend
+                  onClicked: root.tend = !root.tend
+                }
+              }
+
+              Riders {
+                visible: root.fight === null && !root.dying && !root.dead && choices.length > 0
+                scope: "rest"
+              }
+
+              ErrorLine { place: "rest" }
+
+              // Light: a torch burns down as game time passes.
+              RowLayout {
+                Layout.fillWidth: true
+                visible: root.pc !== null && !root.dead && (!!(root.game && root.game.light) || root.carriesTorch())
+
+                Line {
+                  size: Style.font.bodySmall
+                  color: root.game && root.game.dark && !root.game.light ? theme.urgentText : root.textColor
+                  text: root.game && root.game.light ? root.game.light.label + ": " + root.hours(root.game.light.left) + " left"
+                    : root.game && root.game.dark ? "It is dark here." : "No light burning."
+                }
+
+                Choice {
+                  text: root.game && root.game.light ? "Put it out" : "Light a torch"
+                  onClicked: root.act(root.game && root.game.light ? ["light", "--out"] : ["light", "torch"], "light")
+                }
+              }
+
+              ErrorLine { place: "light" }
+
+              Line {
+                visible: root.pc !== null && root.pc.items.length > 0
+                size: Style.font.bodySmall
+                text: root.pc ? root.pc.items.join(", ") : ""
+              }
+
+              Line {
+                visible: root.pc !== null && root.pc.items.length === 0 && !(root.game && root.game.load)
+                size: Style.font.bodySmall
+                color: root.dim
+                text: "Nothing carried."
+              }
+
+              Line {
+                visible: root.game !== null && !!root.game.load
+                size: Style.font.caption
+                color: root.game && root.game.load && root.game.load.over ? theme.urgentText : root.dim
+                text: root.game && root.game.load ? "Carrying " + root.game.load.carried + " of " + root.game.load.capacity + (root.game.load.over ? ": over the load" : "") : ""
+              }
+
+              Repeater {
+                model: root.pc && !root.dead ? root.worn() : []
+                delegate: RowLayout {
+                  id: mending
+                  required property var modelData
+                  Layout.fillWidth: true
+                  spacing: Style.space(4)
+
+                  Line { text: "The " + mending.modelData.label.toLowerCase() + " is " + mending.modelData.condition; size: Style.font.bodySmall }
+
+                  Choice {
+                    text: "Mend"
+                    tooltipText: "A roll to mend it"
+                    enabled: !action.running
+                    onClicked: root.act(["repair", mending.modelData.id], "gear")
+                  }
+
+                  Choice {
+                    text: "Artisan"
+                    tooltipText: "An artisan mends it, with no roll"
+                    enabled: !action.running
+                    onClicked: root.act(["repair", mending.modelData.id, "--artisan"], "gear")
+                  }
+                }
+              }
+
+              ErrorLine { place: "gear" }
+            }
+
+            // Magic: what the hero can cast, with the power, boons and banes above, and
+            // what is ready to cast; then the abilities that stand alone.
+
+            ColumnLayout {
+              objectName: "sheetMagic"
+              Layout.fillWidth: true
+              spacing: Style.space(6)
+              visible: root.game !== null && root.shownTab === "magic"
+
+              Line {
+                visible: root.dying
+                size: Style.font.bodySmall
+                color: root.dim
+                text: "Nothing can be cast while dying."
+              }
+
+              RowLayout {
+                Layout.fillWidth: true
+                spacing: Style.space(12)
+                visible: root.magic !== null && !root.dying && !root.dead
+
+                Stepper {
+                  label: "Power"
+                  from: 1
+                  to: root.magic ? root.magic.max_power : 1
+                  value: root.power
+                  onStepped: function(value) { root.power = value }
+                }
+
+                Line {
+                  size: Style.font.caption
+                  color: root.dim
+                  text: root.magic ? "Ready " + root.magic.ready + " of " + root.magic.limit : ""
+                }
+              }
+
+              Flow {
+                Layout.fillWidth: true
+                spacing: Style.space(4)
+                visible: root.magic !== null && root.magic.body.length > 0 && !root.dying && !root.dead
+
+                Line { Layout.fillWidth: false; size: Style.font.caption; color: root.dim; text: "Power from the body:" }
+
+                Repeater {
+                  model: root.magic ? root.magic.body : []
+                  delegate: Choice {
+                    required property string modelData
+                    text: modelData
+                    tooltipText: "Draw that many WP from your body, and take as much harm"
+                    selected: root.body === modelData
+                    onClicked: root.body = root.body === modelData ? "" : modelData
+                  }
+                }
+              }
+
+              Flow {
+                Layout.fillWidth: true
+                spacing: Style.space(4)
+                visible: root.magic !== null && !root.dying && !root.dead
+
+                Repeater {
+                  model: root.ready()
+                  delegate: Choice {
+                    required property var modelData
+                    text: modelData.name + (modelData.cost !== null ? " · " + modelData.cost + " " + root.magic.track.toUpperCase() : "")
+                    tooltipText: (modelData.trick ? "A magic trick: always ready, and it works" : "Rank " + modelData.rank + (modelData.school ? ", " + modelData.school : ""))
+                      + (modelData.damage && root.fight ? ". Hits the foe you aimed at" : "") + (modelData.heal ? ". Heals you" : "")
+                    selected: !modelData.trick
+                    enabled: root.waiting === null && !action.running
+                    opacity: enabled ? 1 : 0.5
+                    onClicked: root.cast(modelData, false)
+                  }
+                }
+              }
+
+              Fold { id: grimoireFold; label: "Grimoire"; visible: root.grimoire().length > 0 && !root.dying && !root.dead }
+
+              Repeater {
+                model: grimoireFold.open && !root.dying && !root.dead ? root.grimoire() : []
+                delegate: RowLayout {
+                  id: spellRow
+                  required property var modelData
+                  Layout.fillWidth: true
+                  spacing: Style.space(4)
+
+                  Line { text: spellRow.modelData.name + (spellRow.modelData.cost !== null ? " · " + spellRow.modelData.cost + " " + root.magic.track.toUpperCase() : "") }
+
+                  Choice {
+                    text: "Prepare"
+                    tooltipText: "Hold it ready (it takes a stretch of study, the GM's to give)"
+                    selected: root.preparing === spellRow.modelData.name
+                    onClicked: root.prepare(spellRow.modelData)
+                  }
+
+                  Choice {
+                    text: "From the grimoire"
+                    tooltipText: spellRow.modelData.reaction ? "A reaction spell can't be cast from the grimoire" : "Cast it unprepared: it takes twice as long"
+                    enabled: root.waiting === null && !action.running && !spellRow.modelData.reaction
+                    opacity: enabled ? 1 : 0.4
+                    onClicked: root.cast(spellRow.modelData, true)
+                  }
+                }
+              }
+
+              Line {
+                visible: root.preparing !== ""
+                size: Style.font.caption
+                color: root.dim
+                text: "You hold as many as you can: put which aside for " + root.preparing + "?"
+              }
+
+              Flow {
+                Layout.fillWidth: true
+                spacing: Style.space(4)
+                visible: root.preparing !== ""
+
+                Repeater {
+                  model: root.preparing !== "" ? root.ready().filter(s => !s.trick) : []
+                  delegate: Choice {
+                    required property var modelData
+                    text: modelData.name
+                    onClicked: root.putAside(modelData)
+                  }
+                }
+              }
+
+              ErrorLine { place: "magic" }
+
+              // Abilities that stand alone: paid for and written down, and the GM says what they do.
+
+              Heading { text: "Abilities"; visible: root.ridersFor("alone").length > 0 && !root.dying && !root.dead }
+
+              Stepper {
+                visible: root.ridersFor("alone").some(a => a.cost === "varies") && !root.dying && !root.dead
+                label: "Spend"
+                from: 1
+                to: root.spendMost()
+                value: root.spend
+                onStepped: function(value) { root.spend = value }
+              }
+
+              Flow {
+                Layout.fillWidth: true
+                spacing: Style.space(4)
+                visible: !root.dying && !root.dead
+
+                Repeater {
+                  model: root.ridersFor("alone")
+                  delegate: Choice {
+                    required property var modelData
+                    text: modelData.name + " (" + root.abilityCost(modelData) + ")"
+                    tooltipText: modelData.afford ? "Pay for it; the GM reads its page" : "Not enough to pay for it"
+                    enabled: modelData.afford && !action.running
+                    opacity: enabled ? 1 : 0.4
+                    onClicked: root.useAbility(modelData)
+                  }
+                }
+              }
+
+              ErrorLine { place: "ability" }
+            }
+
+            // The log, newest first.
+
+            ColumnLayout {
+              objectName: "sheetLog"
+              Layout.fillWidth: true
+              spacing: Style.space(3)
+              visible: root.game !== null && root.shownTab === "log"
+
+              Repeater {
+                model: root.recent()
+                delegate: Line {
+                  required property var modelData
+                  size: Style.font.caption
+                  color: modelData.type === "check" || modelData.type === "push" ? root.textColor : root.dim
+                  text: modelData.text
+                }
+              }
+            }
           }
         }
       }
