@@ -159,6 +159,8 @@ test:
 	python3 -m unittest discover -s tests
 
 qml-check:
+	QT_QPA_PLATFORM=offscreen python3 tests/qml/meter_check.py $${TMPDIR:-/tmp}/oma-solorpg-meters
+	QT_QPA_PLATFORM=offscreen QT_SCALE_FACTOR=1.5 python3 tests/qml/meter_check.py $${TMPDIR:-/tmp}/oma-solorpg-meters-hidpi
 	QT_QPA_PLATFORM=offscreen python3 tests/qml/scale_check.py $${TMPDIR:-/tmp}/oma-solorpg-scale
 	QT_QPA_PLATFORM=offscreen python3 tests/qml/selection_check.py $${TMPDIR:-/tmp}/oma-solorpg-selection-qml
 	QT_QPA_PLATFORM=offscreen python3 tests/qml/theme_check.py $${TMPDIR:-/tmp}/oma-solorpg-theme-qml

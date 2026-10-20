@@ -26,6 +26,7 @@ Column {
   Repeater {
     model: tracks.open
     delegate: Column {
+      id: progressTrack
       required property string modelData
       readonly property var track: tracks.progress[modelData]
       width: tracks.width
@@ -39,12 +40,33 @@ Column {
         color: tracks.theme.text
         text: track.name + (track.rank ? " · " + track.rank + " " + track.kind : "")
       }
-      Text {
-        textFormat: Text.PlainText
-        font.family: tracks.theme.mono
-        font.pixelSize: tracks.theme.small
-        color: tracks.theme.accentText
-        text: tracks.boxes(track.ticks) + "  " + Math.floor(track.ticks / tracks.spec.ticks) + " of " + tracks.spec.boxes
+      Row {
+        objectName: "progressMeter"
+        spacing: wordSpace.advanceWidth
+        TextMetrics { id: wordSpace; font: reading.font; text: "  " }
+
+        SolidBlocks {
+          id: blocks
+          objectName: "progressMeterBlocks"
+          // Keep the original empty/partial glyphs and their normal cell pitch.
+          tracking: 0
+          glyphRenderType: Text.QtRendering
+          font.family: tracks.theme.mono
+          font.pixelSize: tracks.theme.small
+          color: tracks.theme.accentText
+          text: tracks.boxes(progressTrack.track.ticks)
+        }
+
+        Text {
+          id: reading
+          objectName: "progressMeterValue"
+          anchors.baseline: blocks.baseline
+          textFormat: Text.PlainText
+          font.family: tracks.theme.mono
+          font.pixelSize: tracks.theme.small
+          color: tracks.theme.accentText
+          text: Math.floor(progressTrack.track.ticks / tracks.spec.ticks) + " of " + tracks.spec.boxes
+        }
       }
     }
   }
