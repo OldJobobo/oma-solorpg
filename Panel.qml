@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
+import QtQuick.Effects
 import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
@@ -60,6 +61,7 @@ Item {
     function onRawEvent(event) {
       // The regular workspace can remain active underneath a special-workspace overlay.
       if (event.name === "activespecial" || event.name === "activespecialv2") Hyprland.refreshMonitors()
+      if (event.name === "configreloaded") hyprAppearance.refresh()
     }
   }
 
@@ -75,6 +77,14 @@ Item {
   property bool reducedMotion: Quickshell.env("SOLO_REDUCED_MOTION") === "1"
   property real bookScale: 1
   property real tableScale: 1
+  property bool honorHyprland: false
+  HyprlandAppearance {
+    id: hyprAppearance
+    objectName: "hyprAppearance"
+    solo: root.solo
+    requested: root.honorHyprland
+    uiScale: root.tableScale
+  }
   readonly property bool scaleBusy: scaleAction.running
   property string scaleTarget: ""
   property string scaleError: ""
@@ -375,6 +385,16 @@ Item {
     var legacy = valid(data.scale)
     root.bookScale = valid(data.book_scale === undefined ? legacy : data.book_scale)
     root.tableScale = valid(data.table_scale === undefined ? legacy : data.table_scale)
+    root.honorHyprland = data.honor_hyprland === true
+  }
+
+  function setHonorHyprland(on) {
+    if (root.scaleBusy || on === root.honorHyprland) return
+    root.scaleTarget = "hyprland"
+    root.scaleError = ""
+    scaleAction.output = ""
+    scaleAction.command = [root.solo, "ui", "--honor-hyprland=" + (on ? "on" : "off")]
+    scaleAction.running = true
   }
 
   function setUiScale(target, value) {
@@ -1019,7 +1039,8 @@ Item {
         root.scaleError = ""
         uiFile.reload()
       } else if (root.scaleError === "") {
-        root.scaleError = "Couldn't save " + (root.scaleTarget === "book" ? "Book" : "Table") + " scale. Try again."
+        root.scaleError = root.scaleTarget === "hyprland" ? "Couldn't save Hyprland appearance. Try again."
+          : "Couldn't save " + (root.scaleTarget === "book" ? "Book" : "Table") + " scale. Try again."
       }
     }
   }
@@ -1388,6 +1409,7 @@ Item {
     id: tableWindow
     objectName: "tableWindow"
     visible: root.opened
+    onVisibleChanged: if (visible) hyprAppearance.refresh()
     anchors { top: true; right: true; bottom: true }
     implicitWidth: Style.space(340) * root.tableScale
     color: "transparent"
@@ -1404,6 +1426,18 @@ Item {
       anchors.fill: parent
       factor: root.tableScale
     }
+    // Layer surfaces have no native window shadow. Keep the Qt approximation
+    // inside our existing reservation; no compositor rules are installed.
+    RectangularShadow {
+      parent: tableFlip
+      anchors.fill: parent
+      z: -1
+      visible: hyprAppearance.shadowEnabled
+      radius: hyprAppearance.rounding
+      blur: hyprAppearance.shadowBlur
+      color: hyprAppearance.shadowColor
+      offset: hyprAppearance.shadowOffset
+    }
     // Both faces stay mounted in the Table's scaled canvas. Flipping does not
     // change the native window, workspace pin, scroll position or game state.
     Flipable {
@@ -1411,7 +1445,10 @@ Item {
       objectName: "tableFlip"
       parent: tableViewport.canvas
       anchors.fill: parent
-      anchors.margins: Style.gapsOut
+      anchors.topMargin: hyprAppearance.gap("top")
+      anchors.rightMargin: hyprAppearance.gap("right")
+      anchors.bottomMargin: hyprAppearance.gap("bottom")
+      anchors.leftMargin: hyprAppearance.gap("left")
       readonly property bool flipping: flipAnimation.running
       onSideChanged: Qt.callLater(root.focusSettingsFace)
       front: tableSurface
@@ -1436,8 +1473,9 @@ Item {
       objectName: "tableSurface"
       anchors.fill: parent
       color: Shell.Color.popups.background
-      borderSpec: Border.surfaceSpec("popups", "border", Shell.Color.popups.border, Math.max(1, Style.space(2)))
-      radius: Style.cornerRadius
+      borderSpec: hyprAppearance.active ? hyprAppearance.borderSpec
+        : Border.surfaceSpec("popups", "border", Shell.Color.popups.border, Math.max(1, Style.space(2)))
+      radius: hyprAppearance.rounding
       visible: tableFlip.side === Flipable.Front
       Keys.onEscapePressed: root.close()
 
@@ -3036,14 +3074,13 @@ Item {
         }
       }
     }
-    Rectangle {
+    BorderSurface {
       id: settingsSurface
       objectName: "settingsSurface"
       anchors.fill: parent
       color: Shell.Color.popups.background
-      border.width: 1
-      border.color: Shell.Color.popups.border
-      radius: Style.cornerRadius
+      borderSpec: hyprAppearance.active ? hyprAppearance.borderSpec : Border.flat(Shell.Color.popups.border, 1)
+      radius: hyprAppearance.rounding
       visible: tableFlip.side === Flipable.Back
       SettingsView {
         id: settingsView
@@ -3057,6 +3094,9 @@ Item {
         scaleTarget: root.scaleTarget
         scaleError: root.scaleError
         onScaleRequested: (target, value) => root.setUiScale(target, value)
+        honorHyprland: root.honorHyprland
+        hyprlandError: hyprAppearance.error
+        onHonorHyprlandRequested: on => root.setHonorHyprland(on)
         pace: root.pace
         effects: root.effects
         bookSupported: root.agentInfo.book !== false

@@ -126,7 +126,7 @@ def check(item, panel, out, work, engine, wait, process_type):
         QTest.mouseClick(panel, Qt.LeftButton, Qt.NoModifier, point)
         wait(250)
         expect(item.property("tableScale") == scale, "scaled pointer hit missed its control")
-    expect(json.loads(scale_file.read_text()) == {"book_scale": 2, "table_scale": 2}, "scales were not persisted")
+    expect(json.loads(scale_file.read_text()) == {"book_scale": 2, "table_scale": 2, "honor_hyprland": False}, "scales were not persisted")
     component = QQmlComponent(engine, panel.source())
     fresh = component.create()
     expect(fresh is not None, "restart could not load")

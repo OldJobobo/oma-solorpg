@@ -12,6 +12,8 @@ FocusScope {
   required property var theme
   property real bookScale: 1
   property real tableScale: 1
+  property bool honorHyprland: false
+  property string hyprlandError: ""
   property bool scaleBusy: false
   property string scaleTarget: ""
   property string scaleError: ""
@@ -23,6 +25,7 @@ FocusScope {
   property string errorText: ""
   signal dismissed()
   signal scaleRequested(string target, real value)
+  signal honorHyprlandRequested(bool on)
   signal paceRequested(string pace)
   signal effectRequested(string effect, bool on)
 
@@ -180,8 +183,18 @@ FocusScope {
         onScaleRequested: value => settings.scaleRequested("table", value)
       }
       Caption { text: "Both sides of this sidebar. Does not change the Book or desktop." }
-      Caption { visible: settings.scaleBusy; text: "Saving " + (settings.scaleTarget === "book" ? "Book" : "Table") + " scale…" }
+      Caption { visible: settings.scaleBusy; text: settings.scaleTarget === "hyprland" ? "Saving appearance…" : "Saving " + (settings.scaleTarget === "book" ? "Book" : "Table") + " scale…" }
       Label { visible: settings.scaleError !== ""; text: settings.scaleError; color: settings.theme.urgent }
+
+      Effect {
+        objectName: "settingsHonorHyprland"
+        label: "Honor Hyprland settings"
+        description: "Use the desktop's resolved gaps, corners, border and shadow for the Table and Settings. The Book already follows Hyprland."
+        checked: settings.honorHyprland
+        enabled: !settings.scaleBusy
+        onToggled: settings.honorHyprlandRequested(!checked)
+      }
+      Caption { visible: settings.hyprlandError !== ""; text: settings.hyprlandError }
 
       Heading { text: "Game master" }
       Caption { text: "All campaigns" }

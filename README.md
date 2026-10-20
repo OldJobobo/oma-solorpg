@@ -71,6 +71,10 @@ solo ui --book-scale=1.5
 solo ui --table-scale=1.25
 ```
 
+**Honor Hyprland settings** under Appearance is opt-in and saved for all campaigns. Both Table faces use Hyprland's resolved outer gaps, rounding, active border (including gradients), and shadow enable/color/range/offset. Values come from `hyprctl` after Lua imports and Omarchy/theme/user overrides, not by parsing `hyprland.lua`. They refresh on enable, Table open and compositor config reload, independently of Table zoom. The Book already receives native Hyprland styling. The Table remains layer-shell: its shadow is a Qt approximation clipped to its surface; window/workspace rules and compositor blur are not copied. If Hyprland is unavailable, shell appearance is used with a notice. Turning the switch off restores shell styling. No desktop configuration is written. Qt 6.9 or newer is required for the shadow component.
+
+`solo ui --honor-hyprland=on` enables it from the CLI; use `off` to restore shell appearance. `solo ui --hyprland-appearance` reads current resolved values without changing preferences.
+
 `solo ui --scale=1.5` explicitly sets both scales for compatibility with the original shared-scale format. Existing `{"scale": N}` preferences initialize both surfaces at N until a scoped choice is saved. To disable the settings flip animation, set `SOLO_REDUCED_MOTION=1` in the shell's environment.
 
 ## Update

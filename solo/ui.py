@@ -29,6 +29,7 @@ def settings():
     for key in ("book_scale", "table_scale"):
         value = saved.get(key, legacy)
         result[key] = value if _valid(value) else 1
+    result["honor_hyprland"] = saved.get("honor_hyprland") is True
     return result
 
 
@@ -39,11 +40,15 @@ def set_scale(scale):
     return set_scales(book_scale=scale, table_scale=scale)
 
 
-def set_scales(book_scale=None, table_scale=None):
+def set_scales(book_scale=None, table_scale=None, honor_hyprland=None):
     changes = {key: value for key, value in (("book_scale", book_scale), ("table_scale", table_scale)) if value is not None}
     for value in changes.values():
         if not _valid(value):
             raise SoloError("scale must be 1, 1.25, 1.5, 1.75 or 2")
+    if honor_hyprland is not None:
+        if type(honor_hyprland) is not bool:
+            raise SoloError("honor_hyprland must be a boolean")
+        changes["honor_hyprland"] = honor_hyprland
     if not changes:
         return settings()
     path = state_home() / "ui.json"

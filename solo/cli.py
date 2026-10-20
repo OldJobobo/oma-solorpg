@@ -1004,15 +1004,22 @@ def _budget(args):
 def cmd_ui(args):
     """Player-owned app appearance, independent of campaigns and desktop effects."""
     from . import ui
-    changes = args.scale is not None or args.book_scale is not None or args.table_scale is not None
+    if args.hyprland_appearance:
+        if any(value is not None for value in (args.scale, args.book_scale, args.table_scale, args.honor_hyprland)):
+            raise SoloError("use --hyprland-appearance on its own")
+        from .hyprland import appearance
+        _json(appearance())
+        return
+    changes = args.scale is not None or args.book_scale is not None or args.table_scale is not None or args.honor_hyprland is not None
     if changes and os.environ.get("SOLO_BOOK"):
-        raise SoloError("interface scales are the player's to set: the GM can read them, never change them")
+        raise SoloError("interface settings are the player's to set: the GM can read them, never change them")
     if args.scale is not None:
-        if args.book_scale is not None or args.table_scale is not None:
+        if args.book_scale is not None or args.table_scale is not None or args.honor_hyprland is not None:
             raise SoloError("use --scale on its own, or set --book-scale and --table-scale")
         _json(ui.set_scale(args.scale))
     else:
-        _json(ui.set_scales(book_scale=args.book_scale, table_scale=args.table_scale))
+        _json(ui.set_scales(book_scale=args.book_scale, table_scale=args.table_scale,
+                            honor_hyprland=None if args.honor_hyprland is None else args.honor_hyprland == "on"))
 
 
 def cmd_desk(args):
@@ -2065,6 +2072,8 @@ def _parser(only=None):
     sub.add_argument("--book-scale", type=float, help="Book scale: 1, 1.25, 1.5, 1.75 or 2")
     sub.add_argument("--table-scale", type=float, help="Table and settings scale: 1, 1.25, 1.5, 1.75 or 2")
     sub.add_argument("--scale", type=float, help="set both scales explicitly (compatibility)")
+    sub.add_argument("--honor-hyprland", choices=("on", "off"), help="use resolved Hyprland appearance for the Table and Settings")
+    sub.add_argument("--hyprland-appearance", action="store_true", help="read resolved compositor appearance without changing settings")
 
     sub = command("desk", cmd_desk, "desktop effects: flash dragon|demon|hit, dying on [failures]|off, death, candle on|off, omen <text>, screensaver on|off, sound [name], restore, settings [name=on|off]")
     sub.add_argument("--after", type=float, default=0, metavar="SECONDS", help="wait first (to land with the Book's dice)")
