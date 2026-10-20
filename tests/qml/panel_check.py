@@ -282,6 +282,8 @@ def main(out):
     errors += header_check.check(item, panel, out, engine, wait)
     import scaling_panel_check
     errors += scaling_panel_check.check(item, panel, out, work, engine, wait, Process)
+    import fonts_panel_check
+    errors += fonts_panel_check.check(item, panel, out, work, engine, wait, Process)
     item.show("home")
     wait(2500)
     panel.grabWindow().save(str(out / "home.png"))

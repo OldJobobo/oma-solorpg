@@ -14,7 +14,7 @@ from solo.library import REPO
 
 class AppScaleTest(CliCase):
     def test_all_five_scales_round_trip_without_changing_the_other_surface(self):
-        expected = {"book_scale": 1, "table_scale": 1}
+        expected = {"book_scale": 1, "table_scale": 1, "book_serif_font": ""}
         self.assertEqual(ui.settings(), expected)
         for target in ("book", "table"):
             for scale in ui.SCALES:
@@ -30,21 +30,21 @@ class AppScaleTest(CliCase):
         path = self.tmp / "state" / "solo" / "ui.json"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text('{"scale": 1.75}')
-        self.assertEqual(ui.settings(), {"book_scale": 1.75, "table_scale": 1.75})
+        self.assertEqual(ui.settings(), {"book_scale": 1.75, "table_scale": 1.75, "book_serif_font": ""})
         self.assertEqual(json.loads(path.read_text()), {"scale": 1.75})  # reading does not rewrite preferences
-        self.assertEqual(ui.set_scales(book_scale=2), {"book_scale": 2, "table_scale": 1.75})
-        self.assertEqual(json.loads(path.read_text()), {"book_scale": 2, "table_scale": 1.75})
+        self.assertEqual(ui.set_scales(book_scale=2), {"book_scale": 2, "table_scale": 1.75, "book_serif_font": ""})
+        self.assertEqual(json.loads(path.read_text()), {"book_scale": 2, "table_scale": 1.75, "book_serif_font": ""})
 
     def test_both_scoped_flags_and_the_legacy_explicit_both_option(self):
         code, out, err = self.solo("ui", "--book-scale=1.25", "--table-scale=1.75")
         self.assertEqual(code, 0, err)
-        self.assertEqual(json.loads(out), {"book_scale": 1.25, "table_scale": 1.75})
+        self.assertEqual(json.loads(out), {"book_scale": 1.25, "table_scale": 1.75, "book_serif_font": ""})
         code, out, err = self.solo("ui", "--scale=1.5")
         self.assertEqual(code, 0, err)
-        self.assertEqual(json.loads(out), {"book_scale": 1.5, "table_scale": 1.5})
+        self.assertEqual(json.loads(out), {"book_scale": 1.5, "table_scale": 1.5, "book_serif_font": ""})
         code, _, _ = self.solo("ui", "--scale=2", "--book-scale=1")
         self.assertEqual(code, 1)
-        self.assertEqual(ui.settings(), {"book_scale": 1.5, "table_scale": 1.5})
+        self.assertEqual(ui.settings(), {"book_scale": 1.5, "table_scale": 1.5, "book_serif_font": ""})
 
     def test_bad_scale_never_replaces_either_saved_choice(self):
         expected = ui.set_scales(book_scale=1.5, table_scale=1.75)
@@ -67,14 +67,14 @@ class AppScaleTest(CliCase):
     def test_corrupt_scoped_values_do_not_reset_a_valid_sibling(self):
         path = self.tmp / "state" / "solo" / "ui.json"
         path.parent.mkdir(parents=True, exist_ok=True)
-        defaults = {"book_scale": 1, "table_scale": 1}
+        defaults = {"book_scale": 1, "table_scale": 1, "book_serif_font": ""}
         for text in ('{', 'null', '[]', 'true', '{}', '{"scale": true}', '{"scale": 100}', '{"scale": "1.5"}'):
             path.write_text(text)
             self.assertEqual(ui.settings(), defaults, text)
         path.write_text('{"book_scale": 1.25, "table_scale": "bad"}')
-        self.assertEqual(ui.settings(), {"book_scale": 1.25, "table_scale": 1})
+        self.assertEqual(ui.settings(), {"book_scale": 1.25, "table_scale": 1, "book_serif_font": ""})
         path.write_text('{"scale": 1.75, "book_scale": 2}')
-        self.assertEqual(ui.settings(), {"book_scale": 2, "table_scale": 1.75})
+        self.assertEqual(ui.settings(), {"book_scale": 2, "table_scale": 1.75, "book_serif_font": ""})
 
     def test_publish_failure_preserves_both_choices_and_cleans_up(self):
         expected = ui.set_scales(book_scale=1.25, table_scale=1.75)
@@ -93,15 +93,15 @@ class AppScaleTest(CliCase):
             for child in children:
                 _, error = child.communicate(timeout=10)
                 self.assertEqual(child.returncode, 0, error)
-            self.assertEqual(ui.settings(), {"book_scale": 2, "table_scale": 1.75})
+            self.assertEqual(ui.settings(), {"book_scale": 2, "table_scale": 1.75, "book_serif_font": ""})
 
     def test_the_gm_can_read_but_cannot_change_either_scale(self):
         from solo import cli
         self.assertNotIn("ui", cli.GM_COMMANDS)
         with unittest.mock.patch.dict(os.environ, {"SOLO_BOOK": "1"}):
             self.assertEqual(self.solo("ui")[0], 0)
-            for flag in ("--book-scale=2", "--table-scale=2", "--scale=2"):
+            for flag in ("--book-scale=2", "--table-scale=2", "--scale=2", "--book-serif-font="):
                 code, _, err = self.solo("ui", flag)
                 self.assertEqual(code, 1)
                 self.assertIn("the player's", err)
-        self.assertEqual(ui.settings(), {"book_scale": 1, "table_scale": 1})
+        self.assertEqual(ui.settings(), {"book_scale": 1, "table_scale": 1, "book_serif_font": ""})

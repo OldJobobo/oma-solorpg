@@ -55,10 +55,17 @@ def check(item, panel, out, work, engine, wait, process_type):
     QMetaObject.invokeMethod(find(item, "settingsCloseButton"), "clicked")
     wait(450)
     expect(not item.property("settingsOpen"), "close did not return to the Table")
+    # Font discovery and native-control loading can delay the first frames;
+    # wait for the actual transition rather than racing a fixed wall clock.
+    for _ in range(40):
+        if not find(item, "tableFlip").property("flipping"):
+            break
+        wait(50)
     old_reduced = item.property("reducedMotion")
     item.setProperty("reducedMotion", True)
     QMetaObject.invokeMethod(gear, "clicked")
     wait(300)
+    expect(item.property("settingsOpen"), "settings did not reopen after closing")
     # Moving existing global preferences must preserve their save/readback path.
     # CI has no real Book-capable agent installed; exercise both capability modes
     # explicitly rather than depending on whichever agent the host discovers.
@@ -126,7 +133,7 @@ def check(item, panel, out, work, engine, wait, process_type):
         QTest.mouseClick(panel, Qt.LeftButton, Qt.NoModifier, point)
         wait(250)
         expect(item.property("tableScale") == scale, "scaled pointer hit missed its control")
-    expect(json.loads(scale_file.read_text()) == {"book_scale": 2, "table_scale": 2}, "scales were not persisted")
+    expect(json.loads(scale_file.read_text()) == {"book_scale": 2, "table_scale": 2, "book_serif_font": ""}, "scales were not persisted")
     component = QQmlComponent(engine, panel.source())
     fresh = component.create()
     expect(fresh is not None, "restart could not load")

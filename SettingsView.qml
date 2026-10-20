@@ -11,6 +11,10 @@ FocusScope {
   objectName: "tableSettings"
   required property var theme
   property real bookScale: 1
+  property string bookSerifFont: ""
+  property var serifFonts: []
+  property bool serifFontsBusy: false
+  property string serifFontsError: ""
   property real tableScale: 1
   property bool scaleBusy: false
   property string scaleTarget: ""
@@ -23,6 +27,7 @@ FocusScope {
   property string errorText: ""
   signal dismissed()
   signal scaleRequested(string target, real value)
+  signal bookSerifFontRequested(string family)
   signal paceRequested(string pace)
   signal effectRequested(string effect, bool on)
 
@@ -169,6 +174,23 @@ FocusScope {
         onScaleRequested: value => settings.scaleRequested("book", value)
       }
       Caption { text: "The story window only. Also adjustable in the Book sidebar." }
+      Label { text: "Book serif font"; Layout.topMargin: Style.space(8) }
+      SerifFontPicker {
+        Layout.fillWidth: true
+        theme: settings.theme
+        family: settings.bookSerifFont
+        families: settings.serifFonts
+        busy: settings.scaleBusy
+        onFamilyRequested: family => settings.bookSerifFontRequested(family)
+      }
+      Caption { text: "Prose and serif headings only · saved for all campaigns. System default follows Omarchy." }
+      Caption { visible: settings.serifFontsBusy; text: "Finding installed serif reading fonts…" }
+      Caption { visible: !settings.serifFontsBusy && settings.serifFonts.length === 0 && settings.serifFontsError === ""; text: "No installed serif reading fonts with Latin coverage were found. System default is still available." }
+      Caption { visible: settings.serifFontsError !== ""; text: settings.serifFontsError }
+      Caption { visible: settings.bookSerifFont !== "" && !settings.serifFontsBusy && settings.serifFonts.indexOf(settings.bookSerifFont) === -1; text: "The saved font is unavailable. Choose another font or System default." }
+      Caption { visible: settings.scaleBusy && settings.scaleTarget === "font"; text: "Saving Book font…" }
+      Label { visible: settings.scaleTarget === "font" && settings.scaleError !== ""; text: settings.scaleError; color: settings.theme.urgentText }
+
       Label { text: "Table & settings scale"; Layout.topMargin: Style.space(8) }
       ScaleSelector {
         objectName: "settingsTableScale"
@@ -180,8 +202,8 @@ FocusScope {
         onScaleRequested: value => settings.scaleRequested("table", value)
       }
       Caption { text: "Both sides of this sidebar. Does not change the Book or desktop." }
-      Caption { visible: settings.scaleBusy; text: "Saving " + (settings.scaleTarget === "book" ? "Book" : "Table") + " scale…" }
-      Label { visible: settings.scaleError !== ""; text: settings.scaleError; color: settings.theme.urgent }
+      Caption { visible: settings.scaleBusy && settings.scaleTarget !== "font"; text: "Saving " + (settings.scaleTarget === "book" ? "Book" : "Table") + " scale…" }
+      Label { visible: settings.scaleTarget !== "font" && settings.scaleError !== ""; text: settings.scaleError; color: settings.theme.urgent }
 
       Heading { text: "Game master" }
       Caption { text: "All campaigns" }
