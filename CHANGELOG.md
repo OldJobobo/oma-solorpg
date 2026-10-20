@@ -22,6 +22,7 @@ What changed in each version of oma-solorpg. The version is the one in `manifest
 - A command runs in about a third of the time, and the GM starts with only the tools it needs, so an opening turn is quicker and cheaper.
 - A commit reads the shapes GMs reach for (facts under the scene, a list of facts, time in words) and says how it read them.
 - The README's install pins the clone to a full commit.
+- The Table fits play on one screen. The hero's tracks sit side by side and only the conditions held show. The stats are the roll buttons: pick a move, then the stat that lights up. Move groups are tabs instead of folds, and the oracle stays open on two lines. A fight or a death roll takes over the middle while it lasts. Vows, the world, the pack, magic and the log move behind tabs below. The GM's last words show two lines with "more", and the Book and the terminal are icon buttons beside the scene.
 
 ### Fixed
 
