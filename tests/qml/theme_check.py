@@ -15,9 +15,9 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
-from PySide6.QtCore import SIGNAL, QObject, Qt, QUrl  # noqa: E402
+from PySide6.QtCore import SIGNAL, QObject, QPointF, Qt, QUrl  # noqa: E402
 from PySide6.QtGui import QColor, QGuiApplication  # noqa: E402
-from PySide6.QtQuick import QQuickView  # noqa: E402
+from PySide6.QtQuick import QQuickItem, QQuickView  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
 
 
@@ -159,6 +159,25 @@ def main(out):
     assert stopped == [True]
     book.setProperty("turn", {"status": "idle"})
     assert not send.property("enabled")
+
+    # One line of prose sits centred in the composer, even when "send" is the taller of the two,
+    # and the cut panel's actions start where its text does.
+    composer_item = root.findChild(QQuickItem, "composerSurface")
+    input_item = root.findChild(QQuickItem, "bookInput")
+    for prose in (9, 16, 27):
+        theme.setProperty("prose", prose)
+        QTest.qWait(50)
+        box = composer_item.mapToScene(QPointF(0, composer_item.height() / 2)).y()
+        line = input_item.mapToScene(QPointF(0, input_item.implicitHeight() / 2)).y()
+        assert abs(box - line) <= 1, (prose, box, line)
+    theme.setProperty("prose", 16)
+    book.setProperty("cutting", True)
+    QTest.qWait(50)
+    first = root.findChild(QQuickItem, "cutNow")
+    note = root.findChild(QQuickItem, "cutInput")
+    label = first.mapToScene(QPointF(first.property("leftPadding"), 0)).x()
+    assert abs(label - note.mapToScene(QPointF(0, 0)).x()) <= 1, (label, note.mapToScene(QPointF(0, 0)).x())
+    book.setProperty("cutting", False)
 
     # Safety actions wrap instead of overflowing at narrow widths/enlarged text.
     book.setProperty("cutting", True)

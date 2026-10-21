@@ -59,6 +59,12 @@ Item {
   readonly property bool carriesLight: pc !== null && pc.items.some(i => /(^|\s)torch(es)?$/i.test(i))
   // The story column's width: a line of about 75 characters, however wide the window.
   readonly property real measure: theme.prose * 38
+  // Writing fields get a little more room than buttons: the serif text is larger.
+  readonly property real fieldPaddingX: Math.round(theme.controlPaddingX * 1.5) + theme.controlInset
+  readonly property real fieldPaddingY: Math.round(theme.inputPaddingY * 1.3) + theme.controlInset
+  // How far a Link's label sits inside its own hover fill, so rows of links can line up with text.
+  readonly property real linkInsetX: theme.controlPaddingX / 2 + theme.controlInset
+  readonly property real linkInsetY: theme.controlPaddingY / 2 + theme.controlInset
 
   onGameChanged: react()
   onActiveChanged: if (active && game) titleCard.show(game.scene_title, game.title)
@@ -658,7 +664,12 @@ Item {
           Layout.fillWidth: true
           visible: book.canCut && !book.cutting
           Item { Layout.fillWidth: true }
-          Link { objectName: "cutLink"; text: "cut the GM's last message"; onClicked: { book.cutting = true; cutInput.forceActiveFocus() } }
+          Link {
+            objectName: "cutLink"
+            Layout.rightMargin: book.fieldPaddingX - book.linkInsetX
+            text: "cut the GM's last message"
+            onClicked: { book.cutting = true; cutInput.forceActiveFocus() }
+          }
         }
 
         ControlSurface {
@@ -669,15 +680,15 @@ Item {
           controlState: cutInput.activeFocus ? "focus" : cutHover.hovered ? "hover-cursor" : "normal"
           Layout.fillWidth: true
           visible: book.canCut && book.cutting
-          implicitHeight: cutColumn.implicitHeight + (book.theme.inputPaddingY + book.theme.controlInset) * 2
+          implicitHeight: cutColumn.implicitHeight + book.fieldPaddingY * 2 - book.linkInsetY
           HoverHandler { id: cutHover }
 
           ColumnLayout {
             id: cutColumn
             anchors { left: parent.left; right: parent.right; top: parent.top }
-            anchors.leftMargin: book.theme.controlPaddingX + book.theme.controlInset
+            anchors.leftMargin: book.fieldPaddingX
             anchors.rightMargin: anchors.leftMargin
-            anchors.topMargin: book.theme.inputPaddingY + book.theme.controlInset
+            anchors.topMargin: book.fieldPaddingY
             spacing: book.theme.controlGap
 
             Text {
@@ -690,35 +701,49 @@ Item {
               text: "Cut the GM's last message? It leaves the page, and the GM is told not to come back to it. Say what to avoid, if you like."
             }
 
-            TextInput {
-              id: cutInput
-              objectName: "cutInput"
+            // A hairline under the note, so it reads as a field rather than another sentence.
+            Item {
               Layout.fillWidth: true
-              font.family: book.theme.serif
-              font.pixelSize: book.theme.prose
-              color: book.theme.text
-              onActiveFocusChanged: if (activeFocus) textSelection.clear()
-              selectionColor: book.theme.selection
-              selectedTextColor: book.theme.selectedText
-              selectByMouse: true
-              clip: true
-              Keys.onEscapePressed: book.cutting = false
-              Keys.onReturnPressed: book.cutIt("")
-              Text {
-                visible: cutInput.text === ""
-                textFormat: Text.PlainText
-                font: cutInput.font
-                objectName: "cutPlaceholder"
-                width: parent.width
-                elide: Text.ElideRight
-                color: book.theme.inputText(book.theme.placeholder, cutPanel.controlState)
-                text: "what to avoid (optional)"
+              Layout.topMargin: book.theme.controlGap / 2
+              Layout.bottomMargin: book.theme.controlGap / 2
+              implicitHeight: cutInput.implicitHeight + 4
+              TextInput {
+                id: cutInput
+                objectName: "cutInput"
+                anchors { left: parent.left; right: parent.right; top: parent.top }
+                font.family: book.theme.serif
+                font.pixelSize: book.theme.prose
+                color: book.theme.text
+                onActiveFocusChanged: if (activeFocus) textSelection.clear()
+                selectionColor: book.theme.selection
+                selectedTextColor: book.theme.selectedText
+                selectByMouse: true
+                clip: true
+                Keys.onEscapePressed: book.cutting = false
+                Keys.onReturnPressed: book.cutIt("")
+                Text {
+                  visible: cutInput.text === ""
+                  textFormat: Text.PlainText
+                  font: cutInput.font
+                  objectName: "cutPlaceholder"
+                  width: parent.width
+                  elide: Text.ElideRight
+                  color: book.theme.inputText(book.theme.placeholder, cutPanel.controlState)
+                  text: "what to avoid (optional)"
+                }
+              }
+              Rectangle {
+                anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
+                height: 1
+                color: cutInput.activeFocus ? book.theme.accent : book.theme.placeholder
+                opacity: cutInput.activeFocus ? 0.8 : 0.45
               }
             }
 
             Flow {
               objectName: "cutActions"
               Layout.fillWidth: true
+              Layout.leftMargin: -book.linkInsetX
               spacing: book.theme.controlGap
               Link { objectName: "cutNow"; maximumWidth: parent.width; text: "cut"; onClicked: book.cutIt("") }
               Link { objectName: "cutLine"; maximumWidth: parent.width; text: "cut, and never again"; enabled: cutInput.text.trim() !== ""; onClicked: book.cutIt("line") }
@@ -739,21 +764,24 @@ Item {
           Layout.fillWidth: true
           visible: book.agent.book !== false
           implicitHeight: Math.max(Math.min(input.implicitHeight, book.theme.prose * 8), sendButton.implicitHeight)
-            + (book.theme.inputPaddingY + book.theme.controlInset) * 2
+            + book.fieldPaddingY * 2
           HoverHandler { id: composerHover }
+          FontMetrics { id: inputMetrics; font: input.font }
 
           RowLayout {
             anchors.fill: parent
-            anchors.leftMargin: book.theme.controlPaddingX + book.theme.controlInset
+            anchors.leftMargin: book.fieldPaddingX
             anchors.rightMargin: anchors.leftMargin
-            anchors.topMargin: book.theme.inputPaddingY + book.theme.controlInset
+            anchors.topMargin: book.fieldPaddingY
             anchors.bottomMargin: anchors.topMargin
             spacing: book.theme.controlGap
 
             Flickable {
               id: inputFlick
               Layout.fillWidth: true
-              Layout.fillHeight: true
+              // Centred when one line is shorter than "send", so the text doesn't ride high.
+              Layout.preferredHeight: Math.min(input.implicitHeight, book.theme.prose * 8)
+              Layout.alignment: Qt.AlignVCenter
               contentHeight: input.implicitHeight
               clip: true
               boundsBehavior: Flickable.StopAtBounds
@@ -796,6 +824,8 @@ Item {
               id: sendButton
               objectName: "sendButton"
               Layout.alignment: Qt.AlignBottom
+              Layout.rightMargin: -book.linkInsetX
+              Layout.bottomMargin: Math.max(0, (inputMetrics.height - implicitHeight) / 2)
               text: book.busy ? "stop" : "send ↵"
               enabled: book.busy || input.text.trim() !== ""
               onClicked: book.busy ? book.stop() : book.submit()
