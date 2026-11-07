@@ -28,8 +28,10 @@ QtObject {
   function workspaceOn(monitor) {
     if (!monitor || !hyprland) return null
     var special = monitor.lastIpcObject && monitor.lastIpcObject.specialWorkspace
-    if (special && special.id !== 0)
-      return hyprland.workspaces.values.find(w => w.id === special.id) || null
+    // Hyprland 0.57 omits id on an empty special workspace; undefined is not
+    // an active overlay. Accept name-only references as well as legacy IDs.
+    if (special && ((typeof special.id === "number" && special.id !== 0) || special.name))
+      return hyprland.workspaces.values.find(w => w.id === special.id || (special.name && w.name === special.name)) || null
     return monitor.activeWorkspace
   }
 

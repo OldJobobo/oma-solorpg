@@ -18,10 +18,11 @@ from PySide6.QtQml import QJSValue, QQmlComponent, QQmlEngine  # noqa: E402
 REPO = Path(__file__).resolve().parents[2]
 
 
-def snapshot(engine, active=3, moved=False, deleted=False, special=0, target_id=3, target_name="3", using_lua=True):
+def snapshot(engine, active=3, moved=False, deleted=False, special=0, target_id=3, target_name="3", using_lua=True,
+             special_ipc=None):
     """New objects on each update: the pin must follow workspace IDs, not old objects."""
     data = {"active": active, "moved": moved, "deleted": deleted, "special": special,
-            "targetId": target_id, "targetName": target_name, "usingLua": using_lua}
+            "targetId": target_id, "targetName": target_name, "usingLua": using_lua, "specialIpc": special_ipc}
     backend = engine.evaluate("""(() => {
         const data = %s;
         const monitors = [{name: 'DP-1'}, {name: 'DP-2'}];
@@ -33,7 +34,7 @@ def snapshot(engine, active=3, moved=False, deleted=False, special=0, target_id=
             activate: function() { calls.push(this.id); }
         }));
         monitors[0].activeWorkspace = workspaces.find(w => w.id === (data.active === 3 ? data.targetId : data.active)) || null;
-        monitors[0].lastIpcObject = {specialWorkspace: {id: data.special}};
+        monitors[0].lastIpcObject = {specialWorkspace: data.specialIpc === null ? {id: data.special} : data.specialIpc};
         monitors[1].activeWorkspace = workspaces.find(w => w.id === (data.moved ? data.targetId : 12)) || null;
         monitors[1].lastIpcObject = {specialWorkspace: {id: 0}};
         return {calls, usingLua: data.usingLua, dispatch: function(request) { calls.push(request); },
@@ -84,6 +85,23 @@ def main():
     check(shown() and not pin.property("pinned"), "the unpinned Table did not open")
     state(active=4)
     check(shown(), "unpinned behavior changed on another workspace")
+    # Hyprland 0.57 omits id on the empty special-workspace sentinel.
+    empty_special = {"address": "", "type": "", "name": ""}
+    for sentinel in (empty_special, {}, {"id": 0}):
+        state(special_ipc=sentinel)
+        call("togglePin")
+        check(pin.property("workspaceId") == 3 and shown(), "an empty special-workspace sentinel disabled pinning")
+        state(active=4, special_ipc=sentinel)
+        check(not shown(), "an empty special-workspace sentinel broke hiding on another workspace")
+        state(special_ipc=sentinel)
+        check(shown(), "an empty special-workspace sentinel prevented restoring the pinned Table")
+        call("togglePin")
+    state(special_ipc={"address": "special:game", "type": "special", "name": "special:game"})
+    call("togglePin")
+    check(pin.property("workspaceId") == -99 and shown(), "a name-only special workspace could not be pinned")
+    state(special_ipc=empty_special)
+    check(not shown(), "a name-only special-workspace pin leaked into the regular workspace")
+    call("togglePin")
     state()
     call("togglePin")
     check(pin.property("workspaceId") == 3 and shown(), "pin used the focused monitor instead of the sidebar's monitor")
